@@ -1,9 +1,12 @@
-import './App.css';
+import "./styles/tokens.css";
+import "./styles/components.css"
+import "./styles/layout.css"
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { useState } from 'react';
 import { ROUTES } from './constants/routes';
 
-// pages (라우트에 직접 연결되는 페이지)
+// pages (라우트에 직접 연결되는 페이지)\
+import Splash from './pages/intro/Splash';
 import Home from './pages/Home';
 import Login from './pages/auth/Login';
 import Register from './pages/auth/Register';
@@ -37,6 +40,9 @@ function App() {
         {/* Layout: Header/Footer 등 공통 UI (로그아웃 핸들러도 내려줌) */}
         <Layout user={user} onLogout={handleLogout}>
           <Routes>
+            {/* ✅ Splash (표지): 첫 진입 화면 */}
+            <Route path={ROUTES.SPLASH} element={<Splash />} />
+
             {/* 메인(Home): 로그인한 사용자만 접근 */}
             <Route
               path={ROUTES.HOME}
