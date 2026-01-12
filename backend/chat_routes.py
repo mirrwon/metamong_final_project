@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 # ✅ 너 프로젝트 구조
 from app.pipeline import run_pipeline
 from app.gpt_judge import judge_with_gpt_4o_mini
+from app.redis_client import get_redis
 
 router = APIRouter(prefix="/api")
 
@@ -157,6 +158,22 @@ async def chat_image(
     if os.path.exists(viz_path):
         base = str(request.base_url).rstrip("/")  # e.g. http://localhost:8000
         viz_url = f"{base}/results/result_latest_viz.png?t={_ts()}"
+
+    redis_client = get_redis()
+    if redis_client:
+        try:
+            cache_payload = {
+                "result": result,
+                "viz_url": viz_url,
+                "ts": _ts(),
+            }
+            redis_client.setex(
+                "result:latest",
+                3600,
+                json.dumps(cache_payload, ensure_ascii=False),
+            )
+        except Exception:
+            pass
 
     # GPT 요약
     gpt_text = None

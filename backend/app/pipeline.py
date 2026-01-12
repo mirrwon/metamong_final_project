@@ -12,6 +12,7 @@ from .config import (
 from .sam_vit import segment_floor, get_floor_center
 from .viz import draw_debug
 from .window_detect import detect_window_candidate, window_segment_points, base_dir
+from .plants import get_plants
 
 # =========================
 # CONFIG
@@ -41,7 +42,7 @@ PLANT_PENALTY = 0.25
 # =========================
 # USER / PLANTS
 # =========================
-USER = {"pet": False, "is_beginner": True}
+USER = {"pet": False, "is_beginner": True, "temp_c": None, "humidity": None, "window_distance_cm": None}
 
 PLANTS = [
     {"name":"산세베리아", "min":0.70, "max":1.20, "pet_safe":True,  "care":1, "tags":["초보","저광량"]},
@@ -219,12 +220,48 @@ def plant_care_penalty(is_beginner, plant_care):
         return float({1: 0.0, 2: 0.15, 3: 0.35}.get(c, 0.2))
     return 0.0
 
+def _to_float(val):
+    try:
+        if val is None:
+            return None
+        return float(val)
+    except Exception:
+        return None
+
+def _humidity_level(val):
+    if val is None:
+        return None
+    if isinstance(val, (int, float)):
+        v = float(val)
+        return max(0.0, min(1.0, v))
+    s = str(val).strip().lower()
+    if not s:
+        return None
+    if any(k in s for k in ("고습", "높음", "high")):
+        return 0.9
+    if any(k in s for k in ("건조", "낮음", "저습", "low")):
+        return 0.3
+    if any(k in s for k in ("보통", "중간", "일반", "medium")):
+        return 0.6
+    return None
+
+def _range_score(value, mn, mx, soften):
+    if value is None or mn is None or mx is None:
+        return None
+    if mn <= value <= mx:
+        return 1.0
+    d = min(abs(value - mn), abs(value - mx))
+    return float(1.0 / (1.0 + d / max(soften, 1e-6)))
+
 def recommend_plants(light_eff, topk=5):
     rec = []
     pet = bool(USER.get("pet", False))
     is_beginner = bool(USER.get("is_beginner", True))
+    user_temp = _to_float(USER.get("temp_c"))
+    user_humidity = _humidity_level(USER.get("humidity"))
+    user_distance = _to_float(USER.get("window_distance_cm"))
 
-    for p in PLANTS:
+    for p in get_plants():
         if pet and (p.get("pet_safe", True) is False):
             continue
 
@@ -232,7 +269,30 @@ def recommend_plants(light_eff, topk=5):
         plant_care = p.get("care", 2) if p.get("care", 2) is not None else 2
         pen = float(plant_care_penalty(is_beginner, plant_care))
         care_score = max(0.0, 1.0 - pen)
-        final = 0.70 * ls + 0.30 * care_score
+        temp_score = _range_score(user_temp, p.get("temp_min_c"), p.get("temp_max_c"), 5.0)
+        humidity_score = None
+        if user_humidity is not None and p.get("humidity") is not None:
+            humidity_score = max(0.0, 1.0 - abs(float(user_humidity) - float(p.get("humidity"))))
+        distance_score = _range_score(
+            user_distance,
+            p.get("window_distance_min_cm"),
+            p.get("window_distance_max_cm"),
+            50.0,
+        )
+
+        scores = [ls, care_score]
+        weights = [0.70, 0.30]
+        if temp_score is not None:
+            scores.append(temp_score)
+            weights.append(0.15)
+        if humidity_score is not None:
+            scores.append(humidity_score)
+            weights.append(0.10)
+        if distance_score is not None:
+            scores.append(distance_score)
+            weights.append(0.10)
+
+        final = float(sum(s * w for s, w in zip(scores, weights)) / sum(weights))
 
         in_range = (float(p["min"]) <= float(light_eff) <= float(p["max"]))
 
@@ -262,6 +322,9 @@ def run_pipeline(
     if user_opts:
         USER["pet"] = bool(user_opts.get("pet", USER["pet"]))
         USER["is_beginner"] = bool(user_opts.get("is_beginner", USER["is_beginner"]))
+        USER["temp_c"] = _to_float(user_opts.get("temp_c")) if "temp_c" in user_opts else USER["temp_c"]
+        USER["humidity"] = user_opts.get("humidity", USER["humidity"])
+        USER["window_distance_cm"] = _to_float(user_opts.get("window_distance_cm")) if "window_distance_cm" in user_opts else USER["window_distance_cm"]
 
     img = cv2.imread(image_path)
     if img is None:
@@ -437,5 +500,3 @@ def run_pipeline(
             print("[VIZ] saved ->", os.path.join(RESULT_DIR, "result_latest_viz.png"))
         except Exception as e:
             print("[WARN] draw_debug failed:", e)
-
-
