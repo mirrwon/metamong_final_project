@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 
 from chat_routes import router as chat_router
 from app.redis_client import get_redis, get_redis_error
+from app.mysql_client import get_mysql, get_mysql_error
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 RESULT_DIR = os.path.join(BASE_DIR, "results")
@@ -76,3 +77,17 @@ def redis_debug():
         "key_count": count,
         "sample_name": sample_name,
     }
+
+
+@app.get("/debug/mysql")
+def mysql_debug():
+    conn = get_mysql()
+    if not conn:
+        return {"ok": False, "reason": "no_connection", "error": get_mysql_error()}
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT 1")
+            cursor.fetchone()
+    except Exception:
+        return {"ok": False, "reason": "ping_failed"}
+    return {"ok": True}
