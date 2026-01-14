@@ -438,4 +438,3 @@ def run_pipeline(
         except Exception as e:
             print("[WARN] draw_debug failed:", e)
 
-

@@ -1,6 +1,7 @@
 .idea/
 .env
 .env.*
+!.env
 *.key
 *.secret
 __pycache__/
