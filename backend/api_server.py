@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 from chat_routes import router as chat_router
 from app.redis_client import get_redis, get_redis_error
 from app.mysql_client import get_mysql, get_mysql_error
+from app.vercel_blob_client import ping_vercel_blob, get_vercel_blob_error
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 RESULT_DIR = os.path.join(BASE_DIR, "results")
@@ -90,4 +91,12 @@ def mysql_debug():
             cursor.fetchone()
     except Exception:
         return {"ok": False, "reason": "ping_failed"}
+    return {"ok": True}
+
+
+@app.get("/debug/vercel-blob")
+def vercel_blob_debug():
+    ok = ping_vercel_blob()
+    if not ok:
+        return {"ok": False, "error": get_vercel_blob_error()}
     return {"ok": True}
