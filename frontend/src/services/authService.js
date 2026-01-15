@@ -1,41 +1,35 @@
-//지금 당장 쓸 임시(authService MOCK 버전)
+import api from "./api";
 
+export const login = (data) => api.post("/api/auth/login", data);
 
-const USE_MOCK = true; // 🔴 지금은 무조건 true
+export const register = (payload) => {
+  const formData = new FormData();
 
-const MOCK_USER_KEY = "mock_registered_user";
-
-// 로그인
-export const login = async (data) => {
-  if (USE_MOCK) {
-    const saved = JSON.parse(localStorage.getItem(MOCK_USER_KEY));
-
-    if (!saved) {
-      return Promise.reject(new Error("가입된 사용자 없음"));
+  Object.entries(payload).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== "") {
+      formData.append(key, value);
     }
+  });
 
-    if (
-      saved.username !== data.username ||
-      saved.password !== data.password
-    ) {
-      return Promise.reject(new Error("아이디/비밀번호 불일치"));
-    }
-
-    return Promise.resolve({
-      data: {
-        username: saved.username,
-        email: saved.email,
-        name: saved.name,
-        accessToken: "mock-token",
-      },
-    });
-  }
+  return api.post("/api/auth/register", formData, {
+    headers: {
+      "Content-Type": "multipart/form-data",
+    },
+  });
 };
 
-// 회원가입
-export const register = async (payload) => {
-  if (USE_MOCK) {
-    localStorage.setItem(MOCK_USER_KEY, JSON.stringify(payload));
-    return Promise.resolve({ data: { success: true } });
-  }
+export const updateProfile = (payload) => {
+  const formData = new FormData();
+
+  Object.entries(payload).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== "") {
+      formData.append(key, value);
+    }
+  });
+
+  return api.put("/api/auth/profile", formData, {
+    headers: {
+      "Content-Type": "multipart/form-data",
+    },
+  });
 };

@@ -1,4 +1,4 @@
-import DiaryList from "../components/diary/DiaryList";
+import DiaryList from "../components/diary/JoinDiaryList";
 
 const Diary = () => {
     return <DiaryList />;

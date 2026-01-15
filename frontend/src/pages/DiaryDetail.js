@@ -1,4 +1,4 @@
-import DiaryDetail from "../components/diary/DiaryDetail";
+import DiaryDetail from "../components/diary/JoinDiaryDetail";
 
 const DiaryDetailPage = () => {
   return <DiaryDetail />;

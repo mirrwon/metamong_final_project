@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { register } from "../../services/authService";
 import JoinRegister from "../../components/auth/JoinRegister";
+import "./Register.css";
 
 const Register = () => {
   const nav = useNavigate();

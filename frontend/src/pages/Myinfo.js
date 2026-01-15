@@ -1,62 +1,113 @@
 import { useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import Button from '../components/common/Button';
 import { ROUTES } from '../constants/routes';
+import './Myinfo.css';
 
-const Myinfo = () => {
+const withCacheBust = (url, cacheBust) => {
+  if (!url) return '';
+  if (!cacheBust) return url;
+  const sep = url.includes('?') ? '&' : '?';
+  return `${url}${sep}v=${cacheBust}`;
+};
+
+const calculateAge = (birthDate) => {
+  if (!birthDate) return "";
+  const date = new Date(birthDate);
+  if (Number.isNaN(date.getTime())) return "";
+
+  const now = new Date();
+  let age = now.getFullYear() - date.getFullYear();
+  const monthDiff = now.getMonth() - date.getMonth();
+  if (monthDiff < 0 || (monthDiff === 0 && now.getDate() < date.getDate())) {
+    age -= 1;
+  }
+  return age;
+};
+
+const Myinfo = ({ user }) => {
   const nav = useNavigate();
+  const location = useLocation();
 
-  // TODO: 로그인 연동 후 서버 데이터로 교체
-  const myinfo = useMemo(
-    () => ({
+  const storedUser = useMemo(() => {
+    try {
+      return JSON.parse(localStorage.getItem('user'));
+    } catch (error) {
+      return null;
+    }
+  }, [location.key]);
+
+  // Prefer localStorage so updated profile shows immediately after redirect.
+  const effectiveUser = storedUser || user;
+
+  const myinfo = useMemo(() => {
+    const fallback = {
       profileImageUrl: '',
       username: 'hyewon',
       age: 30,
+      gender: "여성",
       birthDate: '1994-10-19',
       phone: '010-1234-5678',
       email: 'onlywon@gmail.com',
-    }),
-    []
-  );
+      name: '혜원',
+    };
 
-  // 내 정보 수정 페이지 이동
+    if (!effectiveUser) return fallback;
+
+    const merged = { ...fallback, ...effectiveUser };
+
+    return {
+      ...merged,
+      profileImageUrl: withCacheBust(
+        merged.profileImageUrl,
+        effectiveUser?.profileImageCacheBust
+      ),
+      age: calculateAge(merged.birthDate),
+    };
+  }, [effectiveUser]);
+
   const goEditMyinfo = () => {
     nav(ROUTES.MYINFO_EDIT);
   };
 
   return (
-    <>
-      <h1>My Info</h1>
+    <div className="myinfo-page l-cover">
+      <div className="myinfo-center l-cover-center">
+        <h1 className="myinfo-title">My Info</h1>
+        <div className="ui-line myinfo-divider" />
 
-      <section>
-        <div>
-          {myinfo.profileImageUrl ? (
-            <img
-              src={myinfo.profileImageUrl}
-              alt="내 정보 사진"
-              width="120"
-              height="120"
-            />
-          ) : (
-            <div>[내 정보 이미지]</div>
-          )}
-        </div>
+        <section className="myinfo-section">
+          {/* 프로필 이미지 */}
+          <div className="myinfo-photo">
+            {myinfo.profileImageUrl ? (
+              <img
+                className="myinfo-photo-img"
+                src={myinfo.profileImageUrl}
+                alt="내 정보 사진"
+              />
+            ) : (
+              <div className="myinfo-photo-empty">[내 정보 이미지]</div>
+            )}
+          </div>
 
-        <div>
-          <p>아이디: {myinfo.username}</p>
-          <p>나이: {myinfo.age}</p>
-          <p>생년월일: {myinfo.birthDate}</p>
-          <p>연락처: {myinfo.phone}</p>
-          <p>e-mail: {myinfo.email}</p>
-        </div>
+          {/* 텍스트 정보 */}
+          <div className="myinfo-text">
+            <p>아이디: {myinfo.username}</p>
+            <p>이름: {myinfo.name}</p>
+            <p>나이: {myinfo.age}</p>
+            <p>성별: {myinfo.gender}</p>
+            <p>생년월일: {myinfo.birthDate}</p>
+            <p>연락처: {myinfo.phone}</p>
+            <p>e-mail: {myinfo.email}</p>
+          </div>
 
-        <Button
-          text="내 정보 수정"
-          type="primary"
-          onClick={goEditMyinfo}
-        />
-      </section>
-    </>
+          {/* 버튼 */}
+          <div className="myinfo-actions">
+            <Button text="내 정보 수정" type="primary" onClick={goEditMyinfo} />
+          </div>
+        </section>
+      </div>
+    </div>
   );
 };
 

@@ -1,25 +1,27 @@
-import './App.css';
+import "./styles/tokens.css";
+import "./styles/components.css"
+import "./styles/layout.css"
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { useState } from 'react';
 import { ROUTES } from './constants/routes';
 
-// pages (라우트에 직접 연결되는 페이지)
+//이미지 배경으로 설정
+import { useEffect } from "react";
+
+// pages (라우트에 직접 연결되는 페이지)\
+import Splash from './pages/intro/Splash';
 import Home from './pages/Home';
 import Login from './pages/auth/Login';
 import Register from './pages/auth/Register';
 import Myinfo from './pages/Myinfo';
 import MyinfoEdit from './pages/MyinfoEdit';
-// import PlantPick from './pages/PlantPick';
-import Chat from './components/plantpick/Chat';
+import Chat from './pages/Chat';
 
 // Diary pages
 import Diary from './pages/Diary';
 import DiaryNew from './pages/DiaryNew';
 import DiaryDetail from './pages/DiaryDetail';
 import DiaryEdit from './pages/DiaryEdit';
-
-// Test
-import Test from "./pages/test";
 
 
 // layout (공통 레이아웃)
@@ -35,17 +37,31 @@ function App() {
     setUser(null);
   };
 
+  //이미지 배경으로 설정
+  useEffect(() => {
+    document.documentElement.style.setProperty(
+      "--bg-image",
+      `url(${process.env.PUBLIC_URL}/images/cover.jpg)`
+    );
+
+    return () => {
+      document.documentElement.style.removeProperty("--bg-image");
+    };
+  }, []);
+
+
+
   return (
     <div className="App">
       <BrowserRouter>
         {/* Layout: Header/Footer 등 공통 UI (로그아웃 핸들러도 내려줌) */}
         <Layout user={user} onLogout={handleLogout}>
           <Routes>
+            {/* Splash (표지): 첫 진입 화면 */}
+            <Route path={ROUTES.SPLASH} element={<Splash />} />
+
             {/* 메인(Home): 로그인한 사용자만 접근 */}
-            <Route
-              path={ROUTES.HOME}
-              element={user ? <Home /> : <Navigate to={ROUTES.LOGIN} />}
-            />
+             <Route path={ROUTES.HOME} element={<Home />} />
 
             {/* 로그인: 비로그인 사용자 접근 */}
             <Route
@@ -71,13 +87,13 @@ function App() {
               element={user ? <MyinfoEdit /> : <Navigate to={ROUTES.LOGIN} />}
             />
 
-            {/* Plant Pick: 로그인한 사용자만 접근 */}
+            {/* Chat: 로그인한 사용자만 접근 */}
             <Route
-              path={ROUTES.PLANT_PICK}
+              path={ROUTES.CHAT}
               element={user ? <Chat /> : <Navigate to={ROUTES.LOGIN} />}
             />
 
-              {/* ✅ Diary: 로그인한 사용자만 접근 */}
+              {/* Diary: 로그인한 사용자만 접근 */}
             <Route
               path={ROUTES.DIARY}
               element={user ? <Diary /> : <Navigate to={ROUTES.LOGIN} />}
@@ -94,10 +110,6 @@ function App() {
               path={ROUTES.DIARY_EDIT}
               element={user ? <DiaryEdit /> : <Navigate to={ROUTES.LOGIN} />}
             />
-
-            <Route path="/test" element={<Test />} />
-
-            <Route path="/chat" element={<Chat />} />
 
           </Routes>
         </Layout>

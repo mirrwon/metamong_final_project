@@ -1,0 +1,12 @@
+{
+  "user_num": "0c27cebc-df32-4b0d-a888-cde6ee1fc512",
+  "username": "string",
+  "password": "string",
+  "name": "string",
+  "birthDate": "string",
+  "phone": "string",
+  "email": "string",
+  "age": "string",
+  "gender": "string",
+  "created_at": "2026-01-13T09:03:24.266479+00:00"
+}

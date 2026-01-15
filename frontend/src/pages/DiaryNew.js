@@ -1,4 +1,4 @@
-import DiaryNewContainer from "../components/diary/DiaryNewContainer"
+import DiaryNewContainer from "../components/diary/JoinDiaryNewContainer"
 
 
 const DiaryNew = () => {

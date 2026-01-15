@@ -10,7 +10,6 @@ from dotenv import load_dotenv
 # ✅ 너 프로젝트 구조
 from app.pipeline import run_pipeline
 from app.gpt_judge import judge_with_gpt_4o_mini
-from app.redis_client import get_redis
 
 router = APIRouter(prefix="/api")
 
@@ -59,9 +58,12 @@ def _safe_read_json(path: str) -> Dict[str, Any]:
 
 def _default_filter_groups() -> List[Dict[str, Any]]:
     return [
-        {"key": "experience", "label": "식물 경험", "options": ["beginner", "expert"]},
-        {"key": "pet", "label": "반려동물 여부", "options": ["true", "false"]},
-    ]
+        {"key": "experience","label": "식물 경험","multiple": False,"options": [{"label": "초보자", "value": "beginner"},{"label": "전문가", "value": "expert"},],},
+        {"key": "pet","label": "반려동물 여부","multiple": False,"options": [{"label": "있다", "value": "true","children": [{"label":"개","value":"dog"},{"label":"고양이","value":"cat"}]},{"label": "없다", "value": "false"},],},
+        {"key": "baby","label":"아이 여부","multiple": False,"options": [{"label": "있다", "value": "true"},{"label":"없다","value":"false"},],},
+        {"key": "Management","label":"식물 관리 주기","multiple": False,"options":[{"label":"1~2일", "value":"1~2"},{"label":"3~4일","value":"3~4"},{"label":"5~7일","value":"5~7"},],},
+        {"key": "allergy","label":"알레르기 민감도","multiple": False,"options":[{"label":"높다","value":"high"},{"label":"낮다","value":"low"},{"label":"없다","value":"false"},],},
+        {"key":"style","label":"원하시는 식물 조건이 있으신가요?","multiple": True,"options":[{"label":"있다","value":"ture"},{"label":"없다","value":"false"},],},]
 
 
 @router.get("/chat/filters")
@@ -90,6 +92,7 @@ def chat_start():
 
 @router.post("/chat")
 def chat_step(payload: Dict[str, Any] = Body(...)):
+    print("chat payload:", payload)
     return JSONResponse(
         {
             "messages": [
@@ -158,22 +161,6 @@ async def chat_image(
     if os.path.exists(viz_path):
         base = str(request.base_url).rstrip("/")  # e.g. http://localhost:8000
         viz_url = f"{base}/results/result_latest_viz.png?t={_ts()}"
-
-    redis_client = get_redis()
-    if redis_client:
-        try:
-            cache_payload = {
-                "result": result,
-                "viz_url": viz_url,
-                "ts": _ts(),
-            }
-            redis_client.setex(
-                "result:latest",
-                3600,
-                json.dumps(cache_payload, ensure_ascii=False),
-            )
-        except Exception:
-            pass
 
     # GPT 요약
     gpt_text = None

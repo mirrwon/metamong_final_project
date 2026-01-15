@@ -1,0 +1,14 @@
+{
+  "user_num": "476146c6-d10f-4de1-b713-61484f605f97",
+  "username": "won",
+  "password": "1111",
+  "name": "username",
+  "birthDate": "2026-01-15",
+  "phone": "010-1111-1111",
+  "email": "user@email.com",
+  "age": null,
+  "gender": "female",
+  "created_at": "2026-01-14T03:12:05.646527+00:00",
+  "profile_image_filename": "profile_won.png",
+  "updated_at": "2026-01-15T04:06:35.296415+00:00"
+}
