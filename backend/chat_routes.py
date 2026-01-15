@@ -167,7 +167,7 @@ async def chat_image(
                 "viz_url": viz_url,
                 "ts": _ts(),
             }
-            redis_client.setex(
+            await redis_client.setex(
                 "result:latest",
                 3600,
                 json.dumps(cache_payload, ensure_ascii=False),
