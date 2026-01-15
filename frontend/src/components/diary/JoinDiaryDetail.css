@@ -1,0 +1,164 @@
+/* =========================
+   DiaryDetail (page UI)
+   - tokens.css + components.css 기반
+   - DiaryForm 규격(220/320/120)과 통일
+   ========================= */
+
+.diary-detail {
+  width: 100%;
+  max-width: var(--w-cover);
+  margin: 0 auto;
+  padding: var(--s-5) var(--s-5);
+  text-align: center;
+}
+
+/* 상단 제목 */
+.diary-detail__head {
+  text-align: center;
+  margin-bottom: var(--s-4);
+}
+
+.diary-detail__title {
+  font-family: var(--font-title);
+  font-size: var(--fs-3);
+  font-weight: 900;
+  letter-spacing: 0.2px;
+  margin-bottom: var(--s-2);
+}
+
+.diary-detail__line {
+  width: 160px;
+  margin: 0 auto;
+}
+
+/* 본문 */
+.diary-detail__body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--s-3);
+  margin-top: var(--s-4);
+}
+
+/* ✅ 이미지 영역(폼과 동일한 “박스 역할”) */
+.diary-detail__image {
+  width: 150px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--s-2);
+}
+
+/* 이미지 클릭 버튼 */
+.diary-detail__photoBtn {
+  border: none;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+  width: auto;
+  display: inline-block;
+}
+
+/* ✅ 사진 크기: 220x220 통일 */
+.diary-detail__photo,
+.diary-detail__empty {
+  width: 220px;
+  height: 220px;
+}
+
+.diary-detail__photo {
+  object-fit: cover;
+  display: block;
+  background: transparent;
+}
+
+.diary-detail__empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  font-size: var(--fs-2);
+  color: var(--c-muted);
+  border: 1px solid var(--c-line);
+  background: transparent;
+}
+
+/* 날짜 */
+.diary-detail__date {
+  display: flex;
+  justify-content: center;
+  font-size: var(--fs-2);
+  color: var(--c-muted);
+}
+
+/* ✅ 텍스트 영역 폭: 320 통일 */
+.diary-detail__text {
+  width: 100%;
+  max-width: 320px;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+}
+
+.diary-detail__postTitle {
+  font-size: var(--fs-3);
+  font-weight: 800;
+}
+
+.diary-detail__content {
+  font-size: var(--fs-2);
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
+/* ✅ 버튼 영역: 3개여도 폼 느낌 유지 */
+.diary-detail__actions {
+  display: flex;
+  justify-content: center;
+  gap: var(--s-2);
+  margin-top: var(--s-3);
+  width: 100%;
+  flex-wrap: wrap;
+}
+
+/* Button 컴포넌트 width:100% 방지 + 폭 통일 */
+.diary-detail__actions .ui-btn,
+.diary-detail__actions .Button {
+  width: 120px;
+  margin-bottom: 0;
+}
+
+/* Lightbox */
+.diary-lightbox {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--s-4);
+}
+
+.diary-lightbox__panel {
+  background: var(--c-surface);
+  padding: var(--s-3);
+}
+
+.diary-lightbox__img {
+  width: min(520px, 90vw);
+  height: auto;
+  display: block;
+}
+
+.diary-lightbox__close {
+  position: fixed;
+  top: var(--s-4);
+  right: var(--s-4);
+  height: 38px;
+  padding: 0 var(--s-3);
+  border: 1px solid var(--c-line);
+  background: var(--c-surface);
+  cursor: pointer;
+  font-weight: 700;
+}

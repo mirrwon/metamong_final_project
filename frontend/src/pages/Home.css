@@ -1,0 +1,157 @@
+
+
+
+/* =========================
+   Home - Before/After Carousel
+   ========================= */
+
+.home-carousel {
+  margin-top: var(--s-4);
+ 
+}
+
+/* 카드 느낌 제거: 그림만 */
+.process-card {
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  padding: 0;
+  box-shadow: none;
+}
+
+/* ✅ 비포/애프터 2장 나란히 */
+.ba-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--s-3);
+  justify-items: center;
+}
+
+/* ✅ 이미지 크기 "조금 크게" */
+.ba-item {
+  position: relative;
+  width: 700px;      /* 🔥 지금보다 키움 (원하면 300/340 조절) */
+  height: 700px;
+  margin: 0;
+  overflow: hidden;
+  background: transparent;
+  border: none;
+}
+
+/* 이미지 꽉 차게 */
+.ba-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  
+}
+
+/* Before/After 태그 */
+.ba-tag {
+  position: absolute;
+  left: 10px;
+  bottom: 10px;
+  padding: 4px 8px;
+  font-size: var(--fs-2);
+  font-weight: 700;
+  color: var(--c-surface);
+  background: rgba(43, 61, 26, 0.85); /* var(--c-text) 톤 */
+  border-radius: var(--r-sm);
+}
+
+/* 슬라이드 가운데 정렬 */
+.home-carousel .swiper-slide {
+  display: flex;
+  justify-content: center;
+}
+
+.swiper-pagination-bullet {
+  width: 18px;
+  height: 2px;
+  border-radius: 0;
+  background: rgba(255, 255, 255, 0.5); 
+  opacity: 1;
+  transition: all 0.25s ease;
+  margin: 0 4px !important;
+}
+.swiper-pagination-bullet-active {
+   width: 28px;
+  background: #ffffff; 
+}
+
+/* 화면이 좁으면 1장씩(세로로) */
+@media (max-width: 720px) {
+  .ba-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .ba-item {
+    width: 340px;  /* 모바일에서 보기 좋게 */
+    height: 340px;
+  }
+}
+
+
+/* ===== Home FAQ ===== */
+
+.faq {
+  /* ⬆️ 상단 섹션과 간격 (구분선 위 여백) */
+  margin-top: var(--s-8);
+  padding-top: var(--s-5);
+
+  border-top: 2px solid var(--c-line);
+
+  /* 읽기 좋은 중앙 폭 */
+  max-width: var(--w-content, 760px);
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* 타이틀 – 존재감 확실히 */
+.faq__title {
+  margin-bottom: var(--s-4);
+
+  font-size: var(--fs-4);   /* ⬆️ 섹션 타이틀급 */
+  font-weight: 700;
+  letter-spacing: -0.01em;
+
+  text-align: left;
+  color: var(--c-text);
+}
+
+/* 리스트 전체 간격 ↓ */
+.faq__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3); /* ⬅️ 질문 간격 줄임 */
+  text-align: left;
+}
+
+/* 개별 FAQ */
+.faq__item {
+  padding-bottom: var(--s-3);
+  border-bottom: 1px solid var(--c-line-light);
+}
+
+/* 질문 – 더 크고 굵게 */
+.faq__question {
+  font-size: var(--fs-3);
+  font-weight: 700;
+  line-height: 1.45;
+
+  color: var(--c-text);
+}
+
+/* 답변 – 연하지 않게 */
+.faq__answer {
+  margin-top: var(--s-2);
+
+  font-size: var(--fs-1);
+  line-height: 1.65;
+
+  /* ⬇️ sub 컬러지만 너무 흐리지 않게 */
+  color: var(--c-text-sub);
+  opacity: 0.9;
+}
+
