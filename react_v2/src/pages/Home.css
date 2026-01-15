@@ -1,9 +1,13 @@
+
+
+
 /* =========================
    Home - Before/After Carousel
    ========================= */
 
 .home-carousel {
   margin-top: var(--s-4);
+ 
 }
 
 /* 카드 느낌 제거: 그림만 */
@@ -40,6 +44,7 @@
   height: 100%;
   object-fit: cover;
   display: block;
+  
 }
 
 /* Before/After 태그 */
@@ -87,4 +92,66 @@
   }
 }
 
+
+/* ===== Home FAQ ===== */
+
+.faq {
+  /* ⬆️ 상단 섹션과 간격 (구분선 위 여백) */
+  margin-top: var(--s-8);
+  padding-top: var(--s-5);
+
+  border-top: 2px solid var(--c-line);
+
+  /* 읽기 좋은 중앙 폭 */
+  max-width: var(--w-content, 760px);
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* 타이틀 – 존재감 확실히 */
+.faq__title {
+  margin-bottom: var(--s-4);
+
+  font-size: var(--fs-4);   /* ⬆️ 섹션 타이틀급 */
+  font-weight: 700;
+  letter-spacing: -0.01em;
+
+  text-align: left;
+  color: var(--c-text);
+}
+
+/* 리스트 전체 간격 ↓ */
+.faq__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3); /* ⬅️ 질문 간격 줄임 */
+  text-align: left;
+}
+
+/* 개별 FAQ */
+.faq__item {
+  padding-bottom: var(--s-3);
+  border-bottom: 1px solid var(--c-line-light);
+}
+
+/* 질문 – 더 크고 굵게 */
+.faq__question {
+  font-size: var(--fs-3);
+  font-weight: 700;
+  line-height: 1.45;
+
+  color: var(--c-text);
+}
+
+/* 답변 – 연하지 않게 */
+.faq__answer {
+  margin-top: var(--s-2);
+
+  font-size: var(--fs-1);
+  line-height: 1.65;
+
+  /* ⬇️ sub 컬러지만 너무 흐리지 않게 */
+  color: var(--c-text-sub);
+  opacity: 0.9;
+}
 

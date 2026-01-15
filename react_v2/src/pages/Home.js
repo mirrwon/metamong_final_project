@@ -1,5 +1,6 @@
 import { useNavigate } from "react-router-dom";
 import ProcessCarousel from "../components/home/ProcessCarousel";
+import FAQs from "../components/home/FAQs";
 import { ROUTES } from "../constants/routes";
 import "./Home.css";
 
@@ -15,10 +16,12 @@ const Home = () => {
     <div className="home">
    
       <ProcessCarousel />
-
-
+      
+      
       {/* <Button text="Start" type="primary" onClick={goChat} /> */}
      
+      <FAQs />
+
     </div>
   );
 };
