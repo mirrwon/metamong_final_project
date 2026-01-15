@@ -1,0 +1,134 @@
+/* =========================
+   MyinfoEdit (Page Layout Only)
+   - l-cover / l-cover-center 재사용 가능하면 wrapper에 붙이기
+   - ui-input / ui-btn는 components.css 재사용
+   ========================= */
+
+/* 페이지 타이틀 */
+.myinfoedit-title {
+  font-size: var(--fs-3);
+  font-weight: 900;
+  margin: 0 0 var(--s-2);
+  text-align: center;
+}
+
+.myinfoedit-divider {
+  width: 160px;
+  margin: 0 auto var(--s-5);
+}
+
+/* ✅ 조원코드 기준: form 래퍼 */
+.myinfoedit-form {
+  text-align: center;
+}
+
+/* 섹션 간격 */
+.myinfoedit-form section {
+  margin-bottom: var(--s-5);
+}
+
+/* 섹션 제목은 좌측 정렬(가독성) */
+.myinfoedit-form section > h2 {
+  text-align: left;
+  margin: 0 auto var(--s-3);
+  max-width: 320px;
+}
+
+/* 프로필 사진 행(첫 section) */
+.myinfoedit-form section:first-of-type > div:first-of-type {
+  display: flex;
+  justify-content: center;
+  margin-bottom: var(--s-2);
+}
+
+/* 프로필 박스: 투명 + 테두리 */
+.myinfoedit-form section:first-of-type img,
+.myinfoedit-form section:first-of-type > div:first-of-type > div {
+  width: 160px;
+  height: 160px;
+  border: 1px solid var(--c-text);
+  background: transparent;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.myinfoedit-form section:first-of-type img {
+  object-fit: cover;
+  display: block;
+}
+
+/* placeholder */
+.myinfoedit-form section:first-of-type > div:first-of-type > div {
+  font-size: var(--fs-2);
+  color: var(--c-muted);
+}
+
+/* file input 숨김 */
+.myinfoedit-form input[type="file"] {
+  display: none;
+}
+
+/* 파일 버튼(라벨) 작은 버튼처럼 */
+.myinfoedit-form label[for="profileImage"] {
+  width: auto;
+  height: 26px;
+  padding: 0 var(--s-2);
+  margin: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--fs-2);
+  font-weight: 600;
+}
+
+/* 파일명 */
+.myinfoedit-form section:first-of-type p {
+  margin-top: var(--s-2);
+  font-size: var(--fs-2);
+  color: var(--c-muted);
+  text-align: center;
+}
+
+/* 인풋 영역 폭 제한 (ui-input을 썼다는 가정) */
+.myinfoedit-form .ui-input {
+  max-width: 320px;
+  margin: 0 auto var(--s-3);
+}
+
+/* 도움말 */
+.myinfoedit-form section:nth-of-type(2) p {
+  max-width: 320px;
+  margin: -6px auto var(--s-3);
+  font-size: var(--fs-2);
+  color: var(--c-muted);
+  text-align: left;
+}
+
+/* 하단 버튼 영역 (form 마지막 div) */
+.myinfoedit-form > div:last-of-type {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: var(--s-3);
+  margin-top: var(--s-6);
+}
+
+/* 버튼 크기 통일 */
+.myinfoedit-form > div:last-of-type .ui-btn,
+.myinfoedit-form > div:last-of-type button {
+  width: 160px;
+  height: 38px;
+  margin: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* 에러 */
+.myinfoedit-form .error-message {
+  margin-top: var(--s-3);
+  font-size: var(--fs-2);
+  color: var(--c-danger, #dc2626);
+}

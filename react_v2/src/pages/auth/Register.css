@@ -1,0 +1,103 @@
+/* =========================
+   Register Page (Layout Layer + Page-only styles)
+   - 공용 UI 모양은 components.css (ui-input, ui-btn)를 사용
+   ========================= */
+
+.register-page {
+  min-height: 100vh;
+  padding: var(--s-6) var(--s-5);
+}
+
+.register-container {
+  width: 100%;
+  max-width: var(--w-cover);
+  margin: 0;
+  text-align: center;
+}
+
+/* 제목 + 라인 */
+.register-title {
+  font-size: var(--fs-3);
+  font-weight: 800;
+  margin: 0 0 var(--s-2);
+}
+
+.register-divider {
+  width: 160px;
+  margin: 0 auto var(--s-5);
+}
+
+/* 폼 전체 간격 */
+.register-form {
+  text-align: left;
+}
+
+
+
+/* 프로필 영역 배치 */
+.profile-row {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--s-3);
+  margin-bottom: var(--s-4);
+}
+
+
+
+/* 프로필 이미지 미리보기 박스 (페이지 전용) */
+.profile-preview-box {
+  margin-top: var(--s-4);
+  width: 130px;          
+  height: 130px;
+  background: transparent;   
+  border: 1px solid var(--c-text);
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+
+/* 이미지가 박스 꽉 차게 */
+.profile-preview-box img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* 파일 input 숨김 (버튼 label로 대체) */
+.profile-input {
+  display: none;
+}
+
+/* 프로필 사진 텍스트 숨김 (페이지 전용) */
+.register-form > span {
+  display: none;
+}
+
+/* 프로필 사진 버튼 (페이지 전용) */
+.profile-btn {
+  display: flex;      
+  align-items: center;        
+  justify-content: center;   
+  width: auto;
+  height: 26px;
+  padding: 0 var(--s-2);
+  font-size: 12px;
+  font-weight: 500;
+  margin: 0;     
+}
+
+/* 가입 버튼은 full width 그대로 */
+.register-submit {
+  margin-top: var(--s-5);
+}
+
+/* 에러 메시지 */
+.register-error {
+  margin-top: var(--s-2);
+  font-size: var(--fs-2);
+  color: #c0392b;
+  text-align: center;
+}

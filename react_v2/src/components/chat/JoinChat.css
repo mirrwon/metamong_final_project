@@ -1,0 +1,124 @@
+/* =========================
+   Chat Layout
+   ========================= */
+
+.chat {
+  min-height: calc(100vh - 120px);
+  padding: var(--s-4) var(--s-3);
+  background: transparent;
+}
+
+.chat-list {
+  max-width: 420px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+}
+
+/* =========================
+   Message Bubble
+   ========================= */
+
+.chat-message {
+  max-width: 90%;
+  font-size: var(--fs-2);
+  line-height: 1.6;
+}
+
+.chat-message.bot {
+  align-self: flex-start;
+  color: var(--c-text);
+}
+
+.chat-message.user {
+  align-self: flex-end;
+  text-align: right;
+}
+
+/* 시간 */
+.chat-time {
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--c-muted);
+}
+
+/* =========================
+   Image Message (핵심 수정)
+   ========================= */
+
+/* 공통 이미지 */
+.chat img {
+  max-width: 120px;      /* 🔥 기존 160 → 120 */
+  max-height: 120px;
+  object-fit: cover;
+}
+
+/* 여러 장일 때 (그리드) */
+.chat-images {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--s-1);
+}
+
+.chat-images img {
+  max-width: 110px;      /* 🔥 썸네일 느낌 */
+  max-height: 110px;
+}
+
+/* 단일 이미지일 때 */
+.chat-images.single img {
+  max-width: 160px;      /* 🔥 한 장도 크게 안 키움 */
+  max-height: 160px;
+}
+
+/* payload(추천 결과) 썸네일 */
+.chat-payload-grid img,
+.payload-thumb {
+  max-width: 100px;       /* 🔥 제일 작게 */
+  max-height: 100px;
+}
+
+.chat-payload-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--s-2);
+}
+
+.chat-payload-grid img {
+  width: 100%;
+  max-width: 110px;
+  max-height: 110px;
+  object-fit: cover;
+}
+
+/* =========================
+   Input Area
+   ========================= */
+
+.chat-input {
+  position: sticky;
+  bottom: 0;
+  margin-top: var(--s-4);
+  padding-top: var(--s-3);
+  background: var(--c-bg);
+}
+
+.chat-input form {
+  display: flex;
+  gap: var(--s-2);
+}
+
+.chat-input input {
+  flex: 1;
+  height: 38px;
+  border: none;
+  background: var(--c-field);
+  padding: 0 12px;
+  font-size: var(--fs-2);
+}
+
+.chat-input button {
+  width: 60px;
+  height: 38px;
+}

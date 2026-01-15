@@ -1,0 +1,41 @@
+:root {
+  /* color */
+  --c-bg: #eae5de;
+  --c-surface: #f7f3ed;
+  --c-text: #2b3d1a;
+  --c-muted: #2b3d1a;
+  --c-line: rgba(43, 61, 26, 0.45);
+  --c-field: #ffffff;
+
+
+  /* radius */
+  --r-sm: 8px;
+  --r-md: 12px;
+
+  /* spacing */
+  --s-1: 6px;
+  --s-2: 10px;
+  --s-3: 14px;
+  --s-4: 18px;
+  --s-5: 24px;
+  --s-6: 32px;
+
+  /* font */
+  --font-body: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  --font-title: Georgia, "Times New Roman", serif;
+
+  /* font-size */
+  --fs-2: 16px;
+  --fs-3: 20px;
+  --fs-4: 30px;
+  --fs-6: 55px;
+
+  /* size */
+  --w-cover: 1400px;
+  --h-cover-img: 1400px;
+  --bw-line: 2px;
+
+ /* background image */
+  --bg-overlay: rgba(234, 229, 222, 0.603); /* 배경 위에 얇게 덮을 색(가독성용) */
+
+}
