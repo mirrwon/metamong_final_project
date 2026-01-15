@@ -1,0 +1,151 @@
+{
+  "version": "kg_rules_v1",
+  "policy": {
+    "no_guessing": true,
+    "answer_only_from_evidence": true,
+    "when_no_evidence": "refuse_or_ask",
+    "rag_allowed_intents": ["PLANT_GENERAL_KNOWLEDGE", "TOXICITY_DETAILS"]
+  },
+
+  "intents": [
+    {
+      "id": "WHY_PLACEMENT",
+      "desc": "왜 이 위치(스팟)에 배치했는지",
+      "keywords_any": ["왜 여기", "왜 이 위치", "왜 이 자리", "배치 이유", "위치 이유", "스팟", "spot", "자리"],
+      "keywords_all": [],
+      "deny_keywords": [],
+      "priority": 100
+    },
+    {
+      "id": "WHY_PLANT",
+      "desc": "왜 이 식물을 추천했는지",
+      "keywords_any": ["왜 이 식물", "추천 이유", "왜 추천", "이 식물 선택", "식물 이유", "왜 이거"],
+      "keywords_all": [],
+      "deny_keywords": [],
+      "priority": 95
+    },
+    {
+      "id": "CARE_DB",
+      "desc": "물주기/광량/온도 등 DB 기반 케어 질문",
+      "keywords_any": ["물", "물주기", "햇빛", "광량", "온도", "습도", "비료", "분갈이", "관리"],
+      "keywords_all": [],
+      "deny_keywords": [],
+      "priority": 80
+    },
+    {
+      "id": "SAFETY_DB",
+      "desc": "반려동물/알러지/아이 안전 관련",
+      "keywords_any": ["독성", "강아지", "고양이", "반려동물", "아이", "아기", "알러지", "안전", "위험", "애완동물"],
+      "keywords_all": [],
+      "deny_keywords": [],
+      "priority": 85
+    },
+    {
+      "id": "FEEDBACK_REDO",
+      "desc": "마음에 안 들어서 다시 만들기/재배치/다른 느낌",
+      "keywords_any": ["마음에 안", "별로", "다시", "재생성", "재배치", "바꿔", "다른", "수정"],
+      "keywords_all": [],
+      "deny_keywords": [],
+      "priority": 90
+    },
+    {
+      "id": "PLANT_GENERAL_KNOWLEDGE",
+      "desc": "DB에 없는 일반 상식/설명 요청 (RAG 허용)",
+      "keywords_any": ["무슨 식물", "특징", "역사", "유래", "원산지", "효과", "공기정화", "키우면 좋아"],
+      "keywords_all": [],
+      "deny_keywords": [],
+      "priority": 40
+    }
+  ],
+
+  "out_of_scope": {
+    "deny_intent": "OUT_OF_SCOPE",
+    "deny_keywords_any": [
+      "풍수", "사주", "점", "다른 애완동물",
+      "진단", "치료", "약", "병원", "처방",
+      "법률", "소송", "계약", "투자", "코인",
+      "인테리어 업체"
+    ],
+    "deny_response_template_id": "T_REFUSE_SCOPE"
+  },
+
+  "evidence_requirements": [
+    {
+      "intent_id": "WHY_PLACEMENT",
+      "require_any_paths": [
+        "snapshot.best_spot.features.light_eff",
+        "snapshot.best_spot.features.occ",
+        "snapshot.best_spot.features.wall",
+        "snapshot.best_spot.features.stab",
+        "db.spot_light_conditions.light_level",
+        "db.spot_light_conditions.window_distance_band"
+      ],
+      "when_missing_template_id": "T_NEED_ANALYSIS_FIRST"
+    },
+    {
+      "intent_id": "WHY_PLANT",
+      "require_any_paths": [
+        "db.recommendation_items.reason_json",
+        "db.plants.light_min",
+        "db.plants.light_max",
+        "db.user_profile.skill_level"
+      ],
+      "when_missing_template_id": "T_NEED_RECO_FIRST"
+    },
+    {
+      "intent_id": "CARE_DB",
+      "require_any_paths": [
+        "db.plants.watering_summer",
+        "db.plants.watering_winter",
+        "db.plants.light_min",
+        "db.plants.light_max",
+        "db.plants.temp_min_c",
+        "db.plants.temp_max_c"
+      ],
+      "when_missing_template_id": "T_REFUSE_NO_DB_FIELD"
+    },
+    {
+      "intent_id": "SAFETY_DB",
+      "require_any_paths": [
+        "db.plants.pet_caution",
+        "db.plants.human_allergy_caution",
+        "db.user_profile.has_pet",
+        "db.user_profile.allergy_sensitive"
+      ],
+      "when_missing_template_id": "T_SAFETY_NEED_RAG_OR_REFUSE"
+    },
+    {
+      "intent_id": "FEEDBACK_REDO",
+      "require_any_paths": [
+        "db.reco_sessions.session_id"
+      ],
+      "when_missing_template_id": "T_NEED_SESSION"
+    }
+  ],
+
+  "templates": {
+    "T_REFUSE_SCOPE": "그 질문은 지금 서비스 범위(식물 추천/배치/관리/안전 설명) 밖이라 정확히 답하기 어려워요. 대신 결과(식물/위치/관리/안전) 관련 질문은 도와드릴게요.",
+    "T_NEED_ANALYSIS_FIRST": "아직 위치(스팟) 분석 결과가 준비되지 않아서 왜 그 자리를 골랐는지 설명하기 어려워요. 분석이 완료되면 바로 이유를 알려드릴게요.",
+    "T_NEED_RECO_FIRST": "아직 추천 근거 데이터가 준비되지 않았어요. 추천이 완료되면 ‘왜 이 식물인지’ 이유를 DB 근거로 설명해드릴게요.",
+    "T_REFUSE_NO_DB_FIELD": "현재 DB에 있는 정보만으로는 그 질문에 정확히 답하기 어려워요. (추측해서 안내하진 않을게요) 원하시면 일반 정보로 찾아서(RAG) 설명해드릴까요?",
+    "T_SAFETY_NEED_RAG_OR_REFUSE": "안전(독성/알러지) 관련은 DB에 주의 정보가 없으면 확답이 어려워요. 원하시면 외부 자료를 찾아서 출처와 함께 안내해드릴게요.",
+    "T_NEED_SESSION": "어떤 결과물(세션)에 대한 재생성인지 정보가 필요해요. 현재 보고 있는 결과 화면에서 다시 시도해볼까요?"
+  },
+
+  "fallback_flow": {
+    "intent_id": "FEEDBACK_REDO",
+    "ask": {
+      "question": "어떤 부분이 마음에 안 드셨나요? (1) 식물 (2) 위치 (3) 분위기 중에서 골라주세요.",
+      "options": [
+        { "id": "REDO_PLANT", "text": "식물이 마음에 안 듦" },
+        { "id": "REDO_PLACEMENT", "text": "위치가 마음에 안 듦" },
+        { "id": "REDO_STYLE", "text": "분위기/느낌이 마음에 안 듦" }
+      ]
+    },
+    "next_questions": {
+      "REDO_PLANT": "원하는 방향을 골라주세요: (a) 더 화려하게 (b) 더 미니멀하게 (c) 관리 쉬운 쪽 (d) 반려동물 안전 최우선",
+      "REDO_PLACEMENT": "원하는 방향을 골라주세요: (a) 창가 쪽 (b) 더 안쪽 (c) 동선 방해 적게 (d) 직사광 피하기",
+      "REDO_STYLE": "원하는 분위기를 골라주세요: (a) 내추럴 (b) 모던/미니멀 (c) 열대/풍성 (d) 포근한 느낌"
+    }
+  }
+}
