@@ -13,6 +13,11 @@ from app.pipeline import run_pipeline
 from app.image_edit import composite_plant_on_original
 from app.gemini_image_edit import gemini_edit_image
 
+from app.kg_chat.rules import load_rules
+from app.kg_chat.context_loader import ContextLoader
+from app.kg_chat.llm_client import LLMClient
+from app.kg_chat.service import handle_chat
+
 router = APIRouter()
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -20,11 +25,16 @@ UPLOAD_DIR = os.path.join(BASE_DIR, "uploads")
 RESULT_DIR = os.path.join(BASE_DIR, "results")
 ASSET_DIR = os.path.join(BASE_DIR, "assets")  # backend/assets
 
+KG_RULES = load_rules(BASE_DIR)
+KG_LOADER = ContextLoader(mysql_client=None, redis_client=None, base_dir=BASE_DIR)
+KG_LLM = LLMClient()  # model/system_prompt 필요하면 여기서 지정
+
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 os.makedirs(RESULT_DIR, exist_ok=True)
 
 # --- SIMPLE STATE (in-memory) ---
 USER_STATE: Dict[str, Dict[str, Any]] = {}
+USER_CTX: Dict[str, Dict[str, Any]] = {}
 
 def _client_key(request: Request) -> str:
     # 간단히 IP 기반 (로컬 개발용). 배포 시엔 세션/토큰으로 바꾸면 됨.
@@ -78,25 +88,6 @@ def parse_detail_text_to_constraints(text: str) -> Dict[str, Any]:
         "pet_hint": pet,            # True/None
     }
 
-def kg_recommend(constraints: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    다른 팀원이 만든 KG 모듈/함수/엔드포인트를 여기서 호출.
-    반환 형식은 통일해서 chat_post가 그대로 메시지 만들게.
-    """
-    try:
-        # 예시: 다른 팀원이 만든 함수가 이렇게 생겼다고 가정
-        # from app.kg_client import query_kg
-        from app.kg_client import query_kg  # 팀원이 제공
-        return query_kg(constraints)
-    except Exception as e:
-        # KG 미연결 시에도 서버 안 터지게
-        return {
-            "ok": False,
-            "reason": f"KG 연결 실패/미구현: {e}",
-            "items": [],
-        }
-
-
 def _load_latest_result() -> Dict[str, Any]:
     latest_json = os.path.join(RESULT_DIR, "result_latest.json")
     if not os.path.exists(latest_json):
@@ -104,9 +95,12 @@ def _load_latest_result() -> Dict[str, Any]:
     with open(latest_json, "r", encoding="utf-8") as f:
         return json.load(f)
 
-
-def _prompt_for_edit(best_point: Any, spot_usage: str, plant_name: Optional[str] = None) -> str:
-    plant_text = plant_name if plant_name else "a plant"
+def _prompt_for_edit(
+    best_point: Any,
+    spot_usage: str,
+    plant_name: Optional[str] = None,
+) -> str:
+    plant_text = plant_name or "실내 화분 식물"
 
     base_rules = (
         "원본 방 사진은 절대 변경하지 마세요. "
@@ -123,27 +117,25 @@ def _prompt_for_edit(best_point: Any, spot_usage: str, plant_name: Optional[str]
             "테이블, 선반, 가구 위에 두지 마세요. "
             "중형~대형 화분으로 표현하세요 (높이 40~90cm). "
         )
-
     elif spot_usage == "table_small":
         mode_rules = (
             f"{plant_text}를 테이블 또는 상판(TABLETOP)에 올려주세요. "
             "바닥에 두지 마세요. "
             "소형 화분으로 표현하세요 (높이 15~35cm). "
         )
-
     elif spot_usage == "low_light":
         mode_rules = (
             f"{plant_text}를 저광량 환경에 적합하게 배치하세요. "
             "강한 햇빛을 가정하지 마세요. "
             "소형~중형 화분으로 표현하세요. "
         )
-
     else:  # avoid
         mode_rules = (
             f"{plant_text}를 가장 자연스럽고 안전한 방식으로 소형 화분으로 배치하세요. "
         )
 
     return base_rules + mode_rules
+
 
 
 
@@ -285,10 +277,15 @@ async def chat_post(request: Request):
         best_spot = data.get("best_spot", {}) if isinstance(data, dict) else {}
         spot_usage = best_spot.get("spot_usage", "floor_large")
 
+        # pipeline 추천 1순위(백업)
         plant_name = None
         top_plants = best_spot.get("top_plants", [])
         if isinstance(top_plants, list) and len(top_plants) > 0:
             plant_name = top_plants[0].get("name")
+
+        # ✅ KG 추천 가져오기 (있으면 이게 우선)
+        key = _client_key(request)
+        kg_result = USER_CTX.get(key, {}).get("kg_result")
 
         prompt = _prompt_for_edit(
             best_point=best_point,
@@ -376,32 +373,40 @@ async def chat_post(request: Request):
 
         constraints = parse_detail_text_to_constraints(text)
 
-        # 최신 분석 결과(best_spot / spot_usage / light_profile)도 같이 KG에 넘기면 좋음
-        data = _load_latest_result()
-        best = data.get("best_spot", {}) if isinstance(data, dict) else {}
-        constraints["spot_usage"] = best.get("spot_usage")
-        constraints["light_level"] = (best.get("light_profile") or {}).get("level")
-        constraints["bias"] = (best.get("light_profile") or {}).get("bias")
+        # (선택) session_id/user_num: 로컬 개발용 기본값
+        user_num = 1
+        session_id = None
 
-        kg_result = kg_recommend(constraints)
+        # KG 엔진 호출 (룰 + evidence + LLM evidence-only)
+        kg_answer = handle_chat(
+            question=text,
+            user_num=user_num,
+            session_id=session_id,
+            rules=KG_RULES,
+            loader=KG_LOADER,
+            llm=KG_LLM,
+        )
+
+        # 저장(원하면)
+        USER_CTX.setdefault(key, {})
+        USER_CTX[key]["last_detail_text"] = text
+        USER_CTX[key]["constraints"] = constraints
+        USER_CTX[key]["kg_answer"] = kg_answer
 
         messages: List[Dict[str, Any]] = []
         messages.append({"type": "text", "text": f"상세 입력 수신: {text}"})
 
-        if kg_result.get("ok") and kg_result.get("items"):
-            # items는 KG팀이 준 포맷에 맞추면 됨 (여긴 예시)
-            items = kg_result["items"][:5]
-            lines = []
-            for it in items:
-                # 예: {"name": "...", "reason": "..."} 형태라고 가정
-                nm = it.get("name", "unknown")
-                rs = it.get("reason", "")
-                lines.append(f"- {nm}: {rs}".strip())
-            messages.append({"type": "text", "text": "KG 추천 결과:\n" + "\n".join(lines)})
+        # kg_answer 형식: {"answer": ["...","..."], "followup_question": "..."}
+        ans_list = kg_answer.get("answer") or []
+        if isinstance(ans_list, list) and ans_list:
+            messages.append({"type": "text", "text": "\n".join(ans_list)})
         else:
-            messages.append({"type": "text", "text": f"KG 추천 실패: {kg_result.get('reason', 'unknown')}"})
+            messages.append({"type": "text", "text": "현재 정보로는 답하기 어려워요."})
 
-        # 다음 선택지 (너 계약 유지)
+        fq = kg_answer.get("followup_question") or ""
+        if isinstance(fq, str) and fq.strip():
+            messages.append({"type": "text", "text": fq.strip()})
+
         messages.append(
             {
                 "type": "text",

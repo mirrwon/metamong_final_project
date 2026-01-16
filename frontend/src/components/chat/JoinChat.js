@@ -16,14 +16,24 @@ const normalizeMessages = (payload) => {
       role: item.role || "bot",
       text: item.text,
       timestamp: item.timestamp || null,
-      type: item.type, // images/payload 등 있을 수 있음
+      type: item.type, 
       images: item.images,
     }));
 };
 
 const normalizePayload = (data) => {
   if (!data) return null;
-  const raw = data.payload || data.data?.payload || (data.photos ? data : null);
+
+  
+  const messagePayload =
+    Array.isArray(data.messages) ? data.messages.find((m) => m && m.payload)?.payload : null;
+
+  const raw =
+    data.payload ||
+    data.data?.payload ||
+    messagePayload || 
+    (data.photos ? data : null);
+
   if (!raw) return null;
 
   const resolvedInput =
@@ -56,6 +66,7 @@ const normalizePayload = (data) => {
   };
 };
 
+
 const formatTime = (timestamp) => {
   if (!timestamp) return "";
   const date = new Date(timestamp);
@@ -63,7 +74,7 @@ const formatTime = (timestamp) => {
   return date.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" });
 };
 
-export default function JoinChat() {
+export default function Chat() {
   const [messages, setMessages] = useState([]);
   const [payload, setPayload] = useState(null);
   const [status, setStatus] = useState("idle");
@@ -117,48 +128,13 @@ export default function JoinChat() {
   // -----------------------------
   // ✅ 필터 요약 + 전송
   // -----------------------------
-  const getOptionValue = (option) => {
-    if (option && typeof option === "object") return option.value ?? option.label ?? "";
-    return option;
-  };
-
-  const getOptionLabel = (option) => {
-    if (option && typeof option === "object") return option.label ?? option.value ?? "";
-    return option;
-  };
-
-  const getOptionChildren = (option) => {
-    if (option && typeof option === "object" && Array.isArray(option.children)) return option.children;
-    return [];
-  };
-
-  const getGroupTopValues = (group) =>
-    (group?.options || []).map((option) => getOptionValue(option)).filter(Boolean);
-
-  const getGroupChildValues = (group) =>
-    (group?.options || [])
-      .flatMap((option) => getOptionChildren(option))
-      .map((child) => getOptionValue(child))
-      .filter(Boolean);
-
   const buildFilterSummary = () => {
     const groups = activeFilterGroups.length > 0 ? activeFilterGroups : filterGroups;
     const parts = groups
       .map((group) => {
         const values = selectedFilters[group.key] || [];
         if (values.length === 0) return null;
-        // Build a value->label map for both options and their children.
-        const labelByValue = new Map([
-          ...(group.options || []).map((option) => [getOptionValue(option), getOptionLabel(option)]),
-          ...(group.options || []).flatMap((option) =>
-            getOptionChildren(option).map((child) => [
-              getOptionValue(child),
-              getOptionLabel(child),
-            ])
-          ),
-        ]);
-        const labels = values.map((value) => labelByValue.get(value) || value);
-        return `${group.label}: ${labels.join(", ")}`;
+        return `${group.label}: ${values.join(", ")}`;
       })
       .filter(Boolean);
 
@@ -372,25 +348,42 @@ export default function JoinChat() {
   // SSE
   useEffect(() => {
     const source = new EventSource(`${API_BASE}/stream`);
-    source.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-        const incoming = normalizeMessages(data);
-        const nextPayload = normalizePayload(data);
 
-        if (incoming.length) setMessages((prev) => [...prev, ...incoming]);
-        if (nextPayload) setPayload(nextPayload);
-
-        setStatus("connected");
-      } catch (error) {
-        setStatus("error");
-      }
+    const onHeartbeat = () => {
+      setStatus("connected");
     };
+
+    source.addEventListener("heartbeat", onHeartbeat);
+
+    source.onmessage = (event) => {
+      if (!event?.data) return;
+
+      let data;
+      try {
+        data = JSON.parse(event.data);
+      } catch (error) {
+        // heartbeat/plain text는 무시 (error로 만들지 않음)
+        return;
+      }
+
+      const incoming = normalizeMessages(data);
+      const nextPayload = normalizePayload(data);
+
+      if (incoming.length) setMessages((prev) => [...prev, ...incoming]);
+      if (nextPayload) setPayload(nextPayload);
+
+      setStatus("connected");
+    };
+
     source.onerror = () => {
       setStatus("error");
       source.close();
     };
-    return () => source.close();
+
+    return () => {
+      source.removeEventListener("heartbeat", onHeartbeat);
+      source.close();
+    };
   }, []);
 
   // 텍스트 전송
@@ -464,8 +457,9 @@ export default function JoinChat() {
     ]);
 
     const formData = new FormData();
-    imageFiles.forEach((file) => formData.append("files", file));
-    formData.append("text", label);
+    formData.append("image", imageFiles[0]);
+    formData.append("meta", label);
+
 
     setStatus("loading");
     try {
@@ -587,54 +581,19 @@ export default function JoinChat() {
     }
   };
 
-  // Replaces the old flat toggle logic to support single-select and parent/child cleanup.
-  const toggleFilterOption = (group, option, parentValue = null) => {
-    const groupKey = group.key;
-    const value = getOptionValue(option);
-    const childValues = getOptionChildren(option).map((child) => getOptionValue(child));
+  const toggleFilterOption = (groupKey, value) => {
     setFiltersSent(false);
     setSelectedFilters((prev) => {
       const current = prev[groupKey] || [];
-      const isSelected = current.includes(value);
-      let next = current;
-
-      if (!parentValue) {
-        if (group.multiple === false) {
-          const topValues = getGroupTopValues(group);
-          const allChildValues = getGroupChildValues(group);
-          if (isSelected) {
-            next = current.filter((item) => item !== value);
-            // Clear children when the parent option is turned off.
-            next = next.filter((item) => !childValues.includes(item));
-          } else {
-            // Keep non-group values, but replace other top-level selections.
-            next = [value, ...current.filter((item) => !topValues.includes(item) && !allChildValues.includes(item))];
-          }
-        } else {
-          next = isSelected
-            ? current.filter((item) => item !== value)
-            : [...current, value];
-          if (isSelected && childValues.length) {
-            // Clear children if the parent option is unchecked.
-            next = next.filter((item) => !childValues.includes(item));
-          }
-        }
-      } else {
-        // Child option: ensure its parent is selected before storing.
-        if (!current.includes(parentValue)) {
-          next = [...current, parentValue];
-        }
-        next = isSelected
-          ? next.filter((item) => item !== value)
-          : [...next, value];
-      }
-
-      return { ...prev, [groupKey]: Array.from(new Set(next)) };
+      const next = current.includes(value)
+        ? current.filter((item) => item !== value)
+        : [...current, value];
+      return { ...prev, [groupKey]: next };
     });
   };
 
   return (
-    <div className="">
+    <div className="chat">
       <div className="">
         <div className="">
           <div>
@@ -781,42 +740,17 @@ export default function JoinChat() {
             activeFilterGroups.map((group) => (
               <div key={group.key}>
                 <div>[{group.label}]</div>
-                {group.options.map((option) => {
-                  const value = getOptionValue(option);
-                  const label = getOptionLabel(option);
-                  const children = getOptionChildren(option);
-                  const parentSelected = (selectedFilters[group.key] || []).includes(value);
-                  return (
-                    <div key={`${group.key}-${value}`}>
-                      <label>
-                        <input
-                          type="checkbox"
-                          checked={parentSelected}
-                          disabled={filtersSent}
-                          onChange={() => toggleFilterOption(group, option)}
-                        />
-                        {label}
-                      </label>
-                      {/* Render child options only when the parent is selected. */}
-                      {parentSelected &&
-                        children.map((child) => {
-                          const childValue = getOptionValue(child);
-                          const childLabel = getOptionLabel(child);
-                          return (
-                            <label key={`${group.key}-${value}-${childValue}`}>
-                              <input
-                                type="checkbox"
-                                checked={(selectedFilters[group.key] || []).includes(childValue)}
-                                disabled={filtersSent}
-                                onChange={() => toggleFilterOption(group, child, value)}
-                              />
-                              {childLabel}
-                            </label>
-                          );
-                        })}
-                    </div>
-                  );
-                })}
+                {group.options.map((option) => (
+                  <label key={`${group.key}-${option}`}>
+                    <input
+                      type="checkbox"
+                      checked={(selectedFilters[group.key] || []).includes(option)}
+                      disabled={filtersSent}
+                      onChange={() => toggleFilterOption(group.key, option)}
+                    />
+                    {option}
+                  </label>
+                ))}
               </div>
             ))}
 
