@@ -26,5 +26,6 @@ def _load_items() -> List[Dict[str, Any]]:
     return []
 
 
+@router.get("")
 def list_plants() -> JSONResponse:
     return JSONResponse({"items": _load_items()})
