@@ -2,7 +2,7 @@
 
 ---
 
-## 0) 기본적인 명령어
+##  기본적인 명령어
 
 앞으로는 무조건:
 git checkout add_final
@@ -16,7 +16,7 @@ git checkout add_final
 git merge feature/xxx
 git push origin add_final
 
-## ) 중요한 보안 규칙
+##  중요한 보안 규칙
 - **.env / 비밀번호 / API KEY / 개인 토큰** 이런 건 절대 GitHub에 올리면 안 됩니다.
 - 필요한 파일은 따로 연락으로 주고 받기
 
