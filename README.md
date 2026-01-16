@@ -15,9 +15,9 @@ git pull origin addfinal
  끝나면:
 - git checkout add_final
 
--git merge feature/xxx
+- git merge feature/xxx
 
--git push origin add_final
+- git push origin add_final
 
 ##  중요한 보안 규칙
 - **.env / 비밀번호 / API KEY / 개인 토큰** 이런 건 절대 GitHub에 올리면 안 됩니다.
