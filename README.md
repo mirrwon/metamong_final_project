@@ -2,9 +2,19 @@
 
 ---
 
-## 0) 딱 2가지만 기억하기
-- **main** = 최종본(팀원 전체 협의하에 commit) ✅  
-- **develop** = 작업 모으는 곳(여기로 PR 올림) ✅
+## 0)
+
+앞으로는 무조건:
+git checkout add_final
+git pull origin addfinal
+
+새 작업할 땐:
+git checkout -b feature/xxx
+
+끝나면:
+git checkout add_final
+git merge feature/xxx
+git push origin add_final
 
 ---
 
