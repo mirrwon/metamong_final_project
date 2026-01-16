@@ -6,14 +6,33 @@ from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
 
 from chat_routes import router as chat_router
+from diary_routes import router as diary_router
+from login_routes import router as login_router
+from plants_routes import router as plants_router
 
+
+
+
+# BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+# RESULT_DIR = os.path.join(BASE_DIR, "results")
+# os.makedirs(RESULT_DIR, exist_ok=True)
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 RESULT_DIR = os.path.join(BASE_DIR, "results")
 os.makedirs(RESULT_DIR, exist_ok=True)
+UPLOAD_DIR = os.path.join(BASE_DIR, "uploads")
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+PLANTS_DIR = os.path.join(BASE_DIR, "plants")
+os.makedirs(PLANTS_DIR, exist_ok=True)
+
 
 load_dotenv()
 
 app = FastAPI()
+
+app.include_router(chat_router)
+app.include_router(diary_router)
+app.include_router(login_router)
+app.include_router(plants_router)
 
 app.add_middleware(
     CORSMiddleware,
@@ -28,8 +47,8 @@ app.add_middleware(
 
 # viz 이미지 접근용
 app.mount("/results", StaticFiles(directory=RESULT_DIR), name="results")
+app.mount("/plants", StaticFiles(directory=PLANTS_DIR), name="plants")
 
-app.include_router(chat_router)
 
 @app.get("/health")
 def health():

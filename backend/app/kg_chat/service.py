@@ -48,4 +48,6 @@ def handle_chat(
         "evidence": context,
         "output_schema": {"answer": ["string"], "followup_question": "string_or_empty"}
     }
-    return llm.generate_json(SYSTEM_PROMPT_KO, user_payload)
+    # return llm.generate_json(SYSTEM_PROMPT_KO, user_payload)
+    return llm.generate_json( user_payload) # llm_client -> def generate_json 인자 2개사용 중
+
