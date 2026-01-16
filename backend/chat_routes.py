@@ -25,16 +25,21 @@ UPLOAD_DIR = os.path.join(BASE_DIR, "uploads")
 RESULT_DIR = os.path.join(BASE_DIR, "results")
 ASSET_DIR = os.path.join(BASE_DIR, "assets")  # backend/assets
 
+# --- SIMPLE STATE (in-memory) ---
+USER_STATE: Dict[str, Dict[str, Any]] = {}
+USER_CTX: Dict[str, Dict[str, Any]] = {}
+
 KG_RULES = load_rules(BASE_DIR)
-KG_LOADER = ContextLoader(mysql_client=None, redis_client=None, base_dir=BASE_DIR)
+KG_LOADER = ContextLoader(
+    mysql_client=None,
+    redis_client=None,
+    base_dir=BASE_DIR,
+    user_ctx=USER_CTX,
+)
 KG_LLM = LLMClient()  # model/system_prompt 필요하면 여기서 지정
 
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 os.makedirs(RESULT_DIR, exist_ok=True)
-
-# --- SIMPLE STATE (in-memory) ---
-USER_STATE: Dict[str, Dict[str, Any]] = {}
-USER_CTX: Dict[str, Dict[str, Any]] = {}
 
 def _client_key(request: Request) -> str:
     # 간단히 IP 기반 (로컬 개발용). 배포 시엔 세션/토큰으로 바꾸면 됨.
@@ -136,9 +141,6 @@ def _prompt_for_edit(
 
     return base_rules + mode_rules
 
-
-
-
 def extract_best_point(data: Dict[str, Any]) -> Optional[Any]:
     """
     result_latest.json에서 best point를 다양한 스키마로 안전 추출.
@@ -169,7 +171,6 @@ def extract_best_point(data: Dict[str, Any]) -> Optional[Any]:
 
     return None
 
-
 # -------------------------
 # v3 Contract: /api/chat/filters
 # -------------------------
@@ -183,7 +184,6 @@ def get_filters():
         "groups": groups,
         "payload": {"type": "filters", "groups": groups},
     }
-
 
 # -------------------------
 # v3 Contract: /api/chat/stream (SSE heartbeat) - 절대 제거 금지
@@ -202,7 +202,6 @@ def chat_stream():
         "X-Accel-Buffering": "no",
     }
     return StreamingResponse(gen(), media_type="text/event-stream", headers=headers)
-
 
 # -------------------------
 # v3 Contract: GET /api/chat (초기 상태)
@@ -224,7 +223,6 @@ def chat_get():
             }
         ]
     }
-
 
 # -------------------------
 # v3 Contract: POST /api/chat (텍스트/버튼 선택 처리)
@@ -374,7 +372,7 @@ async def chat_post(request: Request):
         constraints = parse_detail_text_to_constraints(text)
 
         # (선택) session_id/user_num: 로컬 개발용 기본값
-        user_num = 1
+        user_num = _client_key(request)
         session_id = None
 
         # KG 엔진 호출 (룰 + evidence + LLM evidence-only)
@@ -386,6 +384,9 @@ async def chat_post(request: Request):
             loader=KG_LOADER,
             llm=KG_LLM,
         )
+
+        print("[DEBUG CONTEXT]", KG_LOADER.load(user_num=user_num, session_id=session_id))
+        print("[DEBUG KG_ANSWER]", kg_answer)
 
         # 저장(원하면)
         USER_CTX.setdefault(key, {})

@@ -13,10 +13,17 @@ class ContextLoader:
       "snapshot": {...}
     }
     """
-    def __init__(self, mysql_client=None, redis_client=None, base_dir: Optional[str] = None):
+    def __init__(
+        self,
+        mysql_client=None,
+        redis_client=None,
+        base_dir: Optional[str] = None,
+        user_ctx: Optional[dict] = None,
+     ):
         self.mysql = mysql_client
         self.redis = redis_client
         self.base_dir = base_dir
+        self.user_ctx = user_ctx or {}
 
     def _load_result_latest_json(self) -> Optional[Dict[str, Any]]:
         """Fallback: backend/results/result_latest.json 읽기 (로컬 개발용)."""
@@ -32,7 +39,7 @@ class ContextLoader:
         except Exception:
             return None
 
-    def load(self, user_num: int, session_id: Optional[str] = None) -> Dict[str, Any]:
+    def load(self, user_num: Any, session_id: Optional[str] = None) -> Dict[str, Any]:
         # TODO: 여기를 너희 DB/Redis 클라이언트로 채우면 됨.
         # 지금은 result_latest.json(있으면)에서 best_spot만 가져오는 최소 fallback 제공.
         snapshot: Dict[str, Any] = {}
@@ -40,11 +47,26 @@ class ContextLoader:
         if latest and isinstance(latest, dict) and latest.get("best_spot"):
             snapshot["best_spot"] = latest.get("best_spot")
 
+        profile: Dict[str, Any] = {}
+
+        # 🔹 USER_CTX에서 유저 정보 가져오기
+        u = self.user_ctx.get(user_num, {})
+
+        filters = u.get("filters", {})
+        if isinstance(filters, dict):
+            exp = filters.get("experience")
+            pet = filters.get("pet")
+
+            if exp:
+                profile["skill_level"] = exp  # "beginner" | "expert"
+
+            if pet is not None:
+                profile["has_pet"] = True if str(pet).lower() == "true" else False
+
         return {
             "db": {
-                # 아래는 예시 키(없어도 됨). 실제 조회 결과로 채우면 evidence 체크가 동작함.
                 "reco_session": {"session_id": session_id} if session_id else {},
-                "user_profile": {},
+                "user_profile": profile,
                 "recommendation_item": {},
                 "plant": {},
                 "spot_light_conditions": {},
