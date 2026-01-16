@@ -7,7 +7,7 @@
  앞으로는 무조건:
 - git checkout add_final
 
-git pull origin addfinal
+- git pull origin addfinal
 
  새 작업할 땐:
 - git checkout -b feature/xxx
