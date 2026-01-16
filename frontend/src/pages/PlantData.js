@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import api from '../services/api';
+import './PlantData.css';
 
 const buildImageUrl = (baseUrl, url) => {
   if (!url) return '';
@@ -11,31 +12,124 @@ const buildImageUrl = (baseUrl, url) => {
 const PlantData = () => {
   const [items, setItems] = useState([]);
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [pageIndex, setPageIndex] = useState(0);
+  const [pageCache, setPageCache] = useState({});
+  const [total, setTotal] = useState(null);
+  const [prefetching, setPrefetching] = useState(false);
+  const inFlightRef = useRef(false);
+
+  const pageSize = 10;
 
   const baseUrl = useMemo(() => api.defaults.baseURL || '', []);
 
-  useEffect(() => {
-    let active = true;
+  const loadPlants = useCallback(
+    async (index, { showLoading } = { showLoading: false }) => {
+      if (inFlightRef.current) return;
+      inFlightRef.current = true;
 
-    const loadPlants = async () => {
+      if (pageCache[index]) {
+        if (showLoading) {
+          setLoading(true);
+          setItems([]);
+          setTimeout(() => {
+            setItems(pageCache[index]);
+            setError('');
+            setLoading(false);
+            inFlightRef.current = false;
+          }, 0);
+          return;
+        }
+        setItems(pageCache[index]);
+        setError('');
+        inFlightRef.current = false;
+        return;
+      }
+      const offset = index * pageSize;
+      if (showLoading) {
+        setItems([]);
+      }
+      setLoading(true);
       try {
-        const { data } = await api.get('/api/plants');
-        if (!active) return;
-        const nextItems = Array.isArray(data?.items) ? data.items : [];
+        const response = await api.get('/api/plants', {
+          params: {
+            offset,
+            limit: pageSize,
+          },
+        });
+        const nextItems = Array.isArray(response?.data?.items) ? response.data.items : [];
         setItems(nextItems);
+        setPageCache((prev) => ({ ...prev, [index]: nextItems }));
+        setTotal(Number.isInteger(response?.data?.total) ? response.data.total : null);
         setError('');
       } catch (err) {
-        if (!active) return;
-        setItems([]);
         setError('Failed to load plant data.');
+      } finally {
+        setLoading(false);
+        inFlightRef.current = false;
       }
-    };
+    },
+    [pageCache, pageSize]
+  );
 
-    loadPlants();
-    return () => {
-      active = false;
-    };
-  }, []);
+  const prefetchPlants = useCallback(
+    async (index) => {
+      if (prefetching || pageCache[index]) return;
+      const offset = index * pageSize;
+      setPrefetching(true);
+      try {
+        const response = await api.get('/api/plants', {
+          params: {
+            offset,
+            limit: pageSize,
+          },
+        });
+        const nextItems = Array.isArray(response?.data?.items) ? response.data.items : [];
+        setPageCache((prev) => ({ ...prev, [index]: nextItems }));
+        setTotal(Number.isInteger(response?.data?.total) ? response.data.total : null);
+      } finally {
+        setPrefetching(false);
+      }
+    },
+    [pageCache, pageSize, prefetching]
+  );
+
+  useEffect(() => {
+    loadPlants(0, { showLoading: true });
+  }, [loadPlants]);
+
+  useEffect(() => {
+    if (total !== null && (pageIndex + 1) * pageSize >= total) return;
+    prefetchPlants(pageIndex + 1);
+  }, [pageIndex, pageSize, prefetchPlants, total]);
+
+  const handleNext = () => {
+    if (loading) return;
+    const nextIndex = pageIndex + 1;
+    setPageIndex(nextIndex);
+    loadPlants(nextIndex, { showLoading: true });
+  };
+
+  const handlePrev = () => {
+    if (loading || pageIndex === 0) return;
+    const prevIndex = pageIndex - 1;
+    setPageIndex(prevIndex);
+    loadPlants(prevIndex, { showLoading: true });
+  };
+
+  const canGoNext =
+    !loading &&
+    (pageCache[pageIndex + 1] || total === null || (pageIndex + 1) * pageSize < total);
+
+  if (loading) {
+    return (
+      <div className="l-cover">
+        <div className="catalog-loading">
+          <p className="typo-title">Loading...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="l-cover">
@@ -43,26 +137,67 @@ const PlantData = () => {
         <h1 className="typo-title">Plant Data</h1>
         <div className="ui-line" />
 
-        {error ? <p>{error}</p> : null}
-        {!error && items.length === 0 ? <p>No plants yet.</p> : null}
+        {error ? <p className="catalog-status">{error}</p> : null}
+        {!error && items.length === 0 && !loading ? (
+          <p className="catalog-status">No plants yet.</p>
+        ) : null}
 
-        <ul>
+        <div className="catalog-grid">
           {items.map((plant) => (
-            <li key={plant.id || plant.name}>
+            <article className="catalog-card" key={plant.id || plant.name}>
               {plant.image ? (
                 <img
+                  className="catalog-image"
                   src={buildImageUrl(baseUrl, plant.image)}
                   alt={plant.name}
                   loading="lazy"
                 />
-              ) : null}
-              <h2>{plant.name}</h2>
-              <p>Care: {plant.care}</p>
-              <p>Allergy: {plant.allergy}</p>
-              <p>Pet safe: {plant.pet_safe ? 'yes' : 'no'}</p>
-            </li>
+              ) : (
+                <div className="catalog-image catalog-image--placeholder" />
+              )}
+              <header className="catalog-header">
+                <h2 className="catalog-title">{plant.name}</h2>
+                {plant.type ? <span className="catalog-chip">{plant.type}</span> : null}
+              </header>
+              <div className="catalog-meta">
+                <p>Size: {plant.size || 'n/a'}</p>
+                <p>
+                  Light: {plant.light_min || 'n/a'}
+                  {plant.light_max ? ` - ${plant.light_max}` : ''}
+                </p>
+                <p>Placement: {plant.placement || 'n/a'}</p>
+              </div>
+              <div className="catalog-details">
+                <p>Care: {plant.care || 'n/a'}</p>
+                <p>Allergy: {plant.allergy || 'n/a'}</p>
+                <p>
+                  Pet safe:{' '}
+                  {plant.pet_safe === null ? 'n/a' : plant.pet_safe ? 'yes' : 'no'}
+                </p>
+              </div>
+            </article>
           ))}
-        </ul>
+        </div>
+        {loading ? <p className="catalog-status">Loading plants...</p> : null}
+        <div className="catalog-pagination">
+          <button
+            className="ui-btn ui-btn-ghost ui-btn--compact"
+            type="button"
+            onClick={handlePrev}
+            disabled={loading || pageIndex === 0}
+          >
+            Previous
+          </button>
+          <span className="catalog-page">Page {pageIndex + 1}</span>
+          <button
+            className="ui-btn ui-btn-primary ui-btn--compact"
+            type="button"
+            onClick={handleNext}
+            disabled={!canGoNext}
+          >
+            Next
+          </button>
+        </div>
       </div>
     </div>
   );
