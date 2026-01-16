@@ -6,6 +6,7 @@
 
 - 앞으로는 무조건:
 git checkout add_final
+
 git pull origin addfinal
 
 - 새 작업할 땐:
@@ -13,7 +14,9 @@ git checkout -b feature/xxx
 
 - 끝나면:
 git checkout add_final
+
 git merge feature/xxx
+
 git push origin add_final
 
 ##  중요한 보안 규칙
