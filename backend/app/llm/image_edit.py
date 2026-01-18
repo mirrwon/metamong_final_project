@@ -1,4 +1,3 @@
-# backend/app/image_edit.py
 # 원본 이미지 기반 "좌표 위치 합성" 유틸 (text-to-image 금지)
 # + plant PNG가 없을 때 자동 placeholder 생성 지원
 

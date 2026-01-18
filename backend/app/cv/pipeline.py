@@ -5,309 +5,39 @@ import cv2
 import numpy as np
 import torch
 
-from .config import (
+from app.config import (
     BASE_DIR, RESULT_DIR, RESULT_JSON_LATEST, FAIL_LOG_PATH, FB_LOG_PATH, WEIGHTS_PATH,
     debug_print_paths
 )
-from .sam_vit import segment_floor, get_floor_center
+
+from app.cv.utils import (
+    floor_core,
+    candidates_from_mask,
+    distance_to_boundary,
+    depth_stability,
+    occ_v8_depth,
+    classify_surface_by_depth,
+    cluster_and_pick,
+    to_jsonable,
+    daily_light_area,
+)
+
+from .sam.sam_vit import segment_floor, get_floor_center
+from .geometry.window_detect import detect_window_candidate, window_segment_points, base_dir
 from .viz import draw_debug
-from .window_detect import detect_window_candidate, window_segment_points, base_dir
+from .depth.depth_midas import get_depth
+
+from app.cv.cv_config import (
+    CAND_STEP, MAX_N, CLUSTER_DIST,
+    SURFACE_PENALTY, SURFACE_PENALTY_ONLY_IF_HAS_FLOOR,
+    WINDOW_SAMPLES, RAY_SAMPLES,
+    DEPTH_OCC_THRESHOLD, OCC_MODE, OCCLUSION_WEIGHT_V8, OCCLUSION_STRENGTH_V7,
+    W, MIN_WALL, MIN_STAB, PLANT_PENALTY,
+    MIN_ORIGIN_DIST_PX, MIN_WALL_FOR_BEST, BEST_STAB_BONUS,
+)
 
 print("[PIPELINE FILE]", __file__)
 
-
-# =========================
-# CONFIG
-# =========================
-CAND_STEP = 18
-MAX_N = 6
-CLUSTER_DIST = 55
-
-# surface penalty (A안)
-SURFACE_PENALTY = 25.0          # 시작값: 25 (15~35 사이에서 튜닝)
-SURFACE_PENALTY_ONLY_IF_HAS_FLOOR = True  # floor 후보가 하나라도 있으면 other 감점 강화
-
-WINDOW_SAMPLES = 9
-RAY_SAMPLES = 22
-DEPTH_OCC_THRESHOLD = 0.06
-OCC_MODE = "v8"
-OCCLUSION_WEIGHT_V8 = 0.55
-OCCLUSION_STRENGTH_V7 = 0.65
-
-W = {
-    "LIGHT": 0.68,
-    "WALL":  0.16,
-    "PATH":  0.55,   # (현재 score에 미사용 - 필요시 다음 단계에서 반영)
-    "STAB":  0.25,
-}
-
-MIN_WALL = 0.15
-MIN_STAB = 0.05
-PLANT_PENALTY = 0.25
-
-# --- NEW: 창/경계 과근접 후보 제거용 ---
-MIN_ORIGIN_DIST_PX = 140   # 창 origin(빛 기준점)과 너무 가까우면 제외(픽셀)
-MIN_WALL_FOR_BEST = 0.28   # best_spot은 벽/경계로 너무 붙지 않게(0~1)
-BEST_STAB_BONUS = 0.12     # best_spot 선택 시 안정성(stab) 가중 보너스
-
-
-# =========================
-# USER / PLANTS
-# =========================
-USER = {"pet": False, "is_beginner": True}
-
-PLANTS = [
-    {"name":"산세베리아", "min":0.70, "max":1.20, "pet_safe":True,  "care":1, "tags":["초보","저광량"]},
-    {"name":"스투키",     "min":0.60, "max":1.10, "pet_safe":True,  "care":1, "tags":["초보","저광량"]},
-    {"name":"아레카야자", "min":1.10, "max":1.70, "pet_safe":True,  "care":2, "tags":["공기정화"]},
-    {"name":"올리브나무", "min":1.40, "max":2.20, "pet_safe":True,  "care":3, "tags":["고광량","관리어려움"]},
-    {"name":"몬스테라",   "min":1.00, "max":1.60, "pet_safe":False, "care":2, "tags":["주의(반려동물)"]},
-]
-
-# =========================
-# UTILS
-# =========================
-
-def classify_surface_by_depth(dval: float, floor_p20: float, floor_p80: float) -> str:
-    """
-    아주 안전한 1차 분기:
-    - floor_p20 ~ floor_p80 안이면 floor
-    - 아니면 other (탁자/가구/오인 등 포함)
-    """
-    if floor_p20 <= dval <= floor_p80:
-        return "floor"
-    return "other"
-
-def to_jsonable(x):
-    if isinstance(x, (np.floating,)):
-        return float(x)
-    if isinstance(x, (np.integer,)):
-        return int(x)
-    if isinstance(x, (np.ndarray,)):
-        return x.tolist()
-    if isinstance(x, dict):
-        return {k: to_jsonable(v) for k, v in x.items()}
-    if isinstance(x, (list, tuple)):
-        return [to_jsonable(v) for v in x]
-    return x
-
-def floor_core(mask01, k=19):
-    ker = np.ones((k, k), np.uint8)
-    return cv2.erode(mask01.astype(np.uint8), ker, iterations=1)
-
-def candidates_from_mask(mask01, step=CAND_STEP):
-    h, w = mask01.shape
-    pts=[]
-    for y in range(0, h, step):
-        for x in range(0, w, step):
-            if mask01[y, x]:
-                pts.append((x, y))
-    return pts
-
-def distance_to_boundary(mask01):
-    m = (mask01 > 0).astype(np.uint8) * 255
-    dist = cv2.distanceTransform(m, cv2.DIST_L2, 5)
-    return dist / (dist.max() + 1e-6)
-
-def cluster_and_pick(items, cluster_dist=CLUSTER_DIST, max_total=MAX_N):
-    clusters = []
-    for it in items:
-        score, pt, meta = it
-        x, y = pt
-        placed = False
-        for c in clusters:
-            cx, cy = c["center"]
-            if (x-cx)**2 + (y-cy)**2 < cluster_dist**2:
-                c["items"].append(it)
-                n = len(c["items"])
-                c["center"] = ((cx*(n-1)+x)/n, (cy*(n-1)+y)/n)
-                placed = True
-                break
-        if not placed:
-            clusters.append({"center": (x, y), "items": [it]})
-
-    clusters.sort(key=lambda c: max(v[0] for v in c["items"]), reverse=True)
-
-    picked = []
-    for c in clusters:
-        c["items"].sort(key=lambda v: v[0], reverse=True)
-        picked.append(c["items"][0])
-        if len(picked) >= max_total:
-            break
-
-    picked.sort(key=lambda v: v[0], reverse=True)
-    return picked
-
-# =========================
-# DEPTH
-# =========================
-def get_depth(img_bgr, device):
-    try:
-        midas = torch.hub.load("intel-isl/MiDaS", "MiDaS_small")
-        midas.to(device).eval()
-        tfm = torch.hub.load("intel-isl/MiDaS", "transforms").small_transform
-    except Exception as e:
-        print("[WARN] MiDaS load failed:", e)
-        return None
-
-    rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
-    inp = tfm(rgb).to(device)
-    with torch.no_grad():
-        pred = midas(inp)
-        pred = torch.nn.functional.interpolate(
-            pred.unsqueeze(1),
-            size=rgb.shape[:2],
-            mode="bicubic",
-            align_corners=False
-        ).squeeze()
-    d = pred.detach().cpu().numpy().astype(np.float32)
-    dmin, dmax = np.percentile(d, 2), np.percentile(d, 98)
-    depth = (d - dmin) / (dmax - dmin + 1e-6)
-    return np.clip(depth, 0, 1)
-
-def depth_stability(depth):
-    d = cv2.GaussianBlur(depth.astype(np.float32), (0, 0), 1.2)
-    gx = cv2.Sobel(d, cv2.CV_32F, 1, 0, ksize=3)
-    gy = cv2.Sobel(d, cv2.CV_32F, 0, 1, ksize=3)
-    grad = np.sqrt(gx*gx + gy*gy)
-    denom = np.percentile(grad, 95) + 1e-6
-    return 1.0 - np.clip(grad / denom, 0, 1)
-
-def occ_v8_depth(p0, p1, depth, core_mask01):
-    h, w = depth.shape
-    x0, y0 = p0
-    x1, y1 = p1
-    prev = None
-    hits = 0
-    valid = 0
-    for i in range(1, RAY_SAMPLES+1):
-        t = i / (RAY_SAMPLES + 1)
-        x = int(x0 + (x1 - x0) * t)
-        y = int(y0 + (y1 - y0) * t)
-        if x < 0 or y < 0 or x >= w or y >= h:
-            continue
-        if core_mask01[y, x] == 0:
-            continue
-        d = float(depth[y, x])
-        if prev is not None and (d - prev) > DEPTH_OCC_THRESHOLD:
-            hits += 1
-        prev = d
-        valid += 1
-    if valid == 0:
-        return 0.0
-    return min(1.0, hits / valid)
-
-# =========================
-# LIGHT
-# =========================
-def rotate2d(vec, deg):
-    rad = np.deg2rad(deg)
-    c, s = np.cos(rad), np.sin(rad)
-    x, y = float(vec[0]), float(vec[1])
-    return np.array([c*x - s*y, s*x + c*y], dtype=np.float32)
-
-def daily_light_area(pt, origin, base_dir_vec, img_bgr):
-    gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY).astype(np.float32) / 255.0
-    p = np.array([pt[0], pt[1]], dtype=np.float32)
-
-    def one_time(dir_deg):
-        dvec = rotate2d(base_dir_vec, dir_deg)
-        v = p - origin
-        dist = np.linalg.norm(v) + 1e-6
-        v = v / dist
-        align = max(0.0, float(np.dot(v, dvec)))
-        decay = 1.0 / (1.0 + dist * 0.01)
-        bright = float(gray[int(pt[1]), int(pt[0])])
-        return 0.60 * align + 0.25 * decay + 0.15 * bright
-
-    scores = {"morning": one_time(-25), "noon": one_time(0), "evening": one_time(+25)}
-    total = float(scores["morning"] + scores["noon"] + scores["evening"])
-    return scores, total
-
-# =========================
-# PLANT
-# =========================
-def plant_light_score(light_eff, p):
-    mn, mx = float(p["min"]), float(p["max"])
-    if mn <= light_eff <= mx:
-        return 1.0
-    d = (mn - light_eff) if light_eff < mn else (light_eff - mx)
-    return float(1.0 / (1.0 + d * 2.0))
-
-def plant_care_penalty(is_beginner, plant_care):
-    try:
-        c = int(plant_care)
-    except Exception:
-        c = 2
-    if is_beginner:
-        return float({1: 0.0, 2: 0.15, 3: 0.35}.get(c, 0.2))
-    return 0.0
-
-def recommend_plants(light_eff, topk=5):
-    rec = []
-    pet = bool(USER.get("pet", False))
-    is_beginner = bool(USER.get("is_beginner", True))
-
-    for p in PLANTS:
-        if pet and (p.get("pet_safe", True) is False):
-            continue
-
-        ls = plant_light_score(float(light_eff), p)
-        plant_care = p.get("care", 2) if p.get("care", 2) is not None else 2
-        pen = float(plant_care_penalty(is_beginner, plant_care))
-        care_score = max(0.0, 1.0 - pen)
-        final = 0.70 * ls + 0.30 * care_score
-
-        in_range = (float(p["min"]) <= float(light_eff) <= float(p["max"]))
-
-        rec.append({
-            "name": p["name"],
-            "score": float(final),
-            "in_range": bool(in_range),
-            "reason": "광량 적합" if in_range else "광량 근접",
-        })
-
-    rec.sort(key=lambda x: x["score"], reverse=True)
-    return rec[:topk]
-
-def recommend_floor_large(light_level: str, topk=5):
-    res = []
-    for p in PLANTS:
-        if p["name"] in ("올리브나무",):   # 예: 너무 특수한 건 제외
-            continue
-
-        # 바닥 큰 화분은 medium 이상 선호
-        if light_level == "dim" and p["min"] > 0.7:
-            continue
-
-        res.append({
-            "name": p["name"],
-            "reason": f"바닥 설치 + {light_level} 광 환경",
-        })
-    return res[:topk]
-
-def recommend_table_small(light_level: str, topk=5):
-    res = []
-    for p in PLANTS:
-        # 키 작은 식물 위주(임시 규칙)
-        if p["max"] > 1.3:
-            continue
-
-        res.append({
-            "name": p["name"],
-            "reason": f"테이블 설치 + {light_level} 광 환경",
-        })
-    return res[:topk]
-
-def recommend_low_light(topk=5):
-    res = []
-    for p in PLANTS:
-        if p["min"] <= 0.7:
-            res.append({
-                "name": p["name"],
-                "reason": "저광량 환경에 적합",
-            })
-    return res[:topk]
 
 # =========================
 # RUN PIPELINE
@@ -321,10 +51,6 @@ def run_pipeline(
 ):
     debug_print_paths()
     os.makedirs(RESULT_DIR, exist_ok=True)
-
-    if user_opts:
-        USER["pet"] = bool(user_opts.get("pet", USER["pet"]))
-        USER["is_beginner"] = bool(user_opts.get("is_beginner", USER["is_beginner"]))
 
     img = cv2.imread(image_path)
     if img is None:
@@ -451,16 +177,12 @@ def run_pipeline(
         if light_eff > 0:
             light_map[y, x] = max(light_map[y, x], float(light_eff))
 
-        plant_recs = recommend_plants(float(light_eff), topk=5)
-        has_in_range = any(r["in_range"] for r in plant_recs)
-        plant_pen = 0.0 if has_in_range else PLANT_PENALTY
 
-        # ✅ 여기서는 "raw_score"만 계산하고 일단 저장(패널티는 2-pass로 적용)
+        # ✅ 제품형: 스팟 점수는 식물과 분리 (plant_pen 제거)
         raw_score = (
                 W["LIGHT"] * float(light_eff) +
                 W["WALL"] * s_wall +
-                W["STAB"] * s_stab -
-                plant_pen
+                W["STAB"] * s_stab
         )
 
         meta = {
@@ -470,13 +192,11 @@ def run_pipeline(
             "occ": float(occ),
             "wall": float(s_wall),
             "stab": float(s_stab),
-            "plant_recs": plant_recs,
             "depth": float(dval),
             "surface": surface,
 
-            # ✅ 디버그 필드(나중에 JSON으로도 내보낼 수 있게)
             "raw_score": float(raw_score),
-            "surface_penalty": 0.0,  # 2-pass에서 채움
+            "surface_penalty": 0.0,
             "final_score": float(raw_score),
         }
 
@@ -578,19 +298,6 @@ def run_pipeline(
         else:
             spot_usage = "avoid"
 
-        # --- NEW: plant recommendation by usage ---
-        if spot_usage == "floor_large":
-            plant_recs = recommend_floor_large(lvl)
-
-        elif spot_usage == "table_small":
-            plant_recs = recommend_table_small(lvl)
-
-        elif spot_usage == "low_light":
-            plant_recs = recommend_low_light()
-
-        else:
-            plant_recs = []  # avoid
-
         packed.append({
             "rank": idx,
             "score": float(s),
@@ -618,8 +325,7 @@ def run_pipeline(
 
             "spot_usage": spot_usage,
 
-            "top_plants": plant_recs,
-
+            "top_plants": []
         })
 
     out = {

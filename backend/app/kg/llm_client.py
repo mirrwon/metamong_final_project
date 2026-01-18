@@ -1,7 +1,7 @@
 import json
 from typing import Any, Dict, Optional
 
-from ..gpt_judge import judge_with_gpt_4o_mini  # 기존 유틸 재사용
+from app.llm.gpt.gpt_judge import judge_with_gpt_4o_mini  # 기존 유틸 재사용
 from .prompts_ko import SYSTEM_PROMPT_KO
 
 

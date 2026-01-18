@@ -1,6 +1,6 @@
 import os, json, time
-from .config import WEIGHTS_PATH
-from .config import (
+from app.config import WEIGHTS_PATH
+from app.config import (
     DEPTH_OCC_THRESHOLD,
     OCCLUSION_STRENGTH_V7,
     OCCLUSION_WEIGHT_V8,

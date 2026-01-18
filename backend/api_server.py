@@ -1,31 +1,59 @@
-# api_server.py
 import os
 import json
 import time
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
-from app.redis_client import get_redis, get_redis_error
-from app.mysql_client import get_mysql, get_mysql_error
-from app.vercel_blob_client import ping_vercel_blob, get_vercel_blob_error
 
-from chat_routes import router as chat_router
-from diary_routes import router as diary_router
-from login_routes import router as login_router
-from plants_routes import router as plants_router
+from app.config import RESULT_DIR, UPLOAD_DIR, PLANTS_DIR  # ✅ config 단일 소스 사용
 
+from app.db.redis_client import get_redis, get_redis_error
+from app.db.mysql_client import get_mysql, get_mysql_error
+from app.db.vercel_blob_client import ping_vercel_blob, get_vercel_blob_error
+
+from app.api.chat_routes import router as chat_router
+from app.api.diary_routes import router as diary_router
+from app.api.login_routes import router as login_router
+from app.api.plants_routes import router as plants_router
+import os
+import json
+import time
+
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from dotenv import load_dotenv
+
+from app.config import RESULT_DIR, UPLOAD_DIR, PLANTS_DIR  # ✅ config 단일 소스 사용
+
+from app.db.redis_client import get_redis, get_redis_error
+from app.db.mysql_client import get_mysql, get_mysql_error
+from app.db.vercel_blob_client import ping_vercel_blob, get_vercel_blob_error
+
+from app.api.chat_routes import router as chat_router
+from app.api.diary_routes import router as diary_router
+from app.api.login_routes import router as login_router
+from app.api.plants_routes import router as plants_router
+
+# (선택) backend 루트 경로가 필요하면 유지
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-RESULT_DIR = os.path.join(BASE_DIR, "results")
+
+# ✅ 디렉토리 보장 (config에서 경로만 만들고, 여기서도 안전하게 한번 더)
 os.makedirs(RESULT_DIR, exist_ok=True)
-UPLOAD_DIR = os.path.join(BASE_DIR, "uploads")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
-PLANTS_DIR = os.path.join(BASE_DIR, "plants")
 os.makedirs(PLANTS_DIR, exist_ok=True)
 
 load_dotenv()
 
 app = FastAPI()
+
+# ✅ 정적 파일 mount는 여기(api_server)에서만 한다 (chat_routes에 넣지 말기)
+# ✅ 중복 mount 제거: /results는 1번만
+app.mount("/results", StaticFiles(directory=RESULT_DIR), name="results")
+app.mount("/plants", StaticFiles(directory=PLANTS_DIR), name="plants")
+app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 
 app.add_middleware(
     CORSMiddleware,
@@ -38,11 +66,44 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# viz 이미지 접근용
+# 라우터 등록
+app.include_router(chat_router)
+app.include_router(diary_router)
+app.include_router(login_router)
+app.include_router(plants_router)
+
+_plants_cache = {}
+_plants_key_cache = {}
+# (선택) backend 루트 경로가 필요하면 유지
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# ✅ 디렉토리 보장 (config에서 경로만 만들고, 여기서도 안전하게 한번 더)
+os.makedirs(RESULT_DIR, exist_ok=True)
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+os.makedirs(PLANTS_DIR, exist_ok=True)
+
+load_dotenv()
+
+app = FastAPI()
+
+# ✅ 정적 파일 mount는 여기(api_server)에서만 한다 (chat_routes에 넣지 말기)
+# ✅ 중복 mount 제거: /results는 1번만
 app.mount("/results", StaticFiles(directory=RESULT_DIR), name="results")
 app.mount("/plants", StaticFiles(directory=PLANTS_DIR), name="plants")
 app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# 라우터 등록
 app.include_router(chat_router)
 app.include_router(diary_router)
 app.include_router(login_router)

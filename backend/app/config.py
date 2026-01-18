@@ -1,12 +1,9 @@
-# 상수 경로 파라미터
-
 import os
 
 # =========================
-# PATH ROOTS
+# ROOTS
 # =========================
-
-APP_DIR  = os.path.dirname(os.path.abspath(__file__))
+APP_DIR = os.path.dirname(os.path.abspath(__file__))
 BASE_DIR = os.path.dirname(APP_DIR)
 
 # =========================
@@ -15,13 +12,13 @@ BASE_DIR = os.path.dirname(APP_DIR)
 MODEL_DIR = os.path.join(APP_DIR, "models")
 os.makedirs(MODEL_DIR, exist_ok=True)
 
-
 SAM_CKPT = os.path.join(MODEL_DIR, "sam_vit_b.pth")
 
 # =========================
 # DEFAULT IMAGE / UPLOAD
 # =========================
 DEFAULT_ROOM_IMG = os.path.join(BASE_DIR, "room.jpg")
+
 UPLOAD_DIR = os.path.join(BASE_DIR, "uploads")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
@@ -35,7 +32,13 @@ RESULT_JSON_LATEST = os.path.join(RESULT_DIR, "result_latest.json")
 
 WEIGHTS_PATH = os.path.join(BASE_DIR, "weights.json")
 FAIL_LOG_PATH = os.path.join(BASE_DIR, "failures.jsonl")
-FB_LOG_PATH   = os.path.join(BASE_DIR, "feedback.jsonl")
+FB_LOG_PATH = os.path.join(BASE_DIR, "feedback.jsonl")
+
+# (선택) static mount용
+PLANTS_DIR = os.path.join(BASE_DIR, "plants")
+os.makedirs(PLANTS_DIR, exist_ok=True)
+
+ASSET_DIR = os.path.join(BASE_DIR, "assets")
 
 # =========================
 # DEBUG
@@ -53,4 +56,6 @@ def debug_print_paths():
     print("  WEIGHTS_PATH    =", WEIGHTS_PATH)
     print("  FAIL_LOG_PATH   =", FAIL_LOG_PATH)
     print("  FB_LOG_PATH     =", FB_LOG_PATH)
+    print("  PLANTS_DIR      =", PLANTS_DIR)
+    print("  ASSET_DIR       =", ASSET_DIR)
     print("")

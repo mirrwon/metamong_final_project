@@ -4,7 +4,7 @@ import numpy as np
 import torch
 
 from segment_anything import sam_model_registry, SamPredictor
-from .config import SAM_CKPT, MODEL_DIR
+from app.config import SAM_CKPT, MODEL_DIR
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 

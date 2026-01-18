@@ -1,4 +1,3 @@
-# backend/chat_routes.py
 from __future__ import annotations
 
 import os
@@ -9,27 +8,33 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, UploadFile, File, Form, Request
 from fastapi.responses import StreamingResponse
 
-from app.pipeline import run_pipeline
-from app.image_edit import composite_plant_on_original
-from app.gemini_image_edit import gemini_edit_image
+from app.cv.pipeline import run_pipeline
+from app.config import BASE_DIR, RESULT_DIR, UPLOAD_DIR, ASSET_DIR
 
-from app.kg_chat.rules import load_rules
-from app.kg_chat.context_loader import ContextLoader
-from app.kg_chat.llm_client import LLMClient
-from app.kg_chat.service import handle_chat
+from app.llm.image_edit import composite_plant_on_original
+from app.llm.gemini.gemini_image_edit import gemini_edit_image
+
+from app.kg.rules import load_rules
+from app.kg.context_loader import ContextLoader
+from app.kg.llm_client import LLMClient
+from app.kg.service import handle_chat
+
+from datetime import datetime
+from app.solar.kier_client import KierSolarClient
+
+
+from app.reco.recommender import recommend_for_analysis
+
+
 
 router = APIRouter()
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-UPLOAD_DIR = os.path.join(BASE_DIR, "uploads")
-RESULT_DIR = os.path.join(BASE_DIR, "results")
-ASSET_DIR = os.path.join(BASE_DIR, "assets")  # backend/assets
 
 # --- SIMPLE STATE (in-memory) ---
 USER_STATE: Dict[str, Dict[str, Any]] = {}
 USER_CTX: Dict[str, Dict[str, Any]] = {}
 
-KG_RULES = load_rules(BASE_DIR)
+KG_RULES = load_rules(ASSET_DIR)
 KG_LOADER = ContextLoader(
     mysql_client=None,
     redis_client=None,
@@ -41,12 +46,21 @@ KG_LLM = LLMClient()  # model/system_prompt 필요하면 여기서 지정
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 os.makedirs(RESULT_DIR, exist_ok=True)
 
+def _abs_url(request: Request, path: str) -> str:
+    """
+    /results/xxx.png 같은 상대경로를
+    http://127.0.0.1:8000/results/xxx.png 로 바꿔서 프론트 엑박 방지
+    """
+    base = str(request.base_url).rstrip("/")
+    if not path.startswith("/"):
+        path = "/" + path
+    return f"{base}{path}"
+
+
 def _client_key(request: Request) -> str:
     # 간단히 IP 기반 (로컬 개발용). 배포 시엔 세션/토큰으로 바꾸면 됨.
     host = getattr(request.client, "host", "unknown")
     return str(host)
-
-import re
 
 def parse_detail_text_to_constraints(text: str) -> Dict[str, Any]:
     t = (text or "").strip().lower()
@@ -171,6 +185,39 @@ def extract_best_point(data: Dict[str, Any]) -> Optional[Any]:
 
     return None
 
+def _now_kst_yyyymmdd_hhmm() -> tuple[str, str]:
+    # 서버가 한국이면 그냥 localtime 써도 됨(가장 단순/안정)
+    now = datetime.now()
+    return now.strftime("%Y%m%d"), now.strftime("%H%M")
+
+
+def _get_lat_lot_from_meta(meta: Optional[str]) -> Optional[dict]:
+    """
+    프론트에서 meta(FormData)로 JSON 문자열을 보내는 걸 전제로 함.
+    예: {"lat": 37.5665, "lot": 126.9780}
+    """
+    if not meta:
+        return None
+    try:
+        obj = json.loads(meta)
+    except Exception:
+        return None
+
+    if not isinstance(obj, dict):
+        return None
+
+    lat = obj.get("lat")
+    lot = obj.get("lot") or obj.get("lon")  # 혹시 프론트가 lon으로 보내면 수용
+
+    try:
+        lat = float(lat)
+        lot = float(lot)
+    except Exception:
+        return None
+
+    return {"lat": lat, "lot": lot}
+
+
 # -------------------------
 # v3 Contract: /api/chat/filters
 # -------------------------
@@ -248,6 +295,10 @@ async def chat_post(request: Request):
     # - sendWithFilters는 "식물 경험: ..." "반려동물 여부: ..." 요약 텍스트를 보냄
     is_filter_summary = ("식물 경험" in text) or ("반려동물 여부" in text)
     if is_filter_summary and isinstance(body.get("filters"), dict) and len(body["filters"]) > 0:
+        key = _client_key(request)
+        USER_CTX.setdefault(key, {})
+        USER_CTX[key]["filters"] = body["filters"]  # ✅ 제품형 필수: 추천/DB/KG에 쓸 user evidence
+
         return {
             "messages": [
                 {"type": "text", "text": f"수신: {text}"},
@@ -282,8 +333,8 @@ async def chat_post(request: Request):
             plant_name = top_plants[0].get("name")
 
         # ✅ KG 추천 가져오기 (있으면 이게 우선)
-        key = _client_key(request)
-        kg_result = USER_CTX.get(key, {}).get("kg_result")
+        # key = _client_key(request)
+        # kg_result = USER_CTX.get(key, {}).get("kg_result")
 
         prompt = _prompt_for_edit(
             best_point=best_point,
@@ -306,7 +357,8 @@ async def chat_post(request: Request):
                 {
                     "type": "images",
                     "text": "result_latest_ai_edit",
-                    "images": [{"name": "result_latest_ai_edit", "url": "/results/result_latest_ai_edit.png"}],
+                    "images": [{"name": "result_latest_ai_edit", "url": _abs_url(request, "/results/result_latest_ai_edit.png")}],
+
                 }
             )
         else:
@@ -465,6 +517,34 @@ async def chat_image(
     # 2) pipeline 실행
     run_pipeline(save_path)
 
+    # ✅ Solar API 호출 (lat/lot가 있는 경우만)
+    solar_payload = None
+    loc = _get_lat_lot_from_meta(meta)
+    if loc:
+        date, hhmm = _now_kst_yyyymmdd_hhmm()
+
+        client = KierSolarClient()
+        solar_res = client.fetch_predc(
+            lat=loc["lat"],
+            lot=loc["lot"],
+            date=date,
+            time_hhmm=hhmm,
+            num_rows=10,
+        )
+
+        if solar_res:
+            solar_payload = {
+                "ok": True,
+                "date": solar_res.date,
+                "time": solar_res.time,
+                "lat": solar_res.lat,
+                "lot": solar_res.lot,
+                "items": solar_res.items,   # ✅ 원본 item list
+            }
+        else:
+            solar_payload = {"ok": False, "reason": "fetch_failed_or_not_configured"}
+
+
     # 3) 결과 파일 풀네임
     latest_json = os.path.join(RESULT_DIR, "result_latest.json")
     latest_viz = os.path.join(RESULT_DIR, "result_latest_viz.png")
@@ -475,6 +555,24 @@ async def chat_image(
     if os.path.exists(latest_json):
         with open(latest_json, "r", encoding="utf-8") as f:
             data = json.load(f)
+
+    if solar_payload:
+        data["solar_profile"] = solar_payload
+
+
+    # ✅ 제품형: recommender로 top_plants 채우기 (filters 기반)
+    key = _client_key(request)
+    user_filters = USER_CTX.get(key, {}).get("filters", {}) if isinstance(USER_CTX.get(key, {}), dict) else {}
+
+    data = recommend_for_analysis(data, user_filters=user_filters)
+
+    # ✅ result_latest.json 다시 저장 (pipeline은 spots/features만, 추천은 여기서 채움)
+    try:
+        with open(latest_json, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        print("[WARN] overwrite result_latest.json failed:", e)
+
 
     best_point = extract_best_point(data)
 
@@ -511,7 +609,8 @@ async def chat_image(
             {
                 "type": "images",
                 "text": "result_latest_viz",
-                "images": [{"name": "result_latest_viz", "url": "/results/result_latest_viz.png"}],
+                "images": [{"name": "result_latest_viz", "url": _abs_url(request, "/results/result_latest_viz.png")}],
+
             }
         )
 
@@ -520,7 +619,8 @@ async def chat_image(
             {
                 "type": "images",
                 "text": "result_latest_marker",
-                "images": [{"name": "result_latest_marker", "url": "/results/result_latest_marker.png"}],
+                "images": [{"name": "result_latest_marker", "url": _abs_url(request, "/results/result_latest_marker.png")}],
+
             }
         )
 
@@ -529,7 +629,7 @@ async def chat_image(
             {
                 "type": "images",
                 "text": "result_latest_composite",
-                "images": [{"name": "result_latest_composite", "url": "/results/result_latest_composite.png"}],
+                "images": [{"name": "result_latest_composite", "url": _abs_url(request, "/results/result_latest_composite.png")}],
             }
         )
     else:
@@ -539,6 +639,18 @@ async def chat_image(
                 "text": f"backend/results/result_latest_composite.png 생성 실패: {composite_info.get('reason', 'unknown')}",
             }
         )
+
+    # --- 추천 요약 텍스트(프론트에 바로 보이게) ---
+    best = (data.get("best_spot") or {}) if isinstance(data, dict) else {}
+    tops = best.get("top_plants") or []
+    if isinstance(tops, list) and tops:
+        top3 = tops[:3]
+        lines = []
+        for i, p in enumerate(top3, start=1):
+            name = p.get("name") or "식물"
+            reason = p.get("reason") or ""
+            lines.append(f"{i}. {name}" + (f" - {reason}" if reason else ""))
+        messages.append({"type": "text", "text": "추천 식물 TOP3\n" + "\n".join(lines)})
 
     # 6) v3 핵심: 분석 후 options 유지
     messages.append(
