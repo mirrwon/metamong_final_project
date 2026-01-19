@@ -1,4 +1,3 @@
-# backend/app/gemini_image_edit.py
 from __future__ import annotations
 
 import os
@@ -18,7 +17,7 @@ def gemini_edit_image(
     input_image_path: str,
     prompt: str,
     out_path: str,
-    model: str = "gemini-2.5-flash-image-preview",
+    model: str = "gemini-2.5-flash-image",
     api_key_env: str = "GEMINI_API_KEY",
 ) -> Dict[str, Any]:
     """

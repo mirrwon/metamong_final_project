@@ -1,5 +1,3 @@
-# 전체 파이프라인
-
 import os, json, time
 import cv2
 import numpy as np
@@ -23,7 +21,7 @@ from app.cv.utils import (
 )
 
 from .sam.sam_vit import segment_floor, get_floor_center
-from .geometry.window_detect import detect_window_candidate, window_segment_points, base_dir
+from .geometry.window_detect import detect_window_candidate, base_dir
 from .viz import draw_debug
 from .depth.depth_midas import get_depth
 
@@ -36,12 +34,35 @@ from app.cv.cv_config import (
     MIN_ORIGIN_DIST_PX, MIN_WALL_FOR_BEST, BEST_STAB_BONUS,
 )
 
+from .pnp_pose import solve_pnp_from_4pts, window_normal_world
+from .window_mask import extract_window_corners_edge, extract_window_corners_hough
+from app.cv.camera_intrinsics import make_K_from_fov
+
 print("[PIPELINE FILE]", __file__)
 
 
-# =========================
-# RUN PIPELINE
-# =========================
+def _bbox_to_corners4(win_bbox):
+    x, y, w, h = [float(v) for v in win_bbox]
+    return np.array([
+        [x,     y],
+        [x + w, y],
+        [x + w, y + h],
+        [x,     y + h],
+    ], dtype=np.float32)
+
+
+def _is_bbox_like(c4, bbox4, eps=3.0) -> bool:
+    if c4 is None:
+        return False
+    c4 = np.array(c4, dtype=np.float32).reshape(4, 2)
+    bbox4 = np.array(bbox4, dtype=np.float32).reshape(4, 2)
+    for p in c4:
+        d = np.min(np.linalg.norm(bbox4 - p[None, :], axis=1))
+        if d > eps:
+            return False
+    return True
+
+
 def run_pipeline(
     image_path: str,
     user_opts: dict | None = None,
@@ -59,13 +80,14 @@ def run_pipeline(
     H, Wimg = img.shape[:2]
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
-    # --- FLOOR (SAM) ---
+    # =========================
+    # FLOOR (SAM)
+    # =========================
     floor_mask_255, _ = segment_floor(img)
     if floor_mask_255 is None:
         raise RuntimeError("floor segmentation failed (SAM returned None)")
 
     floor = (floor_mask_255 > 0).astype(np.uint8)
-
     ratio = float(np.sum(floor > 0)) / float(H * Wimg)
     print(f"[FLOOR] area ratio = {ratio:.3f}")
     if ratio < 0.08:
@@ -75,17 +97,62 @@ def run_pipeline(
     if core.sum() < 500:
         core = floor
 
-    # --- WINDOW DETECT ---
+    # =========================
+    # WINDOW DETECT + REFINE (ONE PASS)
+    # =========================
     win = detect_window_candidate(img, floor, prefer="right", debug=debug_viz)
-    window_boxes = None
-    if win is not None:
-        x, y, ww, hh = win
-        window_boxes = [(x, y, x + ww, y + hh)]
 
-    # --- LIGHT ORIGIN / DIR ---
-    # floor center (가능하면 SAM 함수 사용, 실패하면 마스크 기반 fallback)
+    window_info = None
+    corners4_edge = None
+    corners4_h = None
+
+    if win is not None:
+        x, y, w, h = win
+        bbox4 = _bbox_to_corners4(win)
+
+        # 1) EDGE refine
+        corners4_edge = extract_window_corners_edge(
+            img, win, debug_dir=RESULT_DIR, tag="window"
+        )
+
+        corners4 = corners4_edge
+        source = "edge"
+
+        # edge 결과가 bbox랑 거의 같으면 실패로 간주 -> hough 시도
+        if corners4 is None or _is_bbox_like(corners4, bbox4, eps=3.0):
+            print("[WIN] edge failed or bbox-like -> try hough")
+            corners4 = None
+            source = "edge_looks_like_bbox"
+
+            corners4_h = extract_window_corners_hough(
+                img, win, debug_dir=RESULT_DIR, tag="window"
+            )
+            if corners4_h is not None:
+                corners4 = corners4_h
+                source = "hough"
+
+        # 3) fallback
+        if corners4 is None:
+            corners4 = bbox4
+            source = "bbox_fallback"
+
+        window_info = {
+            "bbox_xywh": [int(x), int(y), int(w), int(h)],
+            "corners_4": np.array(corners4, dtype=np.float32).reshape(4, 2).tolist(),
+            "source": source,
+        }
+
+        # 안전한 디버그 출력
+        print("[WIN] win bbox:", win)
+        print("[WIN] edge corners:", None if corners4_edge is None else np.array(corners4_edge).reshape(4, 2))
+        print("[WIN] edge bbox-like?:", _is_bbox_like(corners4_edge, bbox4, eps=3.0) if corners4_edge is not None else None)
+        print("[WIN] hough corners:", None if corners4_h is None else np.array(corners4_h).reshape(4, 2))
+
+    # =========================
+    # LIGHT ORIGIN / DIR
+    # =========================
     try:
-        fc = get_floor_center(core)  # 기대: (x,y)
+        fc = get_floor_center(core)
         floor_c = np.array([float(fc[0]), float(fc[1])], dtype=np.float32)
     except Exception:
         ys, xs = np.where(core > 0)
@@ -95,16 +162,16 @@ def run_pipeline(
             floor_c = np.array([Wimg * 0.5, H * 0.8], dtype=np.float32)
 
     if win is not None:
-        # 창 기준 origin: 창 아래쪽 중앙
         x, y, ww, hh = win
         origin = np.array([x + ww * 0.5, y + hh * 0.85], dtype=np.float32)
-        base_dir_vec = base_dir(origin, floor_c)  # 창 -> 바닥중심 방향
+        base_dir_vec = base_dir(origin, floor_c)
     else:
-        # fallback
         origin = np.array([Wimg * 0.8, H * 0.3], dtype=np.float32)
         base_dir_vec = np.array([0.0, 1.0], np.float32)
 
-    # --- DEPTH / STAB ---
+    # =========================
+    # DEPTH / STAB
+    # =========================
     depth = get_depth(img, device)
     if depth is None:
         depth = np.zeros((H, Wimg), np.float32)
@@ -121,20 +188,17 @@ def run_pipeline(
     scored = []
     MARGIN = 12
 
-    # --- FLOOR DEPTH STATS (for surface classification) ---
-    if depth is not None and depth_ok:
+    # floor depth stats for surface
+    if depth_ok:
         floor_depth = depth[core > 0]
         if floor_depth.size > 0:
-            floor_d_mean = float(np.mean(floor_depth))
             floor_d_p20 = float(np.percentile(floor_depth, 20))
             floor_d_p80 = float(np.percentile(floor_depth, 80))
         else:
-            floor_d_mean, floor_d_p20, floor_d_p80 = 0.0, 0.0, 1.0
+            floor_d_p20, floor_d_p80 = 0.0, 1.0
     else:
-        floor_d_mean, floor_d_p20, floor_d_p80 = 0.0, 0.0, 1.0
+        floor_d_p20, floor_d_p80 = 0.0, 1.0
 
-
-    # 후보점 기반 광량 히트맵
     light_map = np.zeros((H, Wimg), np.float32)
 
     for (x, y) in pts:
@@ -143,15 +207,6 @@ def run_pipeline(
 
         times, total = daily_light_area((x, y), origin, base_dir_vec, img)
 
-        if depth_ok and (len(scored) < 5):  # 상위 몇 번만 찍기
-            floor_depth = depth[core > 0]
-            fd_mean = float(np.mean(floor_depth))
-            fd_p20 = float(np.percentile(floor_depth, 20))
-            fd_p80 = float(np.percentile(floor_depth, 80))
-            print("[DEPTHCHK]", "pt=", (x, y), "d=", float(depth[y, x]), "floor_mean=", fd_mean, "p20/p80=", fd_p20,
-                  fd_p80)
-
-        # --- NEW: 창 origin 근처 후보 제거 (빛 점수에 끌려 이상한 위치 방지) ---
         od = float(np.hypot(x - float(origin[0]), y - float(origin[1])))
         if od < MIN_ORIGIN_DIST_PX:
             continue
@@ -164,25 +219,19 @@ def run_pipeline(
         if s_stab < MIN_STAB:
             continue
 
-        # occlusion
-        if not depth_ok:
-            occ = 0.0
-        else:
-            occ = occ_v8_depth((int(origin[0]), int(origin[1])), (x, y), depth, core)
+        occ = 0.0 if not depth_ok else occ_v8_depth((int(origin[0]), int(origin[1])), (x, y), depth, core)
 
         light_eff = total * (0.65 + 0.35 * s_stab) * (1.0 - OCCLUSION_WEIGHT_V8 * occ)
-        dval = float(depth[y, x]) if (depth is not None and depth_ok) else 0.0
+        dval = float(depth[y, x]) if depth_ok else 0.0
         surface = classify_surface_by_depth(dval, floor_d_p20, floor_d_p80)
 
         if light_eff > 0:
             light_map[y, x] = max(light_map[y, x], float(light_eff))
 
-
-        # ✅ 제품형: 스팟 점수는 식물과 분리 (plant_pen 제거)
         raw_score = (
-                W["LIGHT"] * float(light_eff) +
-                W["WALL"] * s_wall +
-                W["STAB"] * s_stab
+            W["LIGHT"] * float(light_eff) +
+            W["WALL"]  * s_wall +
+            W["STAB"]  * s_stab
         )
 
         meta = {
@@ -194,7 +243,6 @@ def run_pipeline(
             "stab": float(s_stab),
             "depth": float(dval),
             "surface": surface,
-
             "raw_score": float(raw_score),
             "surface_penalty": 0.0,
             "final_score": float(raw_score),
@@ -202,13 +250,12 @@ def run_pipeline(
 
         scored.append((float(raw_score), (int(x), int(y)), meta))
 
-    # --- 2-pass: floor 후보가 하나라도 있으면 other 감점 강화 ---
+    # surface penalty pass
     has_floor_candidate = any(m.get("surface") == "floor" for (_, _, m) in scored)
 
     scored2 = []
     for (raw_s, pt, meta) in scored:
         surface = meta.get("surface", "floor")
-
         apply_surface_penalty = (surface == "other")
         if SURFACE_PENALTY_ONLY_IF_HAS_FLOOR:
             apply_surface_penalty = apply_surface_penalty and has_floor_candidate
@@ -218,7 +265,6 @@ def run_pipeline(
 
         meta["surface_penalty"] = float(surface_pen)
         meta["final_score"] = float(final_s)
-
         scored2.append((float(final_s), pt, meta))
 
     scored = scored2
@@ -230,14 +276,16 @@ def run_pipeline(
 
     use_max = int(max_n) if (max_n is not None) else MAX_N
     chosen = cluster_and_pick(scored, cluster_dist=CLUSTER_DIST, max_total=use_max)
+    if not chosen:
+        raise RuntimeError("No spots chosen. Try lowering thresholds.")
 
-    # --- NEW: relative light level (within this room) ---
+    # relative light level
     chosen_light = [float(meta.get("light_eff", 0.0)) for (_, _, meta) in chosen]
     if len(chosen_light) >= 3:
         p20 = float(np.percentile(chosen_light, 20))
         p80 = float(np.percentile(chosen_light, 80))
     else:
-        p20, p80 = 0.0, 1e9  # fallback: 전부 medium 취급
+        p20, p80 = 0.0, 1e9
 
     def light_level(le: float) -> str:
         if le >= p80:
@@ -247,23 +295,17 @@ def run_pipeline(
         return "medium"
 
     def light_bias(times: dict) -> str:
-        # times: {"morning": x, "noon": y, "evening": z}
         if not isinstance(times, dict) or not times:
             return "unknown"
         k = max(times, key=lambda kk: float(times.get(kk, 0.0)))
         return str(k)
 
-    if not chosen:
-        raise RuntimeError("No spots chosen. Try lowering thresholds.")
-
-    # --- NEW: best_spot 재선정 (빛 쏠림 방지: 벽거리/안정성 우선) ---
-    # chosen은 (score, pt, meta)
+    # best spot reselect
     best_idx = 0
     best_val = -1e9
     for i, (s, pt, meta) in enumerate(chosen):
         wall = float(meta.get("wall", 0.0))
         stabv = float(meta.get("stab", 0.0))
-        # best 후보는 벽/경계 너무 가까우면 제외(단, 전부 제외되면 fallback)
         if wall < MIN_WALL_FOR_BEST:
             continue
         val = float(s) + BEST_STAB_BONUS * stabv + 0.05 * wall
@@ -271,7 +313,6 @@ def run_pipeline(
             best_val = val
             best_idx = i
 
-    # best_idx를 0번으로 swap해서 packed[0]이 best_spot이 되게 유지
     if best_idx != 0:
         chosen[0], chosen[best_idx] = chosen[best_idx], chosen[0]
 
@@ -279,22 +320,17 @@ def run_pipeline(
     for idx, (s, pt, meta) in enumerate(chosen, start=1):
         le = float(meta.get("light_eff", 0.0))
         times = meta.get("times", {}) or {}
-
-        # --- NEW: spot usage classification ---
-        y_norm = pt[1] / float(H)  # 화면 높이 기준 (0~1)
+        y_norm = pt[1] / float(H)
         stabv = float(meta.get("stab", 0.0))
         lvl = light_level(le)
         surf = meta.get("surface", "floor")
 
         if surf == "floor" and lvl in ("bright", "medium"):
             spot_usage = "floor_large"
-
         elif surf != "floor" and stabv > 0.55 and 0.35 < y_norm < 0.75:
             spot_usage = "table_small"
-
         elif lvl == "dim":
             spot_usage = "low_light"
-
         else:
             spot_usage = "avoid"
 
@@ -304,10 +340,8 @@ def run_pipeline(
             "raw_score": float(meta.get("raw_score", s)),
             "surface_penalty": float(meta.get("surface_penalty", 0.0)),
             "final_score": float(meta.get("final_score", s)),
-
             "pt": [int(pt[0]), int(pt[1])],
             "surface": surf,
-
             "features": {
                 "light_eff": le,
                 "occ": float(meta["occ"]),
@@ -315,19 +349,63 @@ def run_pipeline(
                 "stab": stabv,
                 "times": times,
             },
-
             "light_profile": {
                 "total": le,
                 "times": times,
                 "bias": light_bias(times),
                 "level": lvl,
             },
-
             "spot_usage": spot_usage,
-
             "top_plants": []
         })
 
+    # =========================
+    # PNP (ONLY ONE)
+    # =========================
+    pnp_result = None
+    try:
+        if isinstance(window_info, dict) and window_info.get("corners_4"):
+            img_corners_2d = np.array(window_info["corners_4"], dtype=np.float32)  # TL,TR,BR,BL
+
+            # 3D window rectangle model (meters) - 임시(71765 매칭 전)
+            Wm = 1.8
+            Hm = 1.5
+            obj_corners_3d = np.array([
+                [-Wm / 2, +Hm / 2, 0.0],  # TL
+                [+Wm / 2, +Hm / 2, 0.0],  # TR
+                [+Wm / 2, -Hm / 2, 0.0],  # BR
+                [-Wm / 2, -Hm / 2, 0.0],  # BL
+            ], dtype=np.float32)
+
+            K = make_K_from_fov(Wimg, H, fov_deg=65.0)
+            dist = np.zeros((4, 1), dtype=np.float32)
+
+            rvec, tvec, R = solve_pnp_from_4pts(
+                obj_corners_3d.tolist(),
+                img_corners_2d.tolist(),
+                K.tolist(),
+                dist=dist
+            )
+
+            n = window_normal_world(R, face_axis="z")
+
+            pnp_result = {
+                "K": K.tolist(),
+                "rvec": [float(x) for x in rvec.reshape(-1)],
+                "tvec": [float(x) for x in tvec.reshape(-1)],
+                "window_normal": [float(x) for x in n.reshape(-1)],
+                "model": {"Wm": Wm, "Hm": Hm, "plane": "z=0"},
+                "note": f"FOV_K + rectangle_3d_model + {window_info.get('source')}",
+            }
+        else:
+            pnp_result = {"error": "window_info.corners_4 missing"}
+
+    except Exception as e:
+        pnp_result = {"error": str(e), "note": "solvePnP failed"}
+
+    # =========================
+    # OUT
+    # =========================
     out = {
         "ts": float(time.time()),
         "image": image_path,
@@ -338,9 +416,32 @@ def run_pipeline(
         "light_origin": [float(origin[0]), float(origin[1])],
         "best_spot": packed[0],
         "spots": packed,
+        "window": window_info,     # ✅ 여기 1번만
+        "pnp": pnp_result,         # ✅ PNP도 1번만
     }
 
-    # --- NEW: spot_types summary for UI ---
+    # =========================
+    # WINDOW VIZ (FORCE SAVE)
+    # =========================
+    try:
+        viz2 = img.copy()
+        if win is not None:
+            x, y, ww, hh = win
+            cv2.rectangle(viz2, (int(x), int(y)), (int(x + ww), int(y + hh)), (0, 255, 255), 4)
+
+            if isinstance(window_info, dict) and window_info.get("corners_4"):
+                poly = np.array(window_info["corners_4"], dtype=np.int32).reshape(-1, 1, 2)
+                cv2.polylines(viz2, [poly], True, (0, 255, 255), 3)
+
+        viz_path2 = os.path.join(RESULT_DIR, "result_latest_viz_window.png")
+        ok = cv2.imwrite(viz_path2, viz2)
+        print("[VIZ_WINDOW] saved ->", viz_path2, "ok=", ok)
+    except Exception as e:
+        print("[WARN] VIZ_WINDOW save failed:", e)
+
+    # =========================
+    # spot_types summary
+    # =========================
     type_summary = {"bright": 0, "medium": 0, "dim": 0}
     bias_summary = {"morning": 0, "noon": 0, "evening": 0, "unknown": 0}
 
@@ -348,16 +449,14 @@ def run_pipeline(
         lp = s.get("light_profile", {})
         lvl = lp.get("level", "medium")
         bs = lp.get("bias", "unknown")
-
         type_summary[lvl] = int(type_summary.get(lvl, 0)) + 1
         bias_summary[bs] = int(bias_summary.get(bs, 0)) + 1
 
-    out["spot_types"] = {
-        "level_counts": type_summary,
-        "bias_counts": bias_summary,
-    }
+    out["spot_types"] = {"level_counts": type_summary, "bias_counts": bias_summary}
 
-    # --- SAVE JSON (result_latest.json) ---
+    # =========================
+    # SAVE JSON
+    # =========================
     if save_outputs:
         try:
             with open(RESULT_JSON_LATEST, "w", encoding="utf-8") as f:
@@ -366,20 +465,22 @@ def run_pipeline(
         except Exception as e:
             print("[WARN] json dump failed:", e)
 
-    # --- DEBUG VIZ ---
-    # --- DEBUG VIZ (SAFE) ---
+    # =========================
+    # DEBUG VIZ
+    # =========================
     if debug_viz:
         try:
             best_xy = tuple((out.get("best_spot") or {}).get("pt") or (0, 0))
-
             draw_debug(
                 image=img,
-                floor_mask=(core > 0),  # ✅ core는 이미 쓰고 있으니 그대로 OK
-                windows=None,  # ✅ 창 감지 아직 안 붙였으면 None
-                light_map=None,  # ✅ 라이트맵 없으면 None
+                floor_mask=(core > 0),
+                windows=None,
+                light_map=None,
                 best_point=best_xy,
                 save_path=os.path.join(RESULT_DIR, "result_latest_viz.png"),
             )
             print("[VIZ] saved ->", os.path.join(RESULT_DIR, "result_latest_viz.png"))
         except Exception as e:
             print("[WARN] draw_debug failed:", e)
+
+    return out
