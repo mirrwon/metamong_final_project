@@ -1,7 +1,7 @@
 // import { useNavigate } from "react-router-dom";
 import ProcessCarousel from "../components/home/ProcessCarousel";
 import FAQs from "../components/home/FAQs";
-import PlantData from "./PlantData";
+import PlantPreview from "../components/home/PlantPreview";
 // import { ROUTES } from "../constants/routes";
 import "./Home.css";
 
@@ -14,10 +14,20 @@ const Home = () => {
 
   return (
     <div className="home">   
-      <ProcessCarousel />
-      <PlantData />
-      <FAQs />
-      {/* <Button text="Start" type="primary" onClick={goChat} /> */}
+     <section className="home-section">
+        <ProcessCarousel />
+      </section>
+
+      <section className="home-section home-plants">
+        <h2 className="typo-title">Plant Catalog</h2>
+        <div className="ui-line" />
+        <PlantPreview />
+      </section>
+
+      <section className="home-section">
+        <FAQs />
+      </section>
+
     </div>
   );
 };
