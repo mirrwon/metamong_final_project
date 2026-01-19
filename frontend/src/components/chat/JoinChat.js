@@ -17,7 +17,7 @@ const normalizeMessages = (payload) => {
       role: item.role || "bot",
       text: item.text,
       timestamp: item.timestamp || null,
-      type: item.type, 
+      type: item.type,
       images: item.images,
     }));
 };
@@ -25,14 +25,13 @@ const normalizeMessages = (payload) => {
 const normalizePayload = (data) => {
   if (!data) return null;
 
-  
   const messagePayload =
     Array.isArray(data.messages) ? data.messages.find((m) => m && m.payload)?.payload : null;
 
   const raw =
     data.payload ||
     data.data?.payload ||
-    messagePayload || 
+    messagePayload ||
     (data.photos ? data : null);
 
   if (!raw) return null;
@@ -66,7 +65,6 @@ const normalizePayload = (data) => {
     input: resolvedInput,
   };
 };
-
 
 const formatTime = (timestamp) => {
   if (!timestamp) return "";
@@ -143,7 +141,6 @@ export default function Chat() {
     return parts.join(" / ");
   };
 
-  // ✅ 여기! eslint가 찾던 sendWithFilters
   const sendWithFilters = async () => {
     setFiltersSent(false);
 
@@ -186,7 +183,6 @@ export default function Chat() {
     }
   };
 
-  // ✅ 여기! eslint가 찾던 handleOptionSelect
   const handleOptionSelect = async (option) => {
     setMessages((prev) => [
       ...prev,
@@ -363,7 +359,6 @@ export default function Chat() {
       try {
         data = JSON.parse(event.data);
       } catch (error) {
-        // heartbeat/plain text는 무시 (error로 만들지 않음)
         return;
       }
 
@@ -460,7 +455,6 @@ export default function Chat() {
     const formData = new FormData();
     formData.append("image", imageFiles[0]);
     formData.append("meta", label);
-
 
     setStatus("loading");
     try {
@@ -594,140 +588,159 @@ export default function Chat() {
   };
 
   return (
-    <div className="chat">
-      <div className="">
-        <div className="">
-          <div>
-            <h2 className="">추천 AI</h2>
-            <p className="">고객님의 취향에 맞는 식물을 추천해드립니다.</p>
+    <div className="chatPage">
+      <div className="chatShell">
+        {/* Header */}
+        <header className="chatHeader">
+          <div className="chatHeader__title">
+            <h2 className="chatHeader__h2">추천 AI</h2>
+            <p className="chatHeader__p">고객님의 취향에 맞는 식물을 추천해드립니다.</p>
           </div>
-          <div className="">
-            <span className="" />
-            {statusText}
+          <div className="chatHeader__status">
+            <span className={`chatStatusDot chatStatusDot--${status}`} />
+            <span className="chatStatusText">{statusText}</span>
           </div>
-        </div>
+        </header>
 
-        <div className="" ref={listRef}>
-          {!hasMessages && <div className="">아직 수신된 메시지가 없습니다.</div>}
+        {/* List */}
+        <div className="chatList" ref={listRef}>
+          {!hasMessages && <div className="chatEmpty">아직 수신된 메시지가 없습니다.</div>}
 
-          {messages.map((message) => (
-            <div key={message.id} className="">
-              {message.type === "payload" && payload?.photos?.length ? (
-                <div className="">
-                  <div className="">사진과 속성</div>
+          {messages.map((message) => {
+            const isUser = message.role === "user";
+            const rowClass = isUser ? "msgRow msgRow--user" : "msgRow msgRow--bot";
 
-                  <div className="">
-                    {payload.photos.map((photo, index) => (
-                      <div key={photo.id || index} className="">
-                        <div className="">{photo.label || `사진 ${index + 1}`}</div>
-                        {photo.url || photo.imageUrl ? (
-                          <img
-                            className=""
-                            src={photo.url || photo.imageUrl}
-                            alt={photo.label || `사진 ${index + 1}`}
-                            onClick={() =>
-                              openLightbox(
-                                payload.photos.map((item, idx) => ({
-                                  name: item.label || `사진 ${idx + 1}`,
-                                  url: item.url || item.imageUrl,
-                                })),
-                                index
-                              )
-                            }
-                          />
-                        ) : (
-                          <div className="">이미지 없음</div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
+            return (
+              <div key={message.id} className={rowClass}>
+                {/* bot avatar */}
+                {!isUser && <div className="msgAvatar" aria-hidden />}
 
-                  {payload.attributeSchema.length > 0 && (
-                    <div className="">
-                      <div className="" style={attributeGridTemplate || undefined}>
-                        <span>사진</span>
-                        {payload.attributeSchema.map((schema) => (
-                          <span key={schema.key}>{schema.label}</span>
+                {/* bubble area */}
+                <div className="msgBody">
+                  {message.type === "payload" && payload?.photos?.length ? (
+                    <div className="payloadCard">
+                      <div className="payloadCard__title">사진과 속성</div>
+
+                      <div className="payloadGallery">
+                        {payload.photos.map((photo, index) => (
+                          <div key={photo.id || index} className="payloadGallery__item">
+                            <div className="payloadGallery__label">
+                              {photo.label || `사진 ${index + 1}`}
+                            </div>
+
+                            {photo.url || photo.imageUrl ? (
+                              <img
+                                className="payloadGallery__img"
+                                src={photo.url || photo.imageUrl}
+                                alt={photo.label || `사진 ${index + 1}`}
+                                onClick={() =>
+                                  openLightbox(
+                                    payload.photos.map((item, idx) => ({
+                                      name: item.label || `사진 ${idx + 1}`,
+                                      url: item.url || item.imageUrl,
+                                    })),
+                                    index
+                                  )
+                                }
+                              />
+                            ) : (
+                              <div className="payloadGallery__empty">이미지 없음</div>
+                            )}
+                          </div>
                         ))}
                       </div>
 
-                      {payload.photos.map((photo, index) => (
-                        <div
-                          key={photo.id || index}
-                          className=""
-                          style={attributeGridTemplate || undefined}
-                        >
-                          <span className="">{photo.label || `사진 ${index + 1}`}</span>
-                          {payload.attributeSchema.map((schema) => (
-                            <span key={schema.key} className="">
-                              {photo.attributes?.[schema.key] || "-"}
-                            </span>
+                      {payload.attributeSchema.length > 0 && (
+                        <div className="payloadTable">
+                          <div className="payloadTable__head" style={attributeGridTemplate || undefined}>
+                            <span className="payloadTable__th">사진</span>
+                            {payload.attributeSchema.map((schema) => (
+                              <span key={schema.key} className="payloadTable__th">
+                                {schema.label}
+                              </span>
+                            ))}
+                          </div>
+
+                          {payload.photos.map((photo, index) => (
+                            <div
+                              key={photo.id || index}
+                              className="payloadTable__row"
+                              style={attributeGridTemplate || undefined}
+                            >
+                              <span className="payloadTable__td payloadTable__td--label">
+                                {photo.label || `사진 ${index + 1}`}
+                              </span>
+                              {payload.attributeSchema.map((schema) => (
+                                <span key={schema.key} className="payloadTable__td">
+                                  {photo.attributes?.[schema.key] || "-"}
+                                </span>
+                              ))}
+                            </div>
                           ))}
                         </div>
-                      ))}
-                    </div>
-                  )}
+                      )}
 
-                  <div className="">
-                    <div className="">마음에 들지 않으면 상세 입력으로 이어갈까요?</div>
-                    <div className="">
-                      <Button
-                        type="option"
-                        className=""
-                        onClick={() => handleDetailChoice("ok")}
-                        text="마음에 들어요"
-                      />
-                      <Button
-                        type="primary"
-                        className=""
-                        onClick={() => handleDetailChoice("detail")}
-                        text="상세 입력"
-                      />
-                    </div>
-                  </div>
-                </div>
-              ) : message.type === "images" ? (
-                <div className="">
-                  <div className="">
-                    {message.images?.map((image) => (
-                      <div key={image.url} className="">
-                        <div className="">{image.name}</div>
-                        <img
-                          className=""
-                          src={image.url}
-                          alt={image.name}
-                          onClick={() =>
-                            openLightbox(
-                              message.images.map((item) => ({
-                                name: item.name,
-                                url: item.url,
-                              })),
-                              message.images.findIndex((item) => item.url === image.url)
-                            )
-                          }
-                        />
+                      <div className="payloadActions">
+                        <div className="payloadActions__q">마음에 들지 않으면 상세 입력으로 이어갈까요?</div>
+                        <div className="payloadActions__btns">
+                          <Button
+                            type="option"
+                            onClick={() => handleDetailChoice("ok")}
+                            text="마음에 들어요"
+                          />
+                          <Button
+                            type="primary"
+                            onClick={() => handleDetailChoice("detail")}
+                            text="상세 입력"
+                          />
+                        </div>
                       </div>
-                    ))}
-                  </div>
+                    </div>
+                  ) : message.type === "images" ? (
+                    <div className="imgMsg">
+                      <div className="imgMsg__grid">
+                        {message.images?.map((image) => (
+                          <button
+                            key={image.url}
+                            type="button"
+                            className="imgMsg__item"
+                            onClick={() =>
+                              openLightbox(
+                                message.images.map((item) => ({
+                                  name: item.name,
+                                  url: item.url,
+                                })),
+                                message.images.findIndex((item) => item.url === image.url)
+                              )
+                            }
+                          >
+                            <div className="imgMsg__name">{image.name}</div>
+                            <img className="imgMsg__img" src={image.url} alt={image.name} />
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="msgBubble">{message.text}</div>
+                      {message.timestamp && (
+                        <div className="msgTime">{formatTime(message.timestamp)}</div>
+                      )}
+                    </>
+                  )}
                 </div>
-              ) : (
-                <>
-                  <div className="">{message.text}</div>
-                  {message.timestamp && <div className="">{formatTime(message.timestamp)}</div>}
-                </>
-              )}
-            </div>
-          ))}
+              </div>
+            );
+          })}
 
           {/* 옵션 버튼 */}
           {payload?.options?.length > 0 && (
-            <div className="">
-              <div className="">
+            <div className="optionBar">
+              <div className="optionBar__grid">
                 {payload.options.map((option) => (
                   <Button
                     key={option}
                     type="option"
-                    className=""
                     onClick={() => handleOptionSelect(option)}
                     text={option}
                   />
@@ -737,43 +750,49 @@ export default function Chat() {
           )}
 
           {/* filters */}
-          {payload?.type === "filters" &&
-            activeFilterGroups.map((group) => (
-              <div key={group.key}>
-                <div>[{group.label}]</div>
-                {group.options.map((option) => (
-                  <label key={`${group.key}-${option}`}>
-                    <input
-                      type="checkbox"
-                      checked={(selectedFilters[group.key] || []).includes(option)}
-                      disabled={filtersSent}
-                      onChange={() => toggleFilterOption(group.key, option)}
-                    />
-                    {option}
-                  </label>
-                ))}
-              </div>
-            ))}
+          {payload?.type === "filters" && (
+            <div className="filterPanel">
+              {activeFilterGroups.map((group) => (
+                <div key={group.key} className="filterGroup">
+                  <div className="filterGroup__title">[{group.label}]</div>
+                  <div className="filterGroup__options">
+                    {group.options.map((option) => (
+                      <label key={`${group.key}-${option}`} className="filterItem">
+                        <input
+                          className="filterItem__check"
+                          type="checkbox"
+                          checked={(selectedFilters[group.key] || []).includes(option)}
+                          disabled={filtersSent}
+                          onChange={() => toggleFilterOption(group.key, option)}
+                        />
+                        <span className="filterItem__text">{option}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              ))}
 
-          {payload?.type === "filters" && !filtersSent && (
-            <div>
-              <button type="button" onClick={sendWithFilters}>
-                전송
-              </button>
+              {!filtersSent && (
+                <div className="filterPanel__send">
+                  <button type="button" className="chatBtn" onClick={sendWithFilters}>
+                    전송
+                  </button>
+                </div>
+              )}
             </div>
           )}
 
           {/* text input */}
           {(payload?.input?.type === "text" || detailMode) && !shouldRenderInlineDetailInput && (
-            <form className="" onSubmit={handleSubmit}>
+            <form className="composer" onSubmit={handleSubmit}>
               <input
-                className=""
+                className="composer__input"
                 type="text"
                 value={input}
                 onChange={(event) => setInput(event.target.value)}
                 placeholder={textInputPlaceholder}
               />
-              <button className="" type="submit">
+              <button className="chatBtn" type="submit">
                 전송
               </button>
             </form>
@@ -781,12 +800,12 @@ export default function Chat() {
 
           {/* time_range */}
           {payload?.input?.type === "time_range" && (
-            <form className="" onSubmit={handleTimeSubmit}>
-              <div className="">
-                <label className="">
-                  시작
+            <form className="composer composer--time" onSubmit={handleTimeSubmit}>
+              <div className="timeRange">
+                <label className="timeRange__field">
+                  <span className="timeRange__label">시작</span>
                   <select
-                    className=""
+                    className="timeRange__select"
                     value={startHour}
                     onChange={(event) => setStartHour(event.target.value)}
                   >
@@ -798,11 +817,13 @@ export default function Chat() {
                     ))}
                   </select>
                 </label>
-                <span className="">~</span>
-                <label className="">
-                  종료
+
+                <span className="timeRange__dash">~</span>
+
+                <label className="timeRange__field">
+                  <span className="timeRange__label">종료</span>
                   <select
-                    className=""
+                    className="timeRange__select"
                     value={endHour}
                     onChange={(event) => setEndHour(event.target.value)}
                   >
@@ -815,7 +836,8 @@ export default function Chat() {
                   </select>
                 </label>
               </div>
-              <button className="" type="submit">
+
+              <button className="chatBtn" type="submit">
                 전송
               </button>
             </form>
@@ -823,20 +845,21 @@ export default function Chat() {
 
           {/* image */}
           {payload?.input?.type === "image" && (
-            <form className="" onSubmit={handleImageSubmit}>
-              <label className="">
+            <form className="composer composer--image" onSubmit={handleImageSubmit}>
+              <label className="filePick">
                 <input
-                  className=""
+                  className="filePick__input"
                   type="file"
                   accept="image/*"
                   multiple
                   onChange={handleImageChange}
                 />
-                <span className="">
+                <span className="filePick__text">
                   {imageFiles.length ? `선택된 이미지 ${imageFiles.length}장` : "공간 사진을 업로드해주세요"}
                 </span>
               </label>
-              <button className="" type="submit">
+
+              <button className="chatBtn" type="submit">
                 전송
               </button>
             </form>
@@ -847,40 +870,42 @@ export default function Chat() {
 
         {/* Lightbox */}
         {lightboxImages.length > 0 && (
-          <div className="" onClick={closeLightbox}>
-            <button className="" type="button" onClick={closeLightbox}>
-              닫기
-            </button>
-            <button
-              className=""
-              type="button"
-              onClick={(event) => {
-                event.stopPropagation();
-                handleDownload();
-              }}
-            >
-              이미지 다운로드
-            </button>
+          <div className="lightbox" onClick={closeLightbox}>
+            <div className="lightbox__bar" onClick={(event) => event.stopPropagation()}>
+              <button className="lightbox__btn" type="button" onClick={closeLightbox}>
+                닫기
+              </button>
+              <button
+                className="lightbox__btn"
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  handleDownload();
+                }}
+              >
+                이미지 다운로드
+              </button>
 
-            {lightboxImages.length > 1 && (
-              <>
-                <button className="" type="button" onClick={showPrev}>
-                  이전
-                </button>
-                <button className="" type="button" onClick={showNext}>
-                  다음
-                </button>
-              </>
-            )}
+              {lightboxImages.length > 1 && (
+                <>
+                  <button className="lightbox__btn" type="button" onClick={showPrev}>
+                    이전
+                  </button>
+                  <button className="lightbox__btn" type="button" onClick={showNext}>
+                    다음
+                  </button>
+                </>
+              )}
+            </div>
 
-            <div className="" onClick={(event) => event.stopPropagation()}>
+            <div className="lightbox__stage" onClick={(event) => event.stopPropagation()}>
               <img
-                className=""
+                className="lightbox__img"
                 src={lightboxImages[lightboxIndex]?.url}
                 alt={lightboxImages[lightboxIndex]?.name || "확대 이미지"}
               />
               {lightboxImages[lightboxIndex]?.name && (
-                <div className="">{lightboxImages[lightboxIndex].name}</div>
+                <div className="lightbox__name">{lightboxImages[lightboxIndex].name}</div>
               )}
             </div>
           </div>
