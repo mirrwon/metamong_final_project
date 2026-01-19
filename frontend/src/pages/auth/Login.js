@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { login } from '../../services/authService';
+import { storeUser } from '../../services/session';
 import JoinLogin from '../../components/auth/JoinLogin';
 import Button from '../../components/common/Button';
 import './Login.css';
@@ -16,7 +17,7 @@ const Login = ({ setUser }) => {
     try {
       setError('');
       const res = await login(formData);
-      localStorage.setItem('user', JSON.stringify(res.data));
+      storeUser(res.data);
       setUser(res.data);
       nav('/home');
     } catch (err) {

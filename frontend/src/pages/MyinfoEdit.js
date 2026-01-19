@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import Button from '../components/common/Button';
 import { ROUTES } from '../constants/routes';
 import { updateProfile } from '../services/authService';
+import { readStoredUser, storeUser } from '../services/session';
 import './MyinfoEdit.css';
 
 const withCacheBust = (url, cacheBust) => {
@@ -16,11 +17,7 @@ const MyinfoEdit = ({ user, setUser }) => {
   const nav = useNavigate();
 
   const storedUser = useMemo(() => {
-    try {
-      return JSON.parse(localStorage.getItem("user"));
-    } catch {
-      return null;
-    }
+    return readStoredUser();
   }, []);
 
   const effectiveUser = storedUser || user;
@@ -35,6 +32,9 @@ const MyinfoEdit = ({ user, setUser }) => {
       birthDate: effectiveUser?.birthDate || '',
       phone: effectiveUser?.phone || '010-1234-5678',
       email: effectiveUser?.email || 'onlywon@gmail.com',
+      zipcode: effectiveUser?.zipcode || '',
+      address1: effectiveUser?.address1 || '',
+      address2: effectiveUser?.address2 || '',
     }),
     [effectiveUser]
   );
@@ -69,6 +69,26 @@ const MyinfoEdit = ({ user, setUser }) => {
     setError('');
   };
 
+  const handleAddressSearch = () => {
+    if (!window.daum || !window.daum.Postcode) {
+      setError('Address search is unavailable.');
+      return;
+    }
+
+    new window.daum.Postcode({
+      oncomplete: (data) => {
+        const address =
+          data.roadAddress || data.jibunAddress || data.address || '';
+        setMyinfo((prev) => ({
+          ...prev,
+          zipcode: data.zonecode || '',
+          address1: address,
+        }));
+        setError('');
+      },
+    }).open();
+  };
+
   const goMyinfo = (e) => {
     if (e) e.preventDefault();
     nav(ROUTES.MYINFO);
@@ -87,6 +107,9 @@ const MyinfoEdit = ({ user, setUser }) => {
         birthDate: myinfo.birthDate,
         phone: myinfo.phone,
         email: myinfo.email,
+        zipcode: myinfo.zipcode,
+        address1: myinfo.address1,
+        address2: myinfo.address2,
         profileImage: profileImageFile || undefined,
       };
 
@@ -94,7 +117,7 @@ const MyinfoEdit = ({ user, setUser }) => {
       const cacheBust = Date.now();
       const nextUser = { ...res.data, profileImageCacheBust: cacheBust };
 
-      localStorage.setItem('user', JSON.stringify(nextUser));
+      storeUser(nextUser);
       if (setUser) setUser(nextUser);
 
       nav(ROUTES.MYINFO);
@@ -218,6 +241,43 @@ const MyinfoEdit = ({ user, setUser }) => {
               value={myinfo.email}
               onChange={handleChangeMyinfo}
               placeholder="email@example.com"
+              className="ui-input"
+            />
+
+            <div className="address-row">
+              <input
+                name="zipcode"
+                type="text"
+                value={myinfo.zipcode}
+                onChange={handleChangeMyinfo}
+                placeholder="우편번호"
+                className="ui-input"
+                readOnly
+              />
+              <button
+                type="button"
+                onClick={handleAddressSearch}
+                className="ui-btn ui-btn-primary ui-btn--compact address-search"
+              >
+                주소 검색
+              </button>
+            </div>
+
+            <input
+              name="address1"
+              type="text"
+              value={myinfo.address1}
+              onChange={handleChangeMyinfo}
+              placeholder="기본 주소"
+              className="ui-input"
+            />
+
+            <input
+              name="address2"
+              type="text"
+              value={myinfo.address2}
+              onChange={handleChangeMyinfo}
+              placeholder="상세 주소"
               className="ui-input"
             />
           </section>

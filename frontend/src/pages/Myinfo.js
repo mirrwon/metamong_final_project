@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import Button from '../components/common/Button';
 import { ROUTES } from '../constants/routes';
 import api from '../services/api';
+import { readStoredUser } from '../services/session';
 import './Myinfo.css';
 
 const withCacheBust = (url, cacheBust) => {
@@ -33,11 +34,7 @@ const Myinfo = ({ user }) => {
   const [resultError, setResultError] = useState('');
 
   const storedUser = useMemo(() => {
-    try {
-      return JSON.parse(localStorage.getItem('user'));
-    } catch (error) {
-      return null;
-    }
+    return readStoredUser();
   }, [location.key]);
 
   // Prefer localStorage so updated profile shows immediately after redirect.
@@ -52,6 +49,9 @@ const Myinfo = ({ user }) => {
       birthDate: '1994-10-19',
       phone: '010-1234-5678',
       email: 'onlywon@gmail.com',
+      zipcode: '',
+      address1: '',
+      address2: '',
       name: '혜원',
     };
 
@@ -125,6 +125,9 @@ const Myinfo = ({ user }) => {
             <p>생년월일: {myinfo.birthDate}</p>
             <p>연락처: {myinfo.phone}</p>
             <p>e-mail: {myinfo.email}</p>
+            {myinfo.zipcode ? <p>Postal code: {myinfo.zipcode}</p> : null}
+            {myinfo.address1 ? <p>Address: {myinfo.address1}</p> : null}
+            {myinfo.address2 ? <p>Address detail: {myinfo.address2}</p> : null}
           </div>
 
           {/* 버튼 */}

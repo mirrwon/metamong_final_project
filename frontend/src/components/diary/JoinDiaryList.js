@@ -4,6 +4,7 @@ import Button from "../common/Button";
 import api from "../../services/api";
 import "./JoinDiaryList.css";
 import { getStoredUsername } from "../../services/user";
+import { fetchWithSession } from "../../services/session";
 
 const API_BASE = "/api/diary";
 const BACKEND_ORIGIN = "http://localhost:8000";
@@ -75,7 +76,7 @@ const JoinDiaryList = () => {
         return;
       } catch (error) {
         try {
-          const res = await fetch(`${API_BASE}${queryString}`);
+          const res = await fetchWithSession(`${API_BASE}${queryString}`);
           if (!res.ok) throw new Error("failed");
           const data = await res.json();
           const list = normalizeDiaryItems(data);

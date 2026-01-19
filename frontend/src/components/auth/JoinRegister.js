@@ -13,6 +13,9 @@ const JoinRegister = ({ onSubmit }) => {
     birthDate: "",
     phone: "",
     email: "",
+    zipcode: "",
+    address1: "",
+    address2: "",
   });
 
   const [previewUrl, setPreviewUrl] = useState("");
@@ -41,6 +44,26 @@ const JoinRegister = ({ onSubmit }) => {
     setFormError("");
   };
 
+  const handleAddressSearch = () => {
+    if (!window.daum || !window.daum.Postcode) {
+      setFormError("Address search is unavailable.");
+      return;
+    }
+
+    new window.daum.Postcode({
+      oncomplete: (data) => {
+        const address =
+          data.roadAddress || data.jibunAddress || data.address || "";
+        setFormData((prev) => ({
+          ...prev,
+          zipcode: data.zonecode || "",
+          address1: address,
+        }));
+        setFormError("");
+      },
+    }).open();
+  };
+
   const handleSubmit = (e) => {
     e.preventDefault();
 
@@ -58,6 +81,9 @@ const JoinRegister = ({ onSubmit }) => {
       birthDate: formData.birthDate,
       phone: formData.phone,
       email: formData.email,
+      zipcode: formData.zipcode,
+      address1: formData.address1,
+      address2: formData.address2,
       profileImage: formData.profileImage,
     };
 
@@ -176,6 +202,43 @@ const JoinRegister = ({ onSubmit }) => {
             placeholder="email@example.com"
             className="ui-input"
             required
+          />
+
+          <div className="address-row">
+            <input
+              name="zipcode"
+              type="text"
+              value={formData.zipcode}
+              onChange={handleChange}
+              placeholder="우편번호"
+              className="ui-input"
+              readOnly
+            />
+            <button
+              type="button"
+              onClick={handleAddressSearch}
+              className="ui-btn ui-btn-primary ui-btn--compact address-search"
+            >
+              주소 검색
+            </button>
+          </div>
+
+          <input
+            name="address1"
+            type="text"
+            value={formData.address1}
+            onChange={handleChange}
+            placeholder="기본 주소"
+            className="ui-input"
+          />
+
+          <input
+            name="address2"
+            type="text"
+            value={formData.address2}
+            onChange={handleChange}
+            placeholder="상세 주소"
+            className="ui-input"
           />
 
           {formError && (

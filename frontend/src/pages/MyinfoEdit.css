@@ -27,6 +27,22 @@
   margin-bottom: var(--s-5);
 }
 
+.address-row {
+  display: flex;
+  gap: var(--s-2);
+  align-items: center;
+}
+
+.address-row .ui-input {
+  flex: 1;
+  min-width: 220px;
+}
+
+.address-search {
+  white-space: nowrap;
+  min-width: 110px;
+}
+
 /* 섹션 제목은 좌측 정렬(가독성) */
 .myinfoedit-form section > h2 {
   text-align: left;
