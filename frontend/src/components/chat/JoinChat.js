@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Button from "../common/Button";
+import { fetchWithSession } from "../../services/session";
 import "./JoinChat.css";
 
 const API_BASE = "http://localhost:8000/api/chat";
@@ -160,7 +161,7 @@ export default function Chat() {
 
     setStatus("loading");
     try {
-      const response = await fetch(API_BASE, {
+      const response = await fetchWithSession(API_BASE, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -199,7 +200,7 @@ export default function Chat() {
 
     setStatus("loading");
     try {
-      const response = await fetch(API_BASE, {
+      const response = await fetchWithSession(API_BASE, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -230,7 +231,7 @@ export default function Chat() {
     const fetchMessages = async () => {
       setStatus("loading");
       try {
-        const response = await fetch(API_BASE, { method: "GET" });
+        const response = await fetchWithSession(API_BASE, { method: "GET" });
         if (!response.ok) throw new Error("failed");
 
         const data = await response.json();
@@ -253,7 +254,7 @@ export default function Chat() {
   useEffect(() => {
     const fetchFilters = async () => {
       try {
-        const response = await fetch(`${API_BASE}/filters`);
+        const response = await fetchWithSession(`${API_BASE}/filters`);
         if (!response.ok) throw new Error("failed");
         const data = await response.json();
 
@@ -404,7 +405,7 @@ export default function Chat() {
 
     setStatus("loading");
     try {
-      const response = await fetch(API_BASE, {
+      const response = await fetchWithSession(API_BASE, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -463,7 +464,7 @@ export default function Chat() {
 
     setStatus("loading");
     try {
-      const response = await fetch(IMAGE_API, {
+      const response = await fetchWithSession(IMAGE_API, {
         method: "POST",
         body: formData,
       });
@@ -501,7 +502,7 @@ export default function Chat() {
 
     setStatus("loading");
     try {
-      const response = await fetch(API_BASE, {
+      const response = await fetchWithSession(API_BASE, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -558,7 +559,7 @@ export default function Chat() {
 
     setStatus("loading");
     try {
-      const response = await fetch(API_BASE, {
+      const response = await fetchWithSession(API_BASE, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

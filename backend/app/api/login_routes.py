@@ -99,6 +99,9 @@ def register(
     profileImage: Optional[UploadFile] = File(None),
     age: Optional[str] = Form(None),
     gender: Optional[str] = Form(None),
+    zipcode: Optional[str] = Form(None),
+    address1: Optional[str] = Form(None),
+    address2: Optional[str] = Form(None),
 ) -> JSONResponse:
     path = _user_path(username)
     if os.path.exists(path):
@@ -114,6 +117,9 @@ def register(
         "email": email,
         "age": age,
         "gender": gender,
+        "zipcode": zipcode,
+        "address1": address1,
+        "address2": address2,
         "created_at": _now_iso(),
     }
 
@@ -160,6 +166,9 @@ def update_profile(
     profileImage: Optional[UploadFile] = File(None),
     age: Optional[str] = Form(None),
     gender: Optional[str] = Form(None),
+    zipcode: Optional[str] = Form(None),
+    address1: Optional[str] = Form(None),
+    address2: Optional[str] = Form(None),
 ) -> JSONResponse:
     path = _user_path(username)
     record = _load_user(path)
@@ -171,6 +180,9 @@ def update_profile(
         "email": email,
         "age": age,
         "gender": gender,
+        "zipcode": zipcode,
+        "address1": address1,
+        "address2": address2,
     }
     for key, value in updates.items():
         if value is not None:

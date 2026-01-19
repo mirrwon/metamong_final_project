@@ -32,6 +32,22 @@
   text-align: left;
 }
 
+.address-row {
+  display: flex;
+  gap: var(--s-2);
+  align-items: center;
+}
+
+.address-row .ui-input {
+  flex: 1;
+  min-width: 220px;
+}
+
+.address-search {
+  white-space: nowrap;
+  min-width: 110px;
+}
+
 
 
 /* 프로필 영역 배치 */

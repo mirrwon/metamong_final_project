@@ -1,9 +1,16 @@
 import "./styles/tokens.css";
 import "./styles/components.css"
 import "./styles/layout.css"
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { useState } from 'react';
 import { ROUTES } from './constants/routes';
+import {
+  clearSession,
+  readStoredUser,
+  SESSION_EXPIRED_EVENT,
+  touchActivity,
+  isSessionExpired,
+} from './services/session';
 
 //이미지 배경으로 설정
 import { useEffect } from "react";
@@ -28,13 +35,28 @@ import DiaryEdit from './pages/DiaryEdit';
 // layout (공통 레이아웃)
 import Layout from './components/layout/Layout';
 
+const SessionTracker = ({ user, onLogout }) => {
+  const location = useLocation();
+
+  useEffect(() => {
+    if (!user) return;
+    if (isSessionExpired()) {
+      onLogout();
+      return;
+    }
+    touchActivity();
+  }, [location.key, user, onLogout]);
+
+  return null;
+};
+
 function App() {
   // localStorage에서 user 정보 불러와 초기 상태 설정
-  const [user, setUser] = useState(JSON.parse(localStorage.getItem('user')));
+  const [user, setUser] = useState(readStoredUser());
 
   // 로그아웃: localStorage 비우고 user 상태도 null로
   const handleLogout = () => {
-    localStorage.removeItem('user');
+    clearSession();
     setUser(null);
   };
 
@@ -50,11 +72,23 @@ function App() {
     };
   }, []);
 
+  useEffect(() => {
+    const handleSessionExpired = () => {
+      setUser(null);
+    };
+
+    window.addEventListener(SESSION_EXPIRED_EVENT, handleSessionExpired);
+    return () => {
+      window.removeEventListener(SESSION_EXPIRED_EVENT, handleSessionExpired);
+    };
+  }, []);
+
 
 
   return (
     <div className="App">
       <BrowserRouter>
+        <SessionTracker user={user} onLogout={handleLogout} />
         {/* Layout: Header/Footer 등 공통 UI (로그아웃 핸들러도 내려줌) */}
         <Layout user={user} onLogout={handleLogout}>
           <Routes>
