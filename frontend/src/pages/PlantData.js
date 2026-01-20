@@ -18,6 +18,7 @@ const PlantData = () => {
   const [total, setTotal] = useState(null);
   const [prefetching, setPrefetching] = useState(false);
   const inFlightRef = useRef(false);
+  const pageCacheRef = useRef({});
 
   const pageSize = 10;
 
@@ -28,19 +29,20 @@ const PlantData = () => {
       if (inFlightRef.current) return;
       inFlightRef.current = true;
 
-      if (pageCache[index]) {
+      const cachedPage = pageCacheRef.current[index];
+      if (cachedPage) {
         if (showLoading) {
           setLoading(true);
           setItems([]);
           setTimeout(() => {
-            setItems(pageCache[index]);
+            setItems(cachedPage);
             setError('');
             setLoading(false);
             inFlightRef.current = false;
           }, 0);
           return;
         }
-        setItems(pageCache[index]);
+        setItems(cachedPage);
         setError('');
         inFlightRef.current = false;
         return;
@@ -59,7 +61,11 @@ const PlantData = () => {
         });
         const nextItems = Array.isArray(response?.data?.items) ? response.data.items : [];
         setItems(nextItems);
-        setPageCache((prev) => ({ ...prev, [index]: nextItems }));
+        setPageCache((prev) => {
+          const updated = { ...prev, [index]: nextItems };
+          pageCacheRef.current = updated;
+          return updated;
+        });
         setTotal(Number.isInteger(response?.data?.total) ? response.data.total : null);
         setError('');
       } catch (err) {
@@ -69,12 +75,12 @@ const PlantData = () => {
         inFlightRef.current = false;
       }
     },
-    [pageCache, pageSize]
+    [pageSize]
   );
 
   const prefetchPlants = useCallback(
     async (index) => {
-      if (prefetching || pageCache[index]) return;
+      if (prefetching || pageCacheRef.current[index]) return;
       const offset = index * pageSize;
       setPrefetching(true);
       try {
@@ -85,13 +91,17 @@ const PlantData = () => {
           },
         });
         const nextItems = Array.isArray(response?.data?.items) ? response.data.items : [];
-        setPageCache((prev) => ({ ...prev, [index]: nextItems }));
+        setPageCache((prev) => {
+          const updated = { ...prev, [index]: nextItems };
+          pageCacheRef.current = updated;
+          return updated;
+        });
         setTotal(Number.isInteger(response?.data?.total) ? response.data.total : null);
       } finally {
         setPrefetching(false);
       }
     },
-    [pageCache, pageSize, prefetching]
+    [pageSize, prefetching]
   );
 
   useEffect(() => {
@@ -123,7 +133,7 @@ const PlantData = () => {
 
   if (loading) {
     return (
-      <div className="l-cover">
+      <div className="l-cover plantdata-page">
         <div className="catalog-loading">
           <p className="typo-title">Loading...</p>
         </div>
@@ -132,8 +142,8 @@ const PlantData = () => {
   }
 
   return (
-    <div className="l-cover">
-      <div className="l-cover-center">
+    <div className="l-cover plantdata-page">
+      <div className="l-cover-center plantdata-center">
         <h1 className="typo-title">Plant Data</h1>
         <div className="ui-line" />
 
@@ -157,7 +167,6 @@ const PlantData = () => {
               )}
               <header className="catalog-header">
                 <h2 className="catalog-title">{plant.name}</h2>
-                {plant.type ? <span className="catalog-chip">{plant.type}</span> : null}
               </header>
               <div className="catalog-meta">
                 <p>Size: {plant.size || 'n/a'}</p>
@@ -174,6 +183,7 @@ const PlantData = () => {
                   Pet safe:{' '}
                   {plant.pet_safe === null ? 'n/a' : plant.pet_safe ? 'yes' : 'no'}
                 </p>
+                {plant.type ? <span className="catalog-chip">{plant.type}</span> : null}
               </div>
             </article>
           ))}
