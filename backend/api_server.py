@@ -1,6 +1,7 @@
 import os
 import json
 import time
+import requests
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -53,6 +54,7 @@ app.include_router(login_router)
 
 _plants_cache = {}
 _plants_key_cache = {}
+_plant_image_cache = {}
 # (선택) backend 루트 경로가 필요하면 유지
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -127,6 +129,44 @@ def _get_cached_keys(r, prefix: str, cache_ttl: int) -> list:
     return keys
 
 
+def _select_fallback_plant_image(plant_id: str | None) -> str | None:
+    base_url = os.getenv("VERCEL_PLANT_IMAGE_BASE_URL", "").strip()
+    if not base_url or not plant_id:
+        return None
+
+    exts_raw = os.getenv("VERCEL_PLANT_IMAGE_EXTS", ".jpg,.png")
+    exts = []
+    for ext in exts_raw.split(","):
+        cleaned = ext.strip()
+        if not cleaned:
+            continue
+        if not cleaned.startswith("."):
+            cleaned = f".{cleaned}"
+        exts.append(cleaned)
+    if not exts:
+        exts = [".jpg", ".png"]
+
+    normalized_base = base_url.rstrip("/")
+    cache_ttl = 60 * 10
+    for ext in exts:
+        url = f"{normalized_base}/plant_{plant_id}{ext}"
+        cached = _plant_image_cache.get(url)
+        if cached and (time.time() - cached["ts"] <= cache_ttl):
+            if cached["ok"]:
+                return url
+            continue
+        ok = False
+        try:
+            resp = requests.head(url, timeout=3)
+            ok = resp.status_code == 200
+        except Exception:
+            ok = False
+        _plant_image_cache[url] = {"ts": time.time(), "ok": ok}
+        if ok:
+            return url
+    return None
+
+
 def _normalize_plant_payload(raw, key: str, prefix: str) -> dict:
     if not isinstance(raw, dict):
         raw = {}
@@ -142,8 +182,13 @@ def _normalize_plant_payload(raw, key: str, prefix: str) -> dict:
     else:
         pet_safe = pet_target == "\uc5c6\uc74c" and pet_symptom == "\uc5c6\uc74c"
 
+    plant_id = key[len(prefix) :] if prefix and key.startswith(prefix) else key
+    image = raw.get("image") or raw.get("\uc774\ubbf8\uc9c0")
+    if not image:
+        image = _select_fallback_plant_image(str(plant_id))
+
     return {
-        "id": key[len(prefix) :] if prefix and key.startswith(prefix) else key,
+        "id": plant_id,
         "name": name_ko or name_en or key,
         "name_ko": name_ko,
         "name_en": name_en,
@@ -155,7 +200,7 @@ def _normalize_plant_payload(raw, key: str, prefix: str) -> dict:
         "care": care_level,
         "allergy": allergy,
         "pet_safe": pet_safe,
-        "image": raw.get("image") or raw.get("\uc774\ubbf8\uc9c0"),
+        "image": image,
     }
 
 @app.get("/health")
