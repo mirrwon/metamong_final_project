@@ -16,7 +16,6 @@ from app.db.vercel_blob_client import ping_vercel_blob, get_vercel_blob_error
 from app.api.chat_routes import router as chat_router
 from app.api.diary_routes import router as diary_router
 from app.api.login_routes import router as login_router
-from app.api.plants_routes import router as plants_router
 
 # (선택) backend 루트 경로가 필요하면 유지
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -51,7 +50,6 @@ app.add_middleware(
 app.include_router(chat_router)
 app.include_router(diary_router)
 app.include_router(login_router)
-app.include_router(plants_router)
 
 _plants_cache = {}
 _plants_key_cache = {}
@@ -88,7 +86,6 @@ app.add_middleware(
 app.include_router(chat_router)
 app.include_router(diary_router)
 app.include_router(login_router)
-app.include_router(plants_router)
 
 _plants_cache = {}
 _plants_key_cache = {}
