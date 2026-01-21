@@ -16,24 +16,6 @@ from app.db.vercel_blob_client import ping_vercel_blob, get_vercel_blob_error
 from app.api.chat_routes import router as chat_router
 from app.api.diary_routes import router as diary_router
 from app.api.login_routes import router as login_router
-import os
-import json
-import time
-
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
-from dotenv import load_dotenv
-
-from app.config import RESULT_DIR, UPLOAD_DIR, PLANTS_DIR  # ✅ config 단일 소스 사용
-
-from app.db.redis_client import get_redis, get_redis_error
-from app.db.mysql_client import get_mysql, get_mysql_error
-from app.db.vercel_blob_client import ping_vercel_blob, get_vercel_blob_error
-
-from app.api.chat_routes import router as chat_router
-from app.api.diary_routes import router as diary_router
-from app.api.login_routes import router as login_router
 
 # (선택) backend 루트 경로가 필요하면 유지
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
