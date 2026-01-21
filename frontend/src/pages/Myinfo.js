@@ -35,7 +35,7 @@ const Myinfo = ({ user }) => {
 
   const storedUser = useMemo(() => {
     return readStoredUser();
-  }, [location.key]);
+  }, []);
 
   // Prefer localStorage so updated profile shows immediately after redirect.
   const effectiveUser = storedUser || user;
@@ -125,9 +125,9 @@ const Myinfo = ({ user }) => {
             <p>생년월일: {myinfo.birthDate}</p>
             <p>연락처: {myinfo.phone}</p>
             <p>e-mail: {myinfo.email}</p>
-            {myinfo.zipcode ? <p>Postal code: {myinfo.zipcode}</p> : null}
-            {myinfo.address1 ? <p>Address: {myinfo.address1}</p> : null}
-            {myinfo.address2 ? <p>Address detail: {myinfo.address2}</p> : null}
+            {myinfo.zipcode ? <p>우편번호: {myinfo.zipcode}</p> : null}
+            {myinfo.address1 ? <p>주소: {myinfo.address1}</p> : null}
+            {myinfo.address2 ? <p>상세 주소: {myinfo.address2}</p> : null}
           </div>
 
           {/* 버튼 */}

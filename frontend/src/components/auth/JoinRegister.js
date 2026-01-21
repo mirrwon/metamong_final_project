@@ -16,16 +16,36 @@ const JoinRegister = ({ onSubmit }) => {
     zipcode: "",
     address1: "",
     address2: "",
+    termsAccepted: false,
+    locationAccepted: false,
   });
 
   const [previewUrl, setPreviewUrl] = useState("");
   const [formError, setFormError] = useState("");
+  const [modalState, setModalState] = useState({
+    isOpen: false,
+    title: "",
+    content: "",
+    loading: false,
+    error: "",
+  });
+
+  const formatPhone = (value) => {
+    const digits = value.replace(/\D/g, "").slice(0, 11);
+    if (digits.length <= 3) return digits;
+    if (digits.length <= 7) {
+      return `${digits.slice(0, 3)}-${digits.slice(3)}`;
+    }
+    return `${digits.slice(0, 3)}-${digits.slice(3, 7)}-${digits.slice(7)}`;
+  };
 
   const handleChange = (e) => {
-    const { name, value } = e.target;
+    const { name, value, type, checked } = e.target;
+    const nextValue =
+      type === "checkbox" ? checked : name === "phone" ? formatPhone(value) : value;
     setFormData((prev) => ({
       ...prev,
-      [name]: value,
+      [name]: nextValue,
     }));
     setFormError("");
   };
@@ -72,6 +92,11 @@ const JoinRegister = ({ onSubmit }) => {
       return;
     }
 
+    if (!formData.termsAccepted || !formData.locationAccepted) {
+      setFormError("필수 약관에 동의해 주세요.");
+      return;
+    }
+
     const payload = {
       username: formData.username,
       password: formData.password,
@@ -88,6 +113,47 @@ const JoinRegister = ({ onSubmit }) => {
     };
 
     onSubmit(payload);
+  };
+
+  const openModal = async (type) => {
+    const isTerms = type === "terms";
+    const title = isTerms ? "이용약관" : "위치정보 이용약관";
+    const url = isTerms ? "/terms_v1.md" : "/terms_location_v1.md";
+
+    setModalState((prev) => ({
+      ...prev,
+      isOpen: true,
+      title,
+      loading: true,
+      error: "",
+    }));
+
+    try {
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error("약관을 불러오지 못했습니다.");
+      }
+      const text = await response.text();
+      setModalState((prev) => ({
+        ...prev,
+        content: text,
+        loading: false,
+      }));
+    } catch (err) {
+      setModalState((prev) => ({
+        ...prev,
+        content: "",
+        loading: false,
+        error: err.message || "약관을 불러오지 못했습니다.",
+      }));
+    }
+  };
+
+  const closeModal = () => {
+    setModalState((prev) => ({
+      ...prev,
+      isOpen: false,
+    }));
   };
 
   return (
@@ -172,7 +238,6 @@ const JoinRegister = ({ onSubmit }) => {
             <option value="">성별 선택</option>
             <option value="male">남성</option>
             <option value="female">여성</option>
-            <option value="other">무응답</option>
           </select>
 
           <input
@@ -180,6 +245,8 @@ const JoinRegister = ({ onSubmit }) => {
             type="date"
             value={formData.birthDate}
             onChange={handleChange}
+            min="1900-01-01"
+            max="2099-12-31"
             className="ui-input"
             required
           />
@@ -190,6 +257,8 @@ const JoinRegister = ({ onSubmit }) => {
             value={formData.phone}
             onChange={handleChange}
             placeholder="010-0000-0000"
+            inputMode="numeric"
+            maxLength={13}
             className="ui-input"
             required
           />
@@ -241,6 +310,44 @@ const JoinRegister = ({ onSubmit }) => {
             className="ui-input"
           />
 
+          <div className="">
+            <label className="">
+              <input
+                type="checkbox"
+                name="termsAccepted"
+                checked={formData.termsAccepted}
+                onChange={handleChange}
+              />
+              <span>이용약관 동의 (필수)</span>
+            </label>
+            <button
+              type="button"
+              onClick={() => openModal("terms")}
+              className=""
+            >
+              보기
+            </button>
+          </div>
+
+          <div className="">
+            <label className="">
+              <input
+                type="checkbox"
+                name="locationAccepted"
+                checked={formData.locationAccepted}
+                onChange={handleChange}
+              />
+              <span>위치정보 이용약관 동의 (필수)</span>
+            </label>
+            <button
+              type="button"
+              onClick={() => openModal("location")}
+              className=""
+            >
+              보기
+            </button>
+          </div>
+
           {formError && (
             <p className="register-error">{formError}</p>
           )}
@@ -253,6 +360,33 @@ const JoinRegister = ({ onSubmit }) => {
           </button>
         </form>
       </div>
+
+      {modalState.isOpen && (
+        <div className="" role="dialog" aria-modal="true">
+          <div className="">
+            <div className="">
+              <h3>{modalState.title}</h3>
+              <button
+                type="button"
+                className=""
+                onClick={closeModal}
+                aria-label="닫기"
+              >
+                닫기
+              </button>
+            </div>
+            <div className="">
+              {modalState.loading && <p>불러오는 중...</p>}
+              {modalState.error && (
+                <p className="">{modalState.error}</p>
+              )}
+              {!modalState.loading && !modalState.error && (
+                <pre className="">{modalState.content}</pre>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -17,6 +17,7 @@ os.makedirs(USER_DIR, exist_ok=True)
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 os.makedirs(RESULT_DIR, exist_ok=True)
 
+UPLOAD_MOUNT = "/auth-uploads"
 ALLOWED_RESULT_EXTS = {".png", ".jpg", ".jpeg", ".jfif", ".gif", ".webp"}
 
 
@@ -47,7 +48,7 @@ def _build_profile_image_url(request: Request, filename: Optional[str]) -> Optio
     if not filename:
         return None
     base_url = str(request.base_url).rstrip("/")
-    return f"{base_url}/uploads/{filename}"
+    return f"{base_url}{UPLOAD_MOUNT}/{filename}"
 
 
 def _load_user(path: str) -> Dict[str, Any]:

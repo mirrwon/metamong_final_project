@@ -1,7 +1,6 @@
 import os
 import json
 import time
-import requests
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -17,9 +16,31 @@ from app.db.vercel_blob_client import ping_vercel_blob, get_vercel_blob_error
 from app.api.chat_routes import router as chat_router
 from app.api.diary_routes import router as diary_router
 from app.api.login_routes import router as login_router
+from app.api.plants_routes import router as plants_router
+import os
+import json
+import time
+
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from dotenv import load_dotenv
+
+from app.config import RESULT_DIR, UPLOAD_DIR, PLANTS_DIR  # ✅ config 단일 소스 사용
+
+from app.db.redis_client import get_redis, get_redis_error
+from app.db.mysql_client import get_mysql, get_mysql_error
+from app.db.vercel_blob_client import ping_vercel_blob, get_vercel_blob_error
+
+from app.api.chat_routes import router as chat_router
+from app.api.diary_routes import router as diary_router
+from app.api.login_routes import router as login_router
+from app.api.plants_routes import router as plants_router
 
 # (선택) backend 루트 경로가 필요하면 유지
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+AUTH_UPLOAD_DIR = os.path.normpath(os.path.join(BASE_DIR, "app", "api", "uploads"))
+AUTH_UPLOAD_MOUNT = "/auth-uploads"
 
 # ✅ 디렉토리 보장 (config에서 경로만 만들고, 여기서도 안전하게 한번 더)
 os.makedirs(RESULT_DIR, exist_ok=True)
@@ -35,6 +56,7 @@ app = FastAPI()
 app.mount("/results", StaticFiles(directory=RESULT_DIR), name="results")
 app.mount("/plants", StaticFiles(directory=PLANTS_DIR), name="plants")
 app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
+app.mount(AUTH_UPLOAD_MOUNT, StaticFiles(directory=AUTH_UPLOAD_DIR), name="auth-uploads")
 
 app.add_middleware(
     CORSMiddleware,
@@ -51,12 +73,14 @@ app.add_middleware(
 app.include_router(chat_router)
 app.include_router(diary_router)
 app.include_router(login_router)
+app.include_router(plants_router)
 
 _plants_cache = {}
 _plants_key_cache = {}
-_plant_image_cache = {}
 # (선택) backend 루트 경로가 필요하면 유지
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+AUTH_UPLOAD_DIR = os.path.normpath(os.path.join(BASE_DIR, "app", "api", "uploads"))
+AUTH_UPLOAD_MOUNT = "/auth-uploads"
 
 # ✅ 디렉토리 보장 (config에서 경로만 만들고, 여기서도 안전하게 한번 더)
 os.makedirs(RESULT_DIR, exist_ok=True)
@@ -72,6 +96,7 @@ app = FastAPI()
 app.mount("/results", StaticFiles(directory=RESULT_DIR), name="results")
 app.mount("/plants", StaticFiles(directory=PLANTS_DIR), name="plants")
 app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
+app.mount(AUTH_UPLOAD_MOUNT, StaticFiles(directory=AUTH_UPLOAD_DIR), name="auth-uploads")
 
 app.add_middleware(
     CORSMiddleware,
@@ -88,6 +113,7 @@ app.add_middleware(
 app.include_router(chat_router)
 app.include_router(diary_router)
 app.include_router(login_router)
+app.include_router(plants_router)
 
 _plants_cache = {}
 _plants_key_cache = {}
@@ -129,44 +155,6 @@ def _get_cached_keys(r, prefix: str, cache_ttl: int) -> list:
     return keys
 
 
-def _select_fallback_plant_image(plant_id: str | None) -> str | None:
-    base_url = os.getenv("VERCEL_PLANT_IMAGE_BASE_URL", "").strip()
-    if not base_url or not plant_id:
-        return None
-
-    exts_raw = os.getenv("VERCEL_PLANT_IMAGE_EXTS", ".jpg,.png")
-    exts = []
-    for ext in exts_raw.split(","):
-        cleaned = ext.strip()
-        if not cleaned:
-            continue
-        if not cleaned.startswith("."):
-            cleaned = f".{cleaned}"
-        exts.append(cleaned)
-    if not exts:
-        exts = [".jpg", ".png"]
-
-    normalized_base = base_url.rstrip("/")
-    cache_ttl = 60 * 10
-    for ext in exts:
-        url = f"{normalized_base}/plant_{plant_id}{ext}"
-        cached = _plant_image_cache.get(url)
-        if cached and (time.time() - cached["ts"] <= cache_ttl):
-            if cached["ok"]:
-                return url
-            continue
-        ok = False
-        try:
-            resp = requests.head(url, timeout=3)
-            ok = resp.status_code == 200
-        except Exception:
-            ok = False
-        _plant_image_cache[url] = {"ts": time.time(), "ok": ok}
-        if ok:
-            return url
-    return None
-
-
 def _normalize_plant_payload(raw, key: str, prefix: str) -> dict:
     if not isinstance(raw, dict):
         raw = {}
@@ -182,13 +170,8 @@ def _normalize_plant_payload(raw, key: str, prefix: str) -> dict:
     else:
         pet_safe = pet_target == "\uc5c6\uc74c" and pet_symptom == "\uc5c6\uc74c"
 
-    plant_id = key[len(prefix) :] if prefix and key.startswith(prefix) else key
-    image = raw.get("image") or raw.get("\uc774\ubbf8\uc9c0")
-    if not image:
-        image = _select_fallback_plant_image(str(plant_id))
-
     return {
-        "id": plant_id,
+        "id": key[len(prefix) :] if prefix and key.startswith(prefix) else key,
         "name": name_ko or name_en or key,
         "name_ko": name_ko,
         "name_en": name_en,
@@ -200,7 +183,7 @@ def _normalize_plant_payload(raw, key: str, prefix: str) -> dict:
         "care": care_level,
         "allergy": allergy,
         "pet_safe": pet_safe,
-        "image": image,
+        "image": raw.get("image") or raw.get("\uc774\ubbf8\uc9c0"),
     }
 
 @app.get("/health")

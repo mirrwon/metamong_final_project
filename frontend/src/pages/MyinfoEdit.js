@@ -13,6 +13,13 @@ const withCacheBust = (url, cacheBust) => {
   return `${url}${sep}v=${cacheBust}`;
 };
 
+const formatPhoneNumber = (value) => {
+  const digits = value.replace(/\D/g, '').slice(0, 11);
+  if (digits.length <= 3) return digits;
+  if (digits.length <= 7) return `${digits.slice(0, 3)}-${digits.slice(3)}`;
+  return `${digits.slice(0, 3)}-${digits.slice(3, 7)}-${digits.slice(7)}`;
+};
+
 const MyinfoEdit = ({ user, setUser }) => {
   const nav = useNavigate();
 
@@ -60,7 +67,8 @@ const MyinfoEdit = ({ user, setUser }) => {
 
   const handleChangeMyinfo = (e) => {
     const { name, value } = e.target;
-    setMyinfo((prev) => ({ ...prev, [name]: value }));
+    const nextValue = name === 'phone' ? formatPhoneNumber(value) : value;
+    setMyinfo((prev) => ({ ...prev, [name]: nextValue }));
   };
 
   const handleChangeProfileImage = (e) => {
@@ -215,7 +223,6 @@ const MyinfoEdit = ({ user, setUser }) => {
             >
               <option value="male">남성</option>
               <option value="female">여성</option>
-              <option value="other">무응답</option>
             </select>
 
             <input
@@ -223,6 +230,8 @@ const MyinfoEdit = ({ user, setUser }) => {
               type="date"
               value={myinfo.birthDate}
               onChange={handleChangeMyinfo}
+              min="1900-01-01"
+              max="2099-12-31"
               className="ui-input"
             />
 
@@ -232,6 +241,8 @@ const MyinfoEdit = ({ user, setUser }) => {
               value={myinfo.phone}
               onChange={handleChangeMyinfo}
               placeholder="010-0000-0000"
+              inputMode="numeric"
+              maxLength={13}
               className="ui-input"
             />
 
