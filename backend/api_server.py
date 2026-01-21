@@ -16,7 +16,6 @@ from app.db.vercel_blob_client import ping_vercel_blob, get_vercel_blob_error
 from app.api.chat_routes import router as chat_router
 from app.api.diary_routes import router as diary_router
 from app.api.login_routes import router as login_router
-from app.api.plants_routes import router as plants_router
 import os
 import json
 import time
@@ -35,7 +34,6 @@ from app.db.vercel_blob_client import ping_vercel_blob, get_vercel_blob_error
 from app.api.chat_routes import router as chat_router
 from app.api.diary_routes import router as diary_router
 from app.api.login_routes import router as login_router
-from app.api.plants_routes import router as plants_router
 
 # (선택) backend 루트 경로가 필요하면 유지
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -73,7 +71,6 @@ app.add_middleware(
 app.include_router(chat_router)
 app.include_router(diary_router)
 app.include_router(login_router)
-app.include_router(plants_router)
 
 _plants_cache = {}
 _plants_key_cache = {}
@@ -113,7 +110,6 @@ app.add_middleware(
 app.include_router(chat_router)
 app.include_router(diary_router)
 app.include_router(login_router)
-app.include_router(plants_router)
 
 _plants_cache = {}
 _plants_key_cache = {}
@@ -155,6 +151,38 @@ def _get_cached_keys(r, prefix: str, cache_ttl: int) -> list:
     return keys
 
 
+def _resolve_plant_image(raw: dict, key: str, prefix: str):
+    image = raw.get("image") or raw.get("\uc774\ubbf8\uc9c0")
+    if isinstance(image, str) and image.strip():
+        image = image.strip()
+        if image.lower().startswith(("http://", "https://")):
+            return image
+
+        base_url = os.getenv("VERCEL_PLANT_IMAGE_BASE_URL", "").strip().rstrip("/")
+        if not base_url:
+            return image
+
+        if image.lower().startswith("plant_img/") and base_url.lower().endswith("plant_img"):
+            image = image[len("plant_img/") :]
+        image = image.lstrip("/")
+        return f"{base_url}/{image}"
+
+    base_url = os.getenv("VERCEL_PLANT_IMAGE_BASE_URL", "").strip().rstrip("/")
+    if not base_url:
+        return None
+
+    exts = os.getenv("VERCEL_PLANT_IMAGE_EXTS", "").strip()
+    ext_list = [ext.strip() for ext in exts.split(",") if ext.strip()] or [".jpg"]
+    ext = ext_list[0]
+    if not ext.startswith("."):
+        ext = f".{ext}"
+
+    plant_id = key[len(prefix) :] if prefix and key.startswith(prefix) else key
+    if not plant_id:
+        return None
+    return f"{base_url}/plant_{plant_id}{ext}"
+
+
 def _normalize_plant_payload(raw, key: str, prefix: str) -> dict:
     if not isinstance(raw, dict):
         raw = {}
@@ -183,7 +211,7 @@ def _normalize_plant_payload(raw, key: str, prefix: str) -> dict:
         "care": care_level,
         "allergy": allergy,
         "pet_safe": pet_safe,
-        "image": raw.get("image") or raw.get("\uc774\ubbf8\uc9c0"),
+        "image": _resolve_plant_image(raw, key, prefix),
     }
 
 @app.get("/health")
