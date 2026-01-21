@@ -56,45 +56,6 @@ app.include_router(login_router)
 
 _plants_cache = {}
 _plants_key_cache = {}
-# (선택) backend 루트 경로가 필요하면 유지
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-AUTH_UPLOAD_DIR = os.path.normpath(os.path.join(BASE_DIR, "app", "api", "uploads"))
-AUTH_UPLOAD_MOUNT = "/auth-uploads"
-
-# ✅ 디렉토리 보장 (config에서 경로만 만들고, 여기서도 안전하게 한번 더)
-os.makedirs(RESULT_DIR, exist_ok=True)
-os.makedirs(UPLOAD_DIR, exist_ok=True)
-os.makedirs(PLANTS_DIR, exist_ok=True)
-
-load_dotenv()
-
-app = FastAPI()
-
-# ✅ 정적 파일 mount는 여기(api_server)에서만 한다 (chat_routes에 넣지 말기)
-# ✅ 중복 mount 제거: /results는 1번만
-app.mount("/results", StaticFiles(directory=RESULT_DIR), name="results")
-app.mount("/plants", StaticFiles(directory=PLANTS_DIR), name="plants")
-app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
-app.mount(AUTH_UPLOAD_MOUNT, StaticFiles(directory=AUTH_UPLOAD_DIR), name="auth-uploads")
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-    ],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-# 라우터 등록
-app.include_router(chat_router)
-app.include_router(diary_router)
-app.include_router(login_router)
-
-_plants_cache = {}
-_plants_key_cache = {}
 
 
 def _sort_plant_keys(keys, prefix: str) -> list:
