@@ -1,7 +1,28 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import "../../pages/auth/Register.css";
+import { readStoredUser, storeUser } from "../../services/session";
+
+const decodePayload = (value) => {
+  try {
+    const normalized = value.replace(/-/g, "+").replace(/_/g, "/");
+    const padded = normalized.padEnd(
+      normalized.length + ((4 - (normalized.length % 4)) % 4),
+      "="
+    );
+    const json = decodeURIComponent(
+      atob(padded)
+        .split("")
+        .map((char) => `%${char.charCodeAt(0).toString(16).padStart(2, "0")}`)
+        .join("")
+    );
+    return JSON.parse(json);
+  } catch (error) {
+    return null;
+  }
+};
 
 const JoinRegister = ({ onSubmit }) => {
+  const [isOauth, setIsOauth] = useState(false);
   const [formData, setFormData] = useState({
     profileImage: null,
     username: "",
@@ -50,6 +71,29 @@ const JoinRegister = ({ onSubmit }) => {
     setFormError("");
   };
 
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("oauth") !== "google") return;
+    setIsOauth(true);
+    const payload = params.get("payload");
+    if (!payload) return;
+    const data = decodePayload(payload);
+    if (!data) return;
+    storeUser(data);
+  }, []);
+
+  useEffect(() => {
+    if (!isOauth) return;
+    const user = readStoredUser();
+    if (!user) return;
+    setFormData((prev) => ({
+      ...prev,
+      username: user.username || "",
+      email: user.email || "",
+      name: user.name || "",
+    }));
+  }, [isOauth]);
+
   const handleProfileChange = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -87,19 +131,19 @@ const JoinRegister = ({ onSubmit }) => {
   const handleSubmit = (e) => {
     e.preventDefault();
 
-    if (formData.password !== formData.confirmPassword) {
+    if (!isOauth && formData.password !== formData.confirmPassword) {
       setFormError("비밀번호가 일치하지 않습니다.");
       return;
     }
 
     if (!formData.termsAccepted || !formData.locationAccepted) {
-      setFormError("필수 약관에 동의해 주세요.");
+      setFormError("필수 약관에 동의해주세요.");
       return;
     }
 
     const payload = {
       username: formData.username,
-      password: formData.password,
+      password: isOauth ? undefined : formData.password,
       name: formData.name,
       age: formData.age,
       gender: formData.gender,
@@ -194,7 +238,8 @@ const JoinRegister = ({ onSubmit }) => {
             onChange={handleChange}
             placeholder="아이디"
             className="ui-input"
-            required
+            required={!isOauth}
+            disabled={isOauth}
           />
 
           <input
@@ -204,7 +249,8 @@ const JoinRegister = ({ onSubmit }) => {
             onChange={handleChange}
             placeholder="비밀번호"
             className="ui-input"
-            required
+            required={!isOauth}
+            disabled={isOauth}
           />
 
           <input
@@ -214,7 +260,8 @@ const JoinRegister = ({ onSubmit }) => {
             onChange={handleChange}
             placeholder="비밀번호 확인"
             className="ui-input"
-            required
+            required={!isOauth}
+            disabled={isOauth}
           />
 
           <input
@@ -270,7 +317,8 @@ const JoinRegister = ({ onSubmit }) => {
             onChange={handleChange}
             placeholder="email@example.com"
             className="ui-input"
-            required
+            required={!isOauth}
+            disabled={isOauth}
           />
 
           <div className="address-row">

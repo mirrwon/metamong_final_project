@@ -1,11 +1,16 @@
+import base64
 import json
 import os
+import secrets
+import time
+import urllib.parse
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 
 from fastapi import APIRouter, Form, HTTPException, UploadFile, File, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, RedirectResponse
+import requests
 
 router = APIRouter(prefix="/api/auth")
 
@@ -19,6 +24,8 @@ os.makedirs(RESULT_DIR, exist_ok=True)
 
 UPLOAD_MOUNT = "/auth-uploads"
 ALLOWED_RESULT_EXTS = {".png", ".jpg", ".jpeg", ".jfif", ".gif", ".webp"}
+OAUTH_STATE_TTL_SEC = 600
+_oauth_state_cache = {}
 
 
 def _now_iso() -> str:
@@ -63,6 +70,33 @@ def _save_user(path: str, data: Dict[str, Any]) -> None:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
 
+def _cleanup_oauth_state() -> None:
+    now = time.time()
+    expired = [key for key, ts in _oauth_state_cache.items() if now - ts > OAUTH_STATE_TTL_SEC]
+    for key in expired:
+        _oauth_state_cache.pop(key, None)
+
+
+def _require_env(name: str) -> str:
+    value = os.getenv(name, "").strip()
+    if not value:
+        raise HTTPException(status_code=500, detail=f"Missing {name}")
+    return value
+
+
+def _google_oauth_config() -> Dict[str, str]:
+    return {
+        "client_id": _require_env("GOOGLE_CLIENT_ID"),
+        "client_secret": _require_env("GOOGLE_CLIENT_SECRET"),
+        "redirect_uri": _require_env("GOOGLE_REDIRECT_URI"),
+    }
+
+
+def _encode_oauth_payload(payload: Dict[str, Any]) -> str:
+    raw = json.dumps(payload, ensure_ascii=False)
+    return base64.urlsafe_b64encode(raw.encode("utf-8")).decode("ascii")
+
+
 def _is_result_image(name: str, path: str) -> bool:
     if not os.path.isfile(path):
         return False
@@ -88,6 +122,131 @@ def _next_user_num() -> int:
     return max_id + 1
 
 
+def _oauth_user_record(
+    username: str,
+    email: Optional[str],
+    name: Optional[str],
+    sub: str,
+) -> Dict[str, Any]:
+    return {
+        "user_num": str(_next_user_num()),
+        "username": username,
+        "password": "google-oauth",
+        "name": name or username,
+        "birthDate": "",
+        "phone": "",
+        "email": email or "",
+        "gender": "",
+        "zipcode": "",
+        "address1": "",
+        "address2": "",
+        "provider": "google",
+        "oauth_sub": sub,
+        "created_at": _now_iso(),
+    }
+
+
+def _needs_profile(record: Dict[str, Any]) -> bool:
+    required = ["gender", "birthDate", "phone", "zipcode", "address1"]
+    for key in required:
+        value = str(record.get(key, "")).strip()
+        if not value:
+            return True
+    return False
+
+
+@router.get("/google")
+def google_login() -> RedirectResponse:
+    config = _google_oauth_config()
+    _cleanup_oauth_state()
+    state = secrets.token_urlsafe(24)
+    _oauth_state_cache[state] = time.time()
+    params = {
+        "client_id": config["client_id"],
+        "redirect_uri": config["redirect_uri"],
+        "response_type": "code",
+        "scope": "openid email profile",
+        "access_type": "offline",
+        "prompt": "consent",
+        "state": state,
+    }
+    auth_url = "https://accounts.google.com/o/oauth2/v2/auth?" + urllib.parse.urlencode(params)
+    return RedirectResponse(auth_url)
+
+
+@router.get("/google/callback")
+def google_callback(
+    request: Request,
+    code: Optional[str] = None,
+    state: Optional[str] = None,
+    error: Optional[str] = None,
+) -> RedirectResponse:
+    if error:
+        raise HTTPException(status_code=400, detail=error)
+    if not code:
+        raise HTTPException(status_code=400, detail="Missing code")
+
+    _cleanup_oauth_state()
+    if state and state not in _oauth_state_cache:
+        raise HTTPException(status_code=400, detail="Invalid state")
+    if state:
+        _oauth_state_cache.pop(state, None)
+
+    config = _google_oauth_config()
+    token_resp = requests.post(
+        "https://oauth2.googleapis.com/token",
+        data={
+            "code": code,
+            "client_id": config["client_id"],
+            "client_secret": config["client_secret"],
+            "redirect_uri": config["redirect_uri"],
+            "grant_type": "authorization_code",
+        },
+        timeout=10,
+    )
+    if not token_resp.ok:
+        raise HTTPException(status_code=400, detail="Token exchange failed")
+    token_data = token_resp.json()
+    id_token = token_data.get("id_token")
+    if not id_token:
+        raise HTTPException(status_code=400, detail="Missing id_token")
+
+    info_resp = requests.get(
+        "https://oauth2.googleapis.com/tokeninfo",
+        params={"id_token": id_token},
+        timeout=10,
+    )
+    if not info_resp.ok:
+        raise HTTPException(status_code=400, detail="Token verification failed")
+    info = info_resp.json()
+    if info.get("aud") != config["client_id"]:
+        raise HTTPException(status_code=400, detail="Invalid audience")
+
+    email = info.get("email")
+    sub = info.get("sub") or ""
+    name = info.get("name")
+    picture = info.get("picture")
+
+    username = email or f"google_{sub}"
+    path = _user_path(username)
+    if os.path.exists(path):
+        record = _load_user(path)
+    else:
+        record = _oauth_user_record(username, email, name, sub)
+        _save_user(path, record)
+
+    response = {k: v for k, v in record.items() if k != "password"}
+    profile_url = _build_profile_image_url(request, record.get("profile_image_filename"))
+    response["profileImageUrl"] = profile_url or picture
+    response["accessToken"] = "local-token"
+    response["needsProfile"] = _needs_profile(record)
+
+    frontend_redirect = os.getenv("FRONTEND_OAUTH_REDIRECT", "http://localhost:3000/login")
+    payload = _encode_oauth_payload(response)
+    redirect_url = f"{frontend_redirect}?oauth=google&payload={urllib.parse.quote(payload)}"
+    return RedirectResponse(redirect_url)
+
+
 @router.post("/register")
 def register(
     request: Request,
@@ -98,7 +257,6 @@ def register(
     phone: str = Form(...),
     email: str = Form(...),
     profileImage: Optional[UploadFile] = File(None),
-    age: Optional[str] = Form(None),
     gender: Optional[str] = Form(None),
     zipcode: Optional[str] = Form(None),
     address1: Optional[str] = Form(None),
@@ -116,7 +274,6 @@ def register(
         "birthDate": birthDate,
         "phone": phone,
         "email": email,
-        "age": age,
         "gender": gender,
         "zipcode": zipcode,
         "address1": address1,
@@ -165,7 +322,6 @@ def update_profile(
     phone: Optional[str] = Form(None),
     email: Optional[str] = Form(None),
     profileImage: Optional[UploadFile] = File(None),
-    age: Optional[str] = Form(None),
     gender: Optional[str] = Form(None),
     zipcode: Optional[str] = Form(None),
     address1: Optional[str] = Form(None),
@@ -179,7 +335,6 @@ def update_profile(
         "birthDate": birthDate,
         "phone": phone,
         "email": email,
-        "age": age,
         "gender": gender,
         "zipcode": zipcode,
         "address1": address1,
@@ -189,13 +344,16 @@ def update_profile(
         if value is not None:
             record[key] = value
 
+    is_oauth_user = record.get("provider") == "google" or bool(record.get("oauth_sub"))
+    if password and is_oauth_user:
+        raise HTTPException(status_code=400, detail="OAuth users cannot change password")
+
     if password:
         record["password"] = password
 
     if profileImage:
         record["profile_image_filename"] = _save_profile_image(profileImage, username)
 
-    record["updated_at"] = _now_iso()
     _save_user(path, record)
 
     response = {k: v for k, v in record.items() if k != "password"}

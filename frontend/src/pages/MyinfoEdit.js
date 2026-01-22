@@ -28,6 +28,9 @@ const MyinfoEdit = ({ user, setUser }) => {
   }, []);
 
   const effectiveUser = storedUser || user;
+  const isOauthUser = useMemo(() => {
+    return effectiveUser?.provider === 'google' || Boolean(effectiveUser?.oauth_sub);
+  }, [effectiveUser]);
 
   const initialMyinfo = useMemo(
     () => ({
@@ -109,7 +112,7 @@ const MyinfoEdit = ({ user, setUser }) => {
     try {
       const payload = {
         username: myinfo.username,
-        password: myinfo.password || undefined,
+        password: isOauthUser ? undefined : myinfo.password || undefined,
         name: myinfo.name,
         gender: myinfo.gender,
         birthDate: myinfo.birthDate,
@@ -204,7 +207,13 @@ const MyinfoEdit = ({ user, setUser }) => {
               placeholder="비밀번호 변경 (원할 때만 입력)"
               autoComplete="new-password"
               className="ui-input"
+              disabled={isOauthUser}
             />
+            {isOauthUser && (
+              <p className="myinfoedit-help">
+                구글 회원은 비밀번호를 변경할 수 없어요.
+              </p>
+            )}
 
             <input
               name="name"
