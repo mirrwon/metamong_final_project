@@ -1,53 +1,61 @@
+"""Edit-only chat handler.
+
+This handler ignores Q&A/RAG and focuses on converting user text into EditRequest JSON.
+"""
+
+from __future__ import annotations
+
 from typing import Any, Dict, Optional
-from .intent import detect_intent
-from .evidence import find_requirement, has_any_evidence
-from .prompts_ko import SYSTEM_PROMPT_KO
-from .llm_client import LLMClient
+
+from .policy_guard import check_policy
+from .edit_parser import parse_edit_request, needs_clarification
+from .edit_schema import summarize_edit_request
+
 
 def handle_chat(
     question: str,
     user_num: int,
     session_id: Optional[str],
     rules: Dict[str, Any],
-    loader,
-    llm: LLMClient
+    loader: Optional[Any] = None,
+    *,
+    is_authenticated: bool = True,
 ) -> Dict[str, Any]:
-    intent = detect_intent(question, rules)
+    # 0) policy guard (hard)
+    pol = check_policy(question, rules, is_authenticated=is_authenticated)
+    if pol.get("decision") != "ALLOW":
+        return {
+            "intent": "POLICY_DENY",
+            "answer": [pol.get("reason", "요청을 처리할 수 없어요.")],
+            "followup_question": "",
+            "action": None,
+            "debug": {"policy": pol},
+        }
 
-    # out_of_scope
-    if intent == rules.get("out_of_scope", {}).get("deny_intent", "OUT_OF_SCOPE"):
-        tid = rules["out_of_scope"]["deny_response_template_id"]
-        return {"answer": [rules["templates"][tid]], "followup_question": ""}
+    # 1) parse edit request
+    edit, debug = parse_edit_request(
+        question,
+        rules,
+        user_num=user_num,
+        session_id=session_id,
+    )
 
-    context = loader.load(user_num=user_num, session_id=session_id)
+    # 2) clarify at most once
+    if needs_clarification(edit, rules):
+        q = (rules.get("edit_flow") or {}).get("clarify_question") or "어느 쪽을 바꿀까요? ① 식물 ② 위치 ③ 분위기"
+        return {
+            "intent": "ASK_CLARIFY",
+            "answer": [q],
+            "followup_question": q,
+            "action": {"type": "ASK_CLARIFY", "payload": {"session_id": session_id}},
+            "debug": {"edit": edit, "parser": debug},
+        }
 
-    # evidence requirements
-    req = find_requirement(intent, rules)
-    if req:
-        ok = has_any_evidence(context, req.get("require_any_paths", []))
-        if not ok:
-            tid = req.get("when_missing_template_id")
-            return {"answer": [rules["templates"][tid]], "followup_question": ""}
-
-    # fallback flow (redo)
-    fb = rules.get("fallback_flow", {})
-    if intent == fb.get("intent_id"):
-        ask = fb.get("ask", {}).get("question", "어떤 부분을 다시 해볼까요?")
-        return {"answer": [ask], "followup_question": ""}
-
-    # LLM payload (Korean)
-    refusal = "현재 저장된 정보로는 정확히 답하기 어려워요."
-    if req and req.get("when_missing_template_id"):
-        refusal = rules["templates"][req["when_missing_template_id"]]
-
-    user_payload = {
-        "mode": "EVIDENCE_ONLY",
-        "intent": intent,
-        "question": question,
-        "refusal_template": refusal,
-        "evidence": context,
-        "output_schema": {"answer": ["string"], "followup_question": "string_or_empty"}
+    summary = summarize_edit_request(edit, rules)
+    return {
+        "intent": "EDIT_REQUEST",
+        "answer": [summary],
+        "followup_question": "",
+        "action": {"type": "EDIT_REQUEST", "payload": edit},
+        "debug": {"edit": edit, "parser": debug},
     }
-    # return llm.generate_json(SYSTEM_PROMPT_KO, user_payload)
-    return llm.generate_json( user_payload) # llm_client -> def generate_json 인자 2개사용 중
-

@@ -1,0 +1,15 @@
+{
+  "user_num": "1",
+  "username": "qwer",
+  "password": "qwer",
+  "name": "qwer",
+  "birthDate": "1992-06-17",
+  "phone": "010-9876-5432",
+  "email": "qwer@gmail.com",
+  "age": null,
+  "gender": "male",
+  "zipcode": "48060",
+  "address1": "부산 해운대구 APEC로 55",
+  "address2": "qwer",
+  "created_at": "2026-01-22T05:29:41.679158+00:00"
+}

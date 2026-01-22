@@ -14,37 +14,28 @@ from app.config import BASE_DIR, RESULT_DIR, UPLOAD_DIR, ASSET_DIR
 from app.llm.image_edit import composite_plant_on_original
 from app.llm.gemini.gemini_image_edit import gemini_edit_image
 
+# ✅ KG: rules + handle_chat만 사용 (ContextLoader/LLMClient 제거)
 from app.kg.rules import load_rules
-from app.kg.context_loader import ContextLoader
-from app.kg.llm_client import LLMClient
 from app.kg.service import handle_chat
 
 from datetime import datetime
 from app.solar.kier_client import KierSolarClient
 
-
 from app.reco.recommender import recommend_for_analysis
 
 
-
 router = APIRouter()
-
 
 # --- SIMPLE STATE (in-memory) ---
 USER_STATE: Dict[str, Dict[str, Any]] = {}
 USER_CTX: Dict[str, Dict[str, Any]] = {}
 
+# ✅ rules만 로드해서 handle_chat에 전달
 KG_RULES = load_rules(ASSET_DIR)
-KG_LOADER = ContextLoader(
-    mysql_client=None,
-    redis_client=None,
-    base_dir=BASE_DIR,
-    user_ctx=USER_CTX,
-)
-KG_LLM = LLMClient()  # model/system_prompt 필요하면 여기서 지정
 
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 os.makedirs(RESULT_DIR, exist_ok=True)
+
 
 def _abs_url(request: Request, path: str) -> str:
     """
@@ -62,17 +53,33 @@ def _client_key(request: Request) -> str:
     host = getattr(request.client, "host", "unknown")
     return str(host)
 
+
+def _client_user_num(request: Request) -> int:
+    """
+    handle_chat 시그니처가 user_num: int 를 요구하므로,
+    IP 문자열을 안정적으로 int로 변환.
+    - IPv4면 마지막 옥텟 기반으로 가볍게
+    - 그 외는 hash 기반
+    """
+    host = _client_key(request)
+    try:
+        parts = host.split(".")
+        if len(parts) == 4:
+            return int(parts[-1])
+    except Exception:
+        pass
+    return abs(hash(host)) % 1_000_000_000
+
+
 def parse_detail_text_to_constraints(text: str) -> Dict[str, Any]:
     t = (text or "").strip().lower()
 
-    # 설치 위치 힌트
     placement = None
     if any(k in t for k in ["테이블", "상판", "선반", "책상"]):
         placement = "table"
     elif any(k in t for k in ["바닥", "플로어", "바닥에"]):
         placement = "floor"
 
-    # 광량 요구 힌트(사용자 의도)
     light_pref = None
     if any(k in t for k in ["햇빛없", "빛없", "어두", "그늘", "저광량"]):
         light_pref = "low"
@@ -81,15 +88,10 @@ def parse_detail_text_to_constraints(text: str) -> Dict[str, Any]:
     elif any(k in t for k in ["반그늘", "중간", "간접광", "중광량"]):
         light_pref = "medium"
 
-    # 반려동물/초보 여부는 이미 filters로 받지만, 상세입력에서도 힌트가 있으면 덮어쓸 수 있게
     pet = None
     if any(k in t for k in ["반려묘", "고양이", "강아지", "반려동물"]):
         pet = True
-    if any(k in t for k in ["반려동물없", "없음"]):
-        # 너무 공격적이면 제거해도 됨. 일단 최소로 둠.
-        pass
 
-    # 크기 힌트
     size = None
     if any(k in t for k in ["큰", "대형", "키큰"]):
         size = "large"
@@ -98,14 +100,14 @@ def parse_detail_text_to_constraints(text: str) -> Dict[str, Any]:
     elif any(k in t for k in ["중형", "적당한"]):
         size = "medium"
 
-    # 키워드 그대로 보존(팀 KG가 쓰기 좋게)
     return {
         "raw_text": text,
-        "placement": placement,     # floor/table/None
-        "light_pref": light_pref,   # low/medium/high/None
-        "size_pref": size,          # small/medium/large/None
-        "pet_hint": pet,            # True/None
+        "placement": placement,
+        "light_pref": light_pref,
+        "size_pref": size,
+        "pet_hint": pet,
     }
+
 
 def _load_latest_result() -> Dict[str, Any]:
     latest_json = os.path.join(RESULT_DIR, "result_latest.json")
@@ -113,6 +115,7 @@ def _load_latest_result() -> Dict[str, Any]:
         return {}
     with open(latest_json, "r", encoding="utf-8") as f:
         return json.load(f)
+
 
 def _prompt_for_edit(
     best_point: Any,
@@ -148,35 +151,26 @@ def _prompt_for_edit(
             "강한 햇빛을 가정하지 마세요. "
             "소형~중형 화분으로 표현하세요. "
         )
-    else:  # avoid
-        mode_rules = (
-            f"{plant_text}를 가장 자연스럽고 안전한 방식으로 소형 화분으로 배치하세요. "
-        )
+    else:
+        mode_rules = f"{plant_text}를 가장 자연스럽고 안전한 방식으로 소형 화분으로 배치하세요. "
 
     return base_rules + mode_rules
 
+
 def extract_best_point(data: Dict[str, Any]) -> Optional[Any]:
-    """
-    result_latest.json에서 best point를 다양한 스키마로 안전 추출.
-    현재 너 JSON 기준: best_spot.pt 가 정답.
-    반환은 (x,y) 형태(list/tuple/dict) 그대로 두고 image_edit에서 파싱하게 둠.
-    """
     if not isinstance(data, dict):
         return None
 
-    # 1) 새 스키마(현재 너 결과): best_spot.pt
     best_spot = data.get("best_spot")
     if isinstance(best_spot, dict) and isinstance(best_spot.get("pt"), (list, tuple)) and len(best_spot["pt"]) >= 2:
         return best_spot["pt"]
 
-    # 2) spots[0].pt
     spots = data.get("spots")
     if isinstance(spots, list) and len(spots) > 0:
         s0 = spots[0]
         if isinstance(s0, dict) and isinstance(s0.get("pt"), (list, tuple)) and len(s0["pt"]) >= 2:
             return s0["pt"]
 
-    # 3) 구버전 호환: best_point
     bp = data.get("best_point")
     if isinstance(bp, (list, tuple)) and len(bp) >= 2:
         return bp
@@ -185,17 +179,13 @@ def extract_best_point(data: Dict[str, Any]) -> Optional[Any]:
 
     return None
 
+
 def _now_kst_yyyymmdd_hhmm() -> tuple[str, str]:
-    # 서버가 한국이면 그냥 localtime 써도 됨(가장 단순/안정)
     now = datetime.now()
     return now.strftime("%Y%m%d"), now.strftime("%H%M")
 
 
 def _get_lat_lot_from_meta(meta: Optional[str]) -> Optional[dict]:
-    """
-    프론트에서 meta(FormData)로 JSON 문자열을 보내는 걸 전제로 함.
-    예: {"lat": 37.5665, "lot": 126.9780}
-    """
     if not meta:
         return None
     try:
@@ -207,8 +197,7 @@ def _get_lat_lot_from_meta(meta: Optional[str]) -> Optional[dict]:
         return None
 
     lat = obj.get("lat")
-    lot = obj.get("lot") or obj.get("lon")  # 혹시 프론트가 lon으로 보내면 수용
-
+    lot = obj.get("lot") or obj.get("lon")
     try:
         lat = float(lat)
         lot = float(lot)
@@ -232,9 +221,9 @@ def get_filters():
         "payload": {"type": "filters", "groups": groups},
     }
 
+
 # -------------------------
 # v3 Contract: /api/chat/stream (SSE heartbeat) - 절대 제거 금지
-# 프론트 Chat.js는 onmessage에서 JSON.parse를 시도하므로, JSON 문자열로 보냄
 # -------------------------
 @router.get("/api/chat/stream")
 def chat_stream():
@@ -249,6 +238,7 @@ def chat_stream():
         "X-Accel-Buffering": "no",
     }
     return StreamingResponse(gen(), media_type="text/event-stream", headers=headers)
+
 
 # -------------------------
 # v3 Contract: GET /api/chat (초기 상태)
@@ -271,6 +261,7 @@ def chat_get():
         ]
     }
 
+
 # -------------------------
 # v3 Contract: POST /api/chat (텍스트/버튼 선택 처리)
 # -------------------------
@@ -279,7 +270,6 @@ async def chat_post(request: Request):
     body = await request.json()
     text = (body.get("text") or "").strip()
 
-    # ✅ 1) "마음에 들어요" -> 반드시 3옵션 (v3 계약)
     if text == "마음에 들어요":
         return {
             "messages": [
@@ -291,14 +281,11 @@ async def chat_post(request: Request):
             ]
         }
 
-    # ✅ 2) 필터 전송(sendWithFilters)만 업로드로 넘기기
-    # - sendWithFilters는 "식물 경험: ..." "반려동물 여부: ..." 요약 텍스트를 보냄
     is_filter_summary = ("식물 경험" in text) or ("반려동물 여부" in text)
     if is_filter_summary and isinstance(body.get("filters"), dict) and len(body["filters"]) > 0:
         key = _client_key(request)
         USER_CTX.setdefault(key, {})
-        USER_CTX[key]["filters"] = body["filters"]  # ✅ 제품형 필수: 추천/DB/KG에 쓸 user evidence
-
+        USER_CTX[key]["filters"] = body["filters"]
         return {
             "messages": [
                 {"type": "text", "text": f"수신: {text}"},
@@ -306,7 +293,6 @@ async def chat_post(request: Request):
             ]
         }
 
-    # ✅ 3) "이미지 생성 프롬프트 만들기" -> Gemini 편집 실행 + 결과 이미지 반환
     if text == "이미지 생성 프롬프트 만들기":
         data = _load_latest_result()
         best_point = extract_best_point(data)
@@ -326,15 +312,10 @@ async def chat_post(request: Request):
         best_spot = data.get("best_spot", {}) if isinstance(data, dict) else {}
         spot_usage = best_spot.get("spot_usage", "floor_large")
 
-        # pipeline 추천 1순위(백업)
         plant_name = None
         top_plants = best_spot.get("top_plants", [])
-        if isinstance(top_plants, list) and len(top_plants) > 0:
+        if isinstance(top_plants, list) and len(top_plants) > 0 and isinstance(top_plants[0], dict):
             plant_name = top_plants[0].get("name")
-
-        # ✅ KG 추천 가져오기 (있으면 이게 우선)
-        # key = _client_key(request)
-        # kg_result = USER_CTX.get(key, {}).get("kg_result")
 
         prompt = _prompt_for_edit(
             best_point=best_point,
@@ -350,7 +331,6 @@ async def chat_post(request: Request):
         )
 
         messages: List[Dict[str, Any]] = []
-
         if edit_result.get("ok") and os.path.exists(out_path):
             messages.append({"type": "text", "text": "Gemini 이미지 편집 결과입니다."})
             messages.append(
@@ -358,7 +338,6 @@ async def chat_post(request: Request):
                     "type": "images",
                     "text": "result_latest_ai_edit",
                     "images": [{"name": "result_latest_ai_edit", "url": _abs_url(request, "/results/result_latest_ai_edit.png")}],
-
                 }
             )
         else:
@@ -373,18 +352,12 @@ async def chat_post(request: Request):
         )
         return {"messages": messages}
 
-    # ✅ 4) "상세 입력" -> text input
     if text == "상세 입력":
         key = _client_key(request)
         USER_STATE.setdefault(key, {})
         USER_STATE[key]["mode"] = "awaiting_detail"
-        return {
-            "messages": [
-                {"type": "text", "text": "상세 내용을 입력해주세요.", "payload": {"input": {"type": "text"}}}
-            ]
-        }
+        return {"messages": [{"type": "text", "text": "상세 내용을 입력해주세요.", "payload": {"input": {"type": "text"}}}]}
 
-    # ✅ 5) "저장 목록 보기" -> 최소 구현(나중에 DB 붙이기)
     if text == "저장 목록 보기":
         return {
             "messages": [
@@ -396,7 +369,6 @@ async def chat_post(request: Request):
             ]
         }
 
-    # ✅ 6) "다른 사진으로 다시 추천" -> 업로드로
     if text == "다른 사진으로 다시 추천":
         return {
             "messages": [
@@ -405,11 +377,9 @@ async def chat_post(request: Request):
             ]
         }
 
-    # ✅ 상세 입력 대기 상태면: 텍스트를 KG로 연결
     key = _client_key(request)
     mode = USER_STATE.get(key, {}).get("mode")
 
-    # 사용자가 옵션 텍스트가 아닌 "진짜 상세요청"을 보냈을 때만 처리
     is_option = text in [
         "마음에 들어요",
         "상세 입력",
@@ -419,28 +389,23 @@ async def chat_post(request: Request):
     ]
 
     if mode == "awaiting_detail" and text and (not is_option):
-        USER_STATE[key]["mode"] = None  # 한번 처리했으면 해제
+        USER_STATE[key]["mode"] = None
 
         constraints = parse_detail_text_to_constraints(text)
 
-        # (선택) session_id/user_num: 로컬 개발용 기본값
-        user_num = _client_key(request)
+        # ✅ 구형 handle_chat 요구사항 충족
+        user_num = _client_user_num(request)
         session_id = None
 
-        # KG 엔진 호출 (룰 + evidence + LLM evidence-only)
         kg_answer = handle_chat(
             question=text,
             user_num=user_num,
             session_id=session_id,
             rules=KG_RULES,
-            loader=KG_LOADER,
-            llm=KG_LLM,
+            loader=None,  # ✅ edit-only MVP: loader 없이도 정책/의도/응답 가능하게
+            is_authenticated=True,
         )
 
-        print("[DEBUG CONTEXT]", KG_LOADER.load(user_num=user_num, session_id=session_id))
-        print("[DEBUG KG_ANSWER]", kg_answer)
-
-        # 저장(원하면)
         USER_CTX.setdefault(key, {})
         USER_CTX[key]["last_detail_text"] = text
         USER_CTX[key]["constraints"] = constraints
@@ -449,10 +414,9 @@ async def chat_post(request: Request):
         messages: List[Dict[str, Any]] = []
         messages.append({"type": "text", "text": f"상세 입력 수신: {text}"})
 
-        # kg_answer 형식: {"answer": ["...","..."], "followup_question": "..."}
         ans_list = kg_answer.get("answer") or []
         if isinstance(ans_list, list) and ans_list:
-            messages.append({"type": "text", "text": "\n".join(ans_list)})
+            messages.append({"type": "text", "text": "\n".join([str(x) for x in ans_list])})
         else:
             messages.append({"type": "text", "text": "현재 정보로는 답하기 어려워요."})
 
@@ -469,7 +433,6 @@ async def chat_post(request: Request):
         )
         return {"messages": messages}
 
-    # ✅ 7) 기본 응답 (절대 None 반환 금지)
     return {
         "messages": [
             {"type": "text", "text": f"수신: {text}"},
@@ -480,7 +443,6 @@ async def chat_post(request: Request):
 
 # -------------------------
 # v3 Contract: POST /api/chat/image (핵심)
-# ✅ FIX: 프론트가 "files"로 보내든 "image"로 보내든 둘 다 받는다
 # -------------------------
 @router.post("/api/chat/image")
 async def chat_image(
@@ -489,7 +451,6 @@ async def chat_image(
     image: Optional[UploadFile] = File(None),
     meta: Optional[str] = Form(None),
 ):
-    # 1) 업로드 파일 결정
     upload: Optional[UploadFile] = None
     if files and len(files) > 0:
         upload = files[0]
@@ -514,15 +475,12 @@ async def chat_image(
     with open(save_path, "wb") as f:
         f.write(content)
 
-    # 2) pipeline 실행
     run_pipeline(save_path)
 
-    # ✅ Solar API 호출 (lat/lot가 있는 경우만)
     solar_payload = None
     loc = _get_lat_lot_from_meta(meta)
     if loc:
         date, hhmm = _now_kst_yyyymmdd_hhmm()
-
         client = KierSolarClient()
         solar_res = client.fetch_predc(
             lat=loc["lat"],
@@ -531,7 +489,6 @@ async def chat_image(
             time_hhmm=hhmm,
             num_rows=10,
         )
-
         if solar_res:
             solar_payload = {
                 "ok": True,
@@ -539,13 +496,11 @@ async def chat_image(
                 "time": solar_res.time,
                 "lat": solar_res.lat,
                 "lot": solar_res.lot,
-                "items": solar_res.items,   # ✅ 원본 item list
+                "items": solar_res.items,
             }
         else:
             solar_payload = {"ok": False, "reason": "fetch_failed_or_not_configured"}
 
-
-    # 3) 결과 파일 풀네임
     latest_json = os.path.join(RESULT_DIR, "result_latest.json")
     latest_viz = os.path.join(RESULT_DIR, "result_latest_viz.png")
     marker_path = os.path.join(RESULT_DIR, "result_latest_marker.png")
@@ -559,24 +514,18 @@ async def chat_image(
     if solar_payload:
         data["solar_profile"] = solar_payload
 
-
-    # ✅ 제품형: recommender로 top_plants 채우기 (filters 기반)
     key = _client_key(request)
     user_filters = USER_CTX.get(key, {}).get("filters", {}) if isinstance(USER_CTX.get(key, {}), dict) else {}
-
     data = recommend_for_analysis(data, user_filters=user_filters)
 
-    # ✅ result_latest.json 다시 저장 (pipeline은 spots/features만, 추천은 여기서 채움)
     try:
         with open(latest_json, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
     except Exception as e:
         print("[WARN] overwrite result_latest.json failed:", e)
 
-
     best_point = extract_best_point(data)
 
-    # 4) 로컬 합성(편집) 결과 (식물 PNG 있으면 합성, 없으면 점만)
     plant_asset = os.path.join(BASE_DIR, "assets", "plants", "default.png")
 
     composite_info = composite_plant_on_original(
@@ -589,7 +538,6 @@ async def chat_image(
         add_green_dot=True,
     )
 
-    # marker는 점만 찍어서 생성 (Gemini 편집 입력용)
     _ = composite_plant_on_original(
         original_image_path=save_path,
         best_point_obj=best_point,
@@ -600,7 +548,6 @@ async def chat_image(
         anchor="bottom_center",
     )
 
-    # 5) 응답
     messages: List[Dict[str, Any]] = []
     messages.append({"type": "text", "text": "분석이 완료되었습니다."})
 
@@ -610,7 +557,6 @@ async def chat_image(
                 "type": "images",
                 "text": "result_latest_viz",
                 "images": [{"name": "result_latest_viz", "url": _abs_url(request, "/results/result_latest_viz.png")}],
-
             }
         )
 
@@ -620,7 +566,6 @@ async def chat_image(
                 "type": "images",
                 "text": "result_latest_marker",
                 "images": [{"name": "result_latest_marker", "url": _abs_url(request, "/results/result_latest_marker.png")}],
-
             }
         )
 
@@ -640,19 +585,20 @@ async def chat_image(
             }
         )
 
-    # --- 추천 요약 텍스트(프론트에 바로 보이게) ---
     best = (data.get("best_spot") or {}) if isinstance(data, dict) else {}
     tops = best.get("top_plants") or []
     if isinstance(tops, list) and tops:
         top3 = tops[:3]
         lines = []
         for i, p in enumerate(top3, start=1):
+            if not isinstance(p, dict):
+                continue
             name = p.get("name") or "식물"
             reason = p.get("reason") or ""
             lines.append(f"{i}. {name}" + (f" - {reason}" if reason else ""))
-        messages.append({"type": "text", "text": "추천 식물 TOP3\n" + "\n".join(lines)})
+        if lines:
+            messages.append({"type": "text", "text": "추천 식물 TOP3\n" + "\n".join(lines)})
 
-    # 6) v3 핵심: 분석 후 options 유지
     messages.append(
         {
             "type": "text",
