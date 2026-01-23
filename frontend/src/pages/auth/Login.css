@@ -48,17 +48,17 @@
 }
 
 .login-form-wrap {
-  width: 100%;
+  width: 500px;
   margin-top: var(--s-5);
 }
 
 .login-bottom-line {
-  width: 100%;
+  width: 500px;
   margin: var(--s-5) 0;
 }
 
 .login-actions {
-  width: 100%;
+  width: 500px;
 }
 
 /* 에러는 위치만 */

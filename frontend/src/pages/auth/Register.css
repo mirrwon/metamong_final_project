@@ -9,9 +9,9 @@
 }
 
 .register-container {
-  width: 100%;
+  width: 500px;
   max-width: var(--w-cover);
-  margin: 0;
+  margin: 0 auto;   /* ⭐ 이거 추가 */
   text-align: center;
 }
 
