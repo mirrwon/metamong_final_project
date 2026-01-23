@@ -5,7 +5,14 @@
 .header {
   width: 100%;
   padding-top: var(--s-3);
+
+  
+  position: sticky;
+  top: 0;
+  z-index: 9999;
+  backdrop-filter: blur(6px);
 }
+
 
 /* ===== 상단: 로고 + login ===== */
 .header-top {

@@ -51,14 +51,14 @@
 
 
 .chatHeader__h2 {
-  margin: 0;
+  margin-bottom: var(--s-4);
   font-size: var(--fs-4);
   color: var(--c-text);
   letter-spacing: -0.02em;
 }
 
 .chatHeader__p {
-  margin: var(--s-1) 0 0;
+  margin-bottom: var(--s-4);
   font-size: var(--fs-3);
   color: var(--c-muted);
 }
@@ -98,14 +98,14 @@
 }
 
 .chatList {
-  margin-top: var(--s-3); 
-  height: min(85vh, 980px);
+  margin-top: var(--s-5); 
+  height: min(90vh, 2000px);
 
   overflow: auto;
-  padding: var(--s-4);
+  padding: var(--s-5);
 
   margin-top: var(--s-3);              
-  padding: var(--s-4);
+  padding: var(--s-5);
 
   background: rgba(255, 255, 255, 0.55);  
   border: 1px solid var(--c-line);  
@@ -167,21 +167,6 @@
   margin-right: 0;
 }
 
-
-/* 챗봇 아이콘 */
-.msgAvatar {
-  width: 32px;
-  height: 32px;
-  border: 1px solid var(--c-line);
-  background: rgba(255, 255, 255, 0.8);
-  display: grid;
-  place-items: center;
-}
-
-.msgAvatar::before {
-  content: "🤖"; /* ✅ 임시 아이콘. 원하면 🌿 로 바꿔도 됨 */
-  font-size: 16px;
-}
 
 .msgBody {
   display: grid;
@@ -647,8 +632,8 @@
 }
 
 .msgAvatar {
-  width: 60px;              /* ✅ 아이콘 전체 크기 */
-  height: 60px;
+  width: 55px;              /* ✅ 아이콘 전체 크기 */
+  height: 55px;
 
   background-image:  url("../../assets/bot.png");
   background-repeat: no-repeat;
@@ -661,7 +646,3 @@
   display: block;
 }
 
-/* 기존 이모지 제거 */
-.msgAvatar::before {
-  content: none;
-}
