@@ -127,18 +127,42 @@
 }
 
 /* PlantPreview 내부 그리드 (PlantPreview.css로 빼도 됨) */
-.plant-preview-grid {
+.plant-preview-marquee {
   margin-top: var(--s-4);
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  position: relative;
+  overflow: hidden;
+  padding: var(--s-3) 0;
+  border-radius: 18px;
+  border: 1px solid rgba(43, 61, 26, 0.14);
+  background: rgba(247, 243, 237, 0.7);
+  box-shadow: 0 16px 28px rgba(43, 61, 26, 0.08);
+}
+
+.plant-preview-track {
+  display: flex;
   gap: var(--s-3);
+  padding: 0 var(--s-3);
+  width: max-content;
+  animation: plantMarquee 60s linear infinite;
+}
+
+.plant-preview-marquee:hover .plant-preview-track {
+  animation-play-state: paused;
 }
 
 .plant-preview-card {
-  background: var(--c-surface);
-  border: 1px solid var(--c-line);
-  border-radius: var(--r-2);
+  width: min(220px, 60vw);
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid rgba(43, 61, 26, 0.18);
+  border-radius: 16px;
   overflow: hidden;
+  box-shadow: 0 10px 18px rgba(43, 61, 26, 0.08);
+  transition: transform 180ms ease, box-shadow 180ms ease;
+}
+
+.plant-preview-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 14px 24px rgba(43, 61, 26, 0.12);
 }
 
 .plant-preview-image {
@@ -149,7 +173,7 @@
 }
 
 .plant-preview-image--placeholder {
-  background: var(--c-muted);
+  background: linear-gradient(140deg, rgba(255, 255, 255, 0.6), rgba(43, 61, 26, 0.06));
 }
 
 .plant-preview-name {
@@ -159,15 +183,18 @@
   color: var(--c-text);
 }
 
-@media (max-width: 720px) {
-  .plant-preview-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+@keyframes plantMarquee {
+  0% {
+    transform: translateX(0);
+  }
+  100% {
+    transform: translateX(-50%);
   }
 }
 
-@media (max-width: 420px) {
-  .plant-preview-grid {
-    grid-template-columns: 1fr;
+@media (prefers-reduced-motion: reduce) {
+  .plant-preview-track {
+    animation: none;
   }
 }
 

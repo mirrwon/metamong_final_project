@@ -58,10 +58,17 @@ _plants_cache = {}
 _plants_key_cache = {}
 
 
+def _normalize_plant_id(key: str, prefix: str) -> str:
+    if prefix and key.startswith(prefix):
+        return key[len(prefix) :]
+    if key.startswith("plant:"):
+        return key.split("plant:", 1)[1]
+    return key
+
+
 def _sort_plant_keys(keys, prefix: str) -> list:
     def _parse_int(key: str):
-        if prefix and key.startswith(prefix):
-            key = key[len(prefix) :]
+        key = _normalize_plant_id(key, prefix)
         try:
             return int(key)
         except Exception:
@@ -80,13 +87,30 @@ def _get_cached_keys(r, prefix: str, cache_ttl: int) -> list:
     if cache_ttl and cached and (time.time() - cached["ts"] <= cache_ttl):
         return cached["keys"]
 
-    cursor = 0
+    ids_set = os.getenv("REDIS_PLANTS_ID_SET", "").strip() or "plants:ids"
     keys = []
+    if ids_set:
+        try:
+            if r.exists(ids_set):
+                keys = list(r.smembers(ids_set))
+        except Exception:
+            keys = []
+
+    if keys:
+        keys = _sort_plant_keys(keys, prefix)
+        if cache_ttl:
+            _plants_key_cache[cache_key] = {"ts": time.time(), "keys": keys}
+        return keys
+
+    cursor = 0
     while True:
         cursor, batch = r.scan(cursor=cursor, match=f"{prefix}*" if prefix else None, count=1000)
         keys.extend(batch)
         if cursor == 0:
             break
+
+    if not prefix and ids_set:
+        keys = [key for key in keys if key != ids_set]
 
     keys = _sort_plant_keys(keys, prefix)
     if cache_ttl:
@@ -96,12 +120,13 @@ def _get_cached_keys(r, prefix: str, cache_ttl: int) -> list:
 
 def _resolve_plant_image(raw: dict, key: str, prefix: str):
     image = raw.get("image") or raw.get("\uc774\ubbf8\uc9c0")
+    base_url = os.getenv("VERCEL_PLANT_IMAGE_BASE_URL", "").strip().rstrip("/")
+
     if isinstance(image, str) and image.strip():
         image = image.strip()
         if image.lower().startswith(("http://", "https://")):
             return image
 
-        base_url = os.getenv("VERCEL_PLANT_IMAGE_BASE_URL", "").strip().rstrip("/")
         if not base_url:
             return image
 
@@ -110,7 +135,6 @@ def _resolve_plant_image(raw: dict, key: str, prefix: str):
         image = image.lstrip("/")
         return f"{base_url}/{image}"
 
-    base_url = os.getenv("VERCEL_PLANT_IMAGE_BASE_URL", "").strip().rstrip("/")
     if not base_url:
         return None
 
@@ -120,41 +144,129 @@ def _resolve_plant_image(raw: dict, key: str, prefix: str):
     if not ext.startswith("."):
         ext = f".{ext}"
 
-    plant_id = key[len(prefix) :] if prefix and key.startswith(prefix) else key
+    plant_id = _normalize_plant_id(key, prefix)
     if not plant_id:
         return None
-    return f"{base_url}/plant_{plant_id}{ext}"
+    return f"{base_url}/plant_{plant_id}_1{ext}"
+
+
+def _resolve_plant_images(raw: dict, key: str, prefix: str) -> list:
+    base_url = os.getenv("VERCEL_PLANT_IMAGE_BASE_URL", "").strip().rstrip("/")
+    if not base_url:
+        return []
+
+    image_count = (
+        raw.get("photo_count")
+        or raw.get("image_count")
+        or raw.get("images_count")
+        or raw.get("\uc0ac\uc9c4_\uac1c\uc218")
+    )
+    try:
+        image_count = int(image_count)
+        if image_count < 1:
+            image_count = None
+    except Exception:
+        image_count = None
+
+    images_raw = raw.get("images") or raw.get("\uc774\ubbf8\uc9c0\ub4e4")
+    if isinstance(images_raw, list):
+        resolved = []
+        for item in images_raw:
+            if not isinstance(item, str) or not item.strip():
+                continue
+            item = item.strip()
+            if item.lower().startswith(("http://", "https://")):
+                resolved.append(item)
+                continue
+            if item.lower().startswith("plant_img/") and base_url.lower().endswith("plant_img"):
+                item = item[len("plant_img/") :]
+            item = item.lstrip("/")
+            resolved.append(f"{base_url}/{item}")
+        return resolved
+
+    exts = os.getenv("VERCEL_PLANT_IMAGE_EXTS", "").strip()
+    ext_list = [ext.strip() for ext in exts.split(",") if ext.strip()] or [".jpg"]
+    ext = ext_list[0]
+    if not ext.startswith("."):
+        ext = f".{ext}"
+
+    max_images_raw = os.getenv("VERCEL_PLANT_IMAGE_MAX", "").strip()
+    try:
+        max_images = max(1, min(int(max_images_raw), 12))
+    except Exception:
+        max_images = 4
+    if image_count:
+        max_images = min(max_images, image_count)
+
+    plant_id = _normalize_plant_id(key, prefix)
+    if not plant_id:
+        return []
+
+    return [f"{base_url}/plant_{plant_id}_{idx}{ext}" for idx in range(1, max_images + 1)]
 
 
 def _normalize_plant_payload(raw, key: str, prefix: str) -> dict:
     if not isinstance(raw, dict):
         raw = {}
 
+    def _join_list(val):
+        if isinstance(val, list):
+            return ", ".join([str(item) for item in val if item is not None])
+        return val
+
     name_ko = raw.get("\uc774\ub984ko")
     name_en = raw.get("\uc774\ub984_en")
     care_level = raw.get("\uad00\ub9ac_\ub09c\uc774\ub3c4") or raw.get("\uad00\ub9ac_\uc694\uad6c\ub3c4")
-    allergy = raw.get("\uc0ac\ub78c_\uc54c\ub7ec\uc9c0_\uc8fc\uc758") or raw.get("\uc0ac\ub78c_\uc54c\ub7ec\uc9c0_\uc720\ud615")
+    allergy_notice = raw.get("\uc0ac\ub78c_\uc54c\ub7ec\uc9c0_\uc8fc\uc758")
+    allergy_type = raw.get("\uc0ac\ub78c_\uc54c\ub7ec\uc9c0_\uc720\ud615")
+    allergy = allergy_type or allergy_notice
+
     pet_target = raw.get("\ubc18\ub824\ub3d9\ubb3c_\ub300\uc0c1")
     pet_symptom = raw.get("\ubc18\ub824\ub3d9\ubb3c_\uc99d\uc0c1")
-    if pet_target is None and pet_symptom is None:
+    pet_target_value = _join_list(pet_target)
+    if pet_symptom in (None, "", "\uc5c6\uc74c") and pet_target_value in (None, "", "\uc5c6\uc74c"):
         pet_safe = None
+    elif pet_symptom == "\uc5c6\uc74c":
+        pet_safe = True
     else:
-        pet_safe = pet_target == "\uc5c6\uc74c" and pet_symptom == "\uc5c6\uc74c"
+        pet_safe = False
+
+    light_lux = raw.get("\uad11_\uc694\uad6c\ub3c4_Lux") or raw.get("\uad11\ub7c9")
+    light_min = raw.get("\uad11\ub7c9_min")
+    light_max = raw.get("\uad11\ub7c9_max")
+    if isinstance(light_lux, list) and light_lux:
+        light_min = light_lux[0]
+        if len(light_lux) > 1:
+            light_max = light_lux[-1]
+        else:
+            light_max = None
+    light_min = _join_list(light_min)
+    light_max = _join_list(light_max)
+
+    placement = raw.get("\uad8c\uc7a5_\ubc30\uce58_\uacf5\uac04")
+    placement = _join_list(placement)
+
+    image = _resolve_plant_image(raw, key, prefix)
+    images = _resolve_plant_images(raw, key, prefix)
+    if image:
+        if image not in images:
+            images = [image, *images]
 
     return {
-        "id": key[len(prefix) :] if prefix and key.startswith(prefix) else key,
+        "id": _normalize_plant_id(key, prefix),
         "name": name_ko or name_en or key,
         "name_ko": name_ko,
         "name_en": name_en,
         "type": raw.get("\uc885\ub958"),
         "size": raw.get("\ud06c\uae30_\uad6c\ubd84"),
-        "light_min": raw.get("\uad11\ub7c9_min"),
-        "light_max": raw.get("\uad11\ub7c9_max"),
-        "placement": raw.get("\uad8c\uc7a5_\ubc30\uce58_\uacf5\uac04"),
+        "light_min": light_min,
+        "light_max": light_max,
+        "placement": placement,
         "care": care_level,
         "allergy": allergy,
         "pet_safe": pet_safe,
-        "image": _resolve_plant_image(raw, key, prefix),
+        "image": image,
+        "images": images,
     }
 
 @app.get("/health")
