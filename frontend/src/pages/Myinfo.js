@@ -135,7 +135,7 @@ const Myinfo = ({ user }) => {
             <Button text="내 정보 수정" type="primary" onClick={goEditMyinfo} />
           </div>
         </section>
-
+{/* 
         <section className="">
           <h2 className="">Results</h2>
           {resultError ? (
@@ -156,7 +156,7 @@ const Myinfo = ({ user }) => {
               ))}
             </div>
           )}
-        </section>
+        </section> */}
       </div>
     </div>
   );

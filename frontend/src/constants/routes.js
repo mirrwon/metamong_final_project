@@ -15,5 +15,7 @@ export const ROUTES = {
     DIARY_DETAIL: '/diary/:id',
     DIARY_EDIT: '/diary/:id/edit',
 
+    DIARY_V2: '/diary-v2',
+
     PLANT_DATA: '/plant-data',
 };

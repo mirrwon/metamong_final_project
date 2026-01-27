@@ -31,6 +31,9 @@ import DiaryNew from './pages/DiaryNew';
 import DiaryDetail from './pages/DiaryDetail';
 import DiaryEdit from './pages/DiaryEdit';
 
+//DiaryV2 pages
+import DiaryV2 from "./pages/DiaryV2";
+
 
 // layout (공통 레이아웃)
 import Layout from './components/layout/Layout';
@@ -144,6 +147,11 @@ function App() {
             <Route
               path={ROUTES.DIARY_EDIT}
               element={user ? <DiaryEdit /> : <Navigate to={ROUTES.LOGIN} />}
+            />
+
+            <Route
+              path={ROUTES.DIARY_V2}  
+              element={user ? <DiaryV2 /> : <Navigate to={ROUTES.LOGIN} />}
             />
 
             <Route
