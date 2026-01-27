@@ -25,6 +25,7 @@ const Header = ({ user, onLogout }) => {
   const goMyinfo = () => { closeMenu(); nav(ROUTES.MYINFO); };
   const goChat = () => { closeMenu(); nav(ROUTES.CHAT); };
   const goDiary = () => { closeMenu(); nav(ROUTES.DIARY); };
+  const goDiaryV2 = () => { closeMenu(); nav(ROUTES.DIARY_V2); };
   const goLogin = () => { closeMenu(); nav(ROUTES.LOGIN); };
   const goPlantData = () => { closeMenu(); nav(ROUTES.PLANT_DATA); };
 
@@ -57,6 +58,7 @@ const Header = ({ user, onLogout }) => {
       <button className="header-link" onClick={goMyinfo} disabled={!user}>Profile</button>
       <button className="header-link" onClick={goChat} disabled={!user}>Chat</button>
       <button className="header-link" onClick={goDiary} disabled={!user}>Diary</button>
+      <button className="header-link" onClick={goDiaryV2} disabled={!user}>DiaryV2</button>
       <button className="header-link" onClick={goPlantData}>Data</button>
     </nav>
   </header>

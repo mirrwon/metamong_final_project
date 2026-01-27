@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { ROUTES } from "../../constants/routes";
 import Button from "../common/Button";
 import { fetchWithSession } from "../../services/session";
+
 import "./JoinChat.css";
 
 const API_BASE = "http://localhost:8000/api/chat";
@@ -123,6 +126,28 @@ export default function Chat() {
     payload?.type === "filters" &&
     Array.isArray(payload?.groups) &&
     payload.groups.some((group) => group.key === "plants");
+
+
+
+  //최종선택 (이미지 -> 다이어리 자동 저장)
+  const nav = useNavigate();
+
+  const handleFinalSelect = ({ plantName, imageUrl, resultId}) => {
+    const payload = {
+      plantName,
+      imageUrl,
+      resultId: resultId || null,
+      createdAt: new Date().toISOString(),
+    };
+
+    //(중요) DiaryV2로 넘길 "대기 이벤트"
+    localStorage.setItem("pendingDiaryPhoto", JSON.stringify(payload));
+
+    //DiaryV2로 이동
+    nav(ROUTES.DIARY_V2);
+
+  }
+
 
   // -----------------------------
   // ✅ 필터 요약 + 전송
@@ -914,3 +939,10 @@ export default function Chat() {
     </div>
   );
 }
+
+
+
+
+{/* <button onClick={() => handleFinalSelect(item)}>
+  최종 선택
+</button> */}
