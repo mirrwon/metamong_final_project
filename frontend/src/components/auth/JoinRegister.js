@@ -21,6 +21,83 @@ const decodePayload = (value) => {
   }
 };
 
+const isShortHeading = (line) => {
+  const trimmed = line.trim();
+  if (!trimmed) return false;
+  if (/^[-*]\s+/.test(trimmed)) return false;
+  if (/^\d+\.\s*/.test(trimmed)) return false;
+  if (/^제\s*\d+\s*조/.test(trimmed)) return true;
+  return trimmed.length <= 20;
+};
+
+const renderMarkdown = (text) => {
+  if (!text) return null;
+  const normalized = text.replace(/^\uFEFF/, "");
+  const blocks = normalized.split(/\r?\n\s*\r?\n/);
+
+  return blocks.map((block, blockIndex) => {
+    const lines = block
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0);
+
+    if (!lines.length) return null;
+
+    const firstLine = lines[0];
+    const headingMatch = firstLine.match(/^(#{1,6})\s+(.*)$/);
+    if (headingMatch && lines.length === 1) {
+      const level = Math.min(4, headingMatch[1].length + 1);
+      const HeadingTag = `h${level}`;
+      return (
+        <HeadingTag key={`block-${blockIndex}`}>
+          {headingMatch[2].trim()}
+        </HeadingTag>
+      );
+    }
+
+    const isOrderedList = lines.every((line) => /^\d+\.\s*/.test(line));
+    if (isOrderedList) {
+      return (
+        <ol key={`block-${blockIndex}`}>
+          {lines.map((line, lineIndex) => (
+            <li key={`item-${blockIndex}-${lineIndex}`}>
+              {line.replace(/^\d+\.\s*/, "")}
+            </li>
+          ))}
+        </ol>
+      );
+    }
+
+    const isUnorderedList = lines.every((line) => /^[-*]\s+/.test(line));
+    if (isUnorderedList) {
+      return (
+        <ul key={`block-${blockIndex}`}>
+          {lines.map((line, lineIndex) => (
+            <li key={`item-${blockIndex}-${lineIndex}`}>
+              {line.replace(/^[-*]\s+/, "")}
+            </li>
+          ))}
+        </ul>
+      );
+    }
+
+    if (lines.length === 1 && isShortHeading(firstLine)) {
+      return <h2 key={`block-${blockIndex}`}>{firstLine}</h2>;
+    }
+
+    return (
+      <p key={`block-${blockIndex}`}>
+        {lines.map((line, lineIndex) => (
+          <span key={`line-${blockIndex}-${lineIndex}`}>
+            {line}
+            {lineIndex < lines.length - 1 && <br />}
+          </span>
+        ))}
+      </p>
+    );
+  });
+};
+
 const JoinRegister = ({ onSubmit }) => {
   const [isOauth, setIsOauth] = useState(false);
   const [formData, setFormData] = useState({
@@ -88,7 +165,7 @@ const JoinRegister = ({ onSubmit }) => {
     if (!user) return;
     setFormData((prev) => ({
       ...prev,
-      username: user.username || "",
+      username: user.user_name || user.username || "",
       email: user.email || "",
       name: user.name || "",
     }));
@@ -429,7 +506,9 @@ const JoinRegister = ({ onSubmit }) => {
                 <p className="">{modalState.error}</p>
               )}
               {!modalState.loading && !modalState.error && (
-                <pre className="">{modalState.content}</pre>
+                <div className="terms-content">
+                  {renderMarkdown(modalState.content)}
+                </div>
               )}
             </div>
           </div>

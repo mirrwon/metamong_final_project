@@ -62,12 +62,28 @@ def _load_user(path: str) -> Dict[str, Any]:
     if not os.path.exists(path):
         raise HTTPException(status_code=404, detail="User not found")
     with open(path, "r", encoding="utf-8") as f:
-        return json.load(f)
+        record = json.load(f)
+    if _normalize_user_record(record):
+        _save_user(path, record)
+    return record
 
 
 def _save_user(path: str, data: Dict[str, Any]) -> None:
+    _normalize_user_record(data)
     with open(path, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
+
+
+def _normalize_user_record(data: Dict[str, Any]) -> bool:
+    changed = False
+    if "user_name" in data:
+        if "username" in data:
+            data.pop("username", None)
+            changed = True
+    elif "username" in data:
+        data["user_name"] = data.pop("username")
+        changed = True
+    return changed
 
 
 def _cleanup_oauth_state() -> None:
@@ -130,7 +146,7 @@ def _oauth_user_record(
 ) -> Dict[str, Any]:
     return {
         "user_num": str(_next_user_num()),
-        "username": username,
+        "user_name": username,
         "password": "google-oauth",
         "name": name or username,
         "birthDate": "",
@@ -268,7 +284,7 @@ def register(
 
     record: Dict[str, Any] = {
         "user_num": str(_next_user_num()),
-        "username": username,
+        "user_name": username,
         "password": password,
         "name": name,
         "birthDate": birthDate,

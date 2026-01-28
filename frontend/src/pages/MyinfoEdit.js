@@ -35,7 +35,7 @@ const MyinfoEdit = ({ user, setUser }) => {
   const initialMyinfo = useMemo(
     () => ({
       profileImageUrl: effectiveUser?.profileImageUrl || '',
-      username: effectiveUser?.username || '',
+      username: effectiveUser?.user_name || effectiveUser?.username || '',
       password: '',
       name: effectiveUser?.name || '혜원',
       gender: effectiveUser?.gender || 'female',

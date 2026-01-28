@@ -2,12 +2,12 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ROUTES } from "../../constants/routes";
 import Button from "../common/Button";
-import { fetchWithSession } from "../../services/session";
-
+import { fetchWithSession, readStoredUser } from "../../services/session";
 import "./Chat.css";
 
 const API_BASE = "http://localhost:8000/api/chat";
 const IMAGE_API = `${API_BASE}/image`;
+const RESULTS_API = `${API_BASE}/results`;
 
 const normalizeMessages = (payload) => {
   if (!payload) return [];
@@ -77,6 +77,8 @@ const formatTime = (timestamp) => {
 };
 
 export default function Chat() {
+  const storedUser = readStoredUser();
+  const username = storedUser?.user_name || storedUser?.username || "";
   const [messages, setMessages] = useState([]);
   const [payload, setPayload] = useState(null);
   const [status, setStatus] = useState("idle");
@@ -129,7 +131,7 @@ export default function Chat() {
 
 
 
-  //최종선택 (이미지 -> 다이어리 자동 저장)
+    //최종선택 (이미지 -> 다이어리 자동 저장)
   const nav = useNavigate();
 
   const handleFinalSelect = ({ plantName, imageUrl, resultId}) => {
@@ -189,6 +191,7 @@ export default function Chat() {
         body: JSON.stringify({
           text: summaryText,
           filters: { ...selectedFilters },
+          username,
         }),
       });
       if (!response.ok) throw new Error("failed");
@@ -227,6 +230,7 @@ export default function Chat() {
         body: JSON.stringify({
           text: option,
           filters: { ...selectedFilters },
+          username,
         }),
       });
 
@@ -252,7 +256,10 @@ export default function Chat() {
     const fetchMessages = async () => {
       setStatus("loading");
       try {
-        const response = await fetchWithSession(API_BASE, { method: "GET" });
+        const chatUrl = username
+          ? `${API_BASE}?username=${encodeURIComponent(username)}`
+          : API_BASE;
+        const response = await fetchWithSession(chatUrl, { method: "GET" });
         if (!response.ok) throw new Error("failed");
 
         const data = await response.json();
@@ -269,6 +276,35 @@ export default function Chat() {
     };
 
     fetchMessages();
+  }, [username]);
+
+  useEffect(() => {
+    const fetchResults = async () => {
+      try {
+        const response = await fetchWithSession(RESULTS_API, { method: "GET" });
+        if (!response.ok) return;
+        const data = await response.json();
+        if (!data?.images?.length) return;
+        setMessages((prev) => {
+          if (prev.some((msg) => msg.id === "latest-results")) return prev;
+          return [
+            ...prev,
+            {
+              id: "latest-results",
+              role: "bot",
+              type: "images",
+              images: data.images,
+              text: "latest-results",
+              timestamp: Date.now(),
+            },
+          ];
+        });
+      } catch (error) {
+        // ignore
+      }
+    };
+
+    fetchResults();
   }, []);
 
   // 필터 그룹 로딩
@@ -431,6 +467,7 @@ export default function Chat() {
         body: JSON.stringify({
           text: trimmed,
           filters: { ...selectedFilters },
+          username,
         }),
       });
       if (!response.ok) throw new Error("failed");
@@ -480,6 +517,9 @@ export default function Chat() {
     const formData = new FormData();
     formData.append("image", imageFiles[0]);
     formData.append("meta", label);
+    if (username) {
+      formData.append("username", username);
+    }
 
     setStatus("loading");
     try {
@@ -527,6 +567,7 @@ export default function Chat() {
         body: JSON.stringify({
           text: label,
           filters: { ...selectedFilters },
+          username,
         }),
       });
       if (!response.ok) throw new Error("failed");
@@ -584,6 +625,7 @@ export default function Chat() {
         body: JSON.stringify({
           text,
           filters: { ...selectedFilters },
+          username,
         }),
       });
       if (!response.ok) throw new Error("failed");

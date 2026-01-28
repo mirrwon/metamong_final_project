@@ -3,9 +3,10 @@ from __future__ import annotations
 import os
 import json
 import time
+import uuid
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, UploadFile, File, Form, Request
+from fastapi import APIRouter, UploadFile, File, Form, Request, HTTPException
 from fastapi.responses import StreamingResponse
 
 from app.cv.pipeline import run_pipeline
@@ -29,12 +30,15 @@ router = APIRouter()
 # --- SIMPLE STATE (in-memory) ---
 USER_STATE: Dict[str, Dict[str, Any]] = {}
 USER_CTX: Dict[str, Dict[str, Any]] = {}
+SURVEY_UPLOADS: Dict[str, List[Dict[str, str]]] = {}
+SURVEY_DIR = os.path.join(BASE_DIR, "surveys")
 
 # ✅ rules만 로드해서 handle_chat에 전달
 KG_RULES = load_rules(ASSET_DIR)
 
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 os.makedirs(RESULT_DIR, exist_ok=True)
+os.makedirs(SURVEY_DIR, exist_ok=True)
 
 
 def _abs_url(request: Request, path: str) -> str:
@@ -54,13 +58,25 @@ def _client_key(request: Request) -> str:
     return str(host)
 
 
-def _client_user_num(request: Request) -> int:
+def _user_key(request: Request, username: Optional[str] = None) -> str:
+    # Prefer a stable user id when provided; fall back to IP.
+    uname = (username or "").strip()
+    if uname:
+        return f"user:{uname}"
+    return _client_key(request)
+
+
+def _client_user_num(request: Request, username: Optional[str] = None) -> int:
     """
     handle_chat 시그니처가 user_num: int 를 요구하므로,
     IP 문자열을 안정적으로 int로 변환.
+    - username이 있으면 username 기반 hash를 사용
     - IPv4면 마지막 옥텟 기반으로 가볍게
     - 그 외는 hash 기반
     """
+    if username:
+        return abs(hash(username)) % 1_000_000_000
+
     host = _client_key(request)
     try:
         parts = host.split(".")
@@ -107,6 +123,78 @@ def parse_detail_text_to_constraints(text: str) -> Dict[str, Any]:
         "size_pref": size,
         "pet_hint": pet,
     }
+
+
+def _collect_survey_values(obj: Any, out: set[str]) -> None:
+    if obj is None:
+        return
+    if isinstance(obj, (list, tuple, set)):
+        for item in obj:
+            _collect_survey_values(item, out)
+        return
+    if isinstance(obj, dict):
+        for item in obj.values():
+            _collect_survey_values(item, out)
+        return
+    out.add(str(obj))
+
+
+def _derive_filters_from_survey(survey_answers: Dict[str, Any]) -> Dict[str, Any]:
+    values: set[str] = set()
+    _collect_survey_values(survey_answers, values)
+
+    derived: Dict[str, Any] = {}
+    if {"dog", "cat"} & values:
+        # Map pet-related caution answers into the existing pet filter.
+        derived["pet"] = ["true"]
+    return derived
+
+
+def _survey_path(username: str) -> str:
+    safe = username.strip()
+    return os.path.join(SURVEY_DIR, f"{safe}.jsonl")
+
+
+def _next_survey_id(username: str) -> int:
+    path = _survey_path(username)
+    if not os.path.exists(path):
+        return 1
+    last_id = 0
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                obj = json.loads(line)
+                try:
+                    last_id = max(last_id, int(obj.get("id", 0)))
+                except Exception:
+                    continue
+    except Exception:
+        return last_id + 1 if last_id else 1
+    return last_id + 1 if last_id else 1
+
+
+def _append_survey(username: str, record: Dict[str, Any]) -> None:
+    path = _survey_path(username)
+    record = {"id": _next_survey_id(username), **record}
+    with open(path, "a", encoding="utf-8") as f:
+        f.write(json.dumps(record, ensure_ascii=False) + "\n")
+
+
+def _load_latest_survey(username: str) -> Dict[str, Any]:
+    path = _survey_path(username)
+    if not username or not os.path.exists(path):
+        return {}
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            lines = [line.strip() for line in f if line.strip()]
+        if not lines:
+            return {}
+        return json.loads(lines[-1])
+    except Exception:
+        return {}
 
 
 def _load_latest_result() -> Dict[str, Any]:
@@ -223,6 +311,220 @@ def get_filters():
 
 
 # -------------------------
+# v3 Contract: /api/chat/survey
+# -------------------------
+@router.get("/api/chat/survey")
+def get_survey():
+    return {
+        "key": "style_survey",
+        "label": "선호 스타일 선택",
+        "ui": "checkbox",
+        "description": "",
+        "groups": [
+            {
+                "key": "caution",
+                "multiple": True,
+                "label": "주의 사항을 선택해 주세요",
+                "options": [
+                    {
+                        "value": "beginner",
+                        "label": "초심자",
+                    },
+                    {
+                        "value": "baby",
+                        "label": "아기",
+                    },
+                    {
+                        "value": "dog",
+                        "label": "강아지",
+                    },
+                    {
+                        "value": "cat",
+                        "label": "고양이",
+                    },
+                    {
+                        "value": "allergy",
+                        "label": "알러지",
+                    },
+                ],
+            },
+            {
+                "key": "size",
+                "multiple": True,
+                "label": "원하는 식물 크기는 무엇인가요?",
+                "options": [
+                    {
+                        "value": "small",
+                        "label": "탁상용",
+                    },
+                    {
+                        "value": "large",
+                        "label": "바닥용",
+                    },
+                ],
+            },
+            {
+                "key": "style",
+                "multiple": True,
+                "label": "방 분위기를 선택해주세요.",
+                "options": [
+                    {
+                        "value": "natural",
+                        "label": "내추럴",
+                        "image": "/assets/survey/natural.jpg",
+                    },
+                    {
+                        "value": "minimal",
+                        "label": "미니멀",
+                        "image": "/assets/survey/minimal.jpg",
+                    },
+                    {
+                        "value": "trendy",
+                        "label": "트렌디",
+                        "image": "/assets/survey/trendy.jpg",
+                    },
+                ],
+            },
+            {
+                "key": "Plant_style",
+                "multiple": True,
+                "label": "당신이 원하는 식물 스타일은 무엇인가요?",
+                "options": [
+                    {
+                        "value": "flowery",
+                        "label": "화려한 꽃",
+                        "image": "/assets/survey/flowery.jpg",
+                    },
+                    {
+                        "value": "leafy",
+                        "label": "푸른 잎",
+                        "image": "/assets/survey/leafy.png",
+                    },
+                    {
+                        "value": "fruity",
+                        "label": "싱그러운 과일",
+                        "image": "/assets/survey/fruity.jpg",
+                    },
+                ],
+            }
+        ],
+    }
+
+
+@router.post("/api/chat/survey")
+async def submit_survey(request: Request):
+    body = await request.json()
+    username = body.get("username") if isinstance(body, dict) else None
+    key = _user_key(request, username)
+    if not SURVEY_UPLOADS.get(key):
+        raise HTTPException(status_code=400, detail="survey_image_required")
+    answers = body.get("answers") if isinstance(body, dict) else None
+    if isinstance(answers, dict):
+        USER_CTX.setdefault(key, {})
+        USER_CTX[key]["survey"] = answers
+        if username:
+            record = {
+                "answers": answers,
+            }
+            _append_survey(username, record)
+    return {"ok": True, "received": body}
+
+
+# -------------------------
+# v3 Contract: POST /api/chat/survey/image (upload)
+# -------------------------
+@router.post("/api/chat/survey/image")
+async def survey_image_upload(
+    request: Request,
+    files: Optional[List[UploadFile]] = File(None),
+    image: Optional[UploadFile] = File(None),
+    survey_key: Optional[str] = Form(None),
+    username: Optional[str] = Form(None),
+):
+    uploads: List[UploadFile] = []
+    if files and len(files) > 0:
+        uploads = files
+    elif image is not None:
+        uploads = [image]
+
+    if not uploads:
+        return {
+            "ok": False,
+            "reason": "no_files",
+            "message": "No files uploaded.",
+        }
+
+    saved_items = []
+    first_saved_path: Optional[str] = None
+    for idx, upload in enumerate(uploads):
+        filename = upload.filename or f"survey_{idx}.jpg"
+        _, ext = os.path.splitext(filename)
+        ext = ext if ext else ".jpg"
+        safe_name = f"survey_{uuid.uuid4().hex}{ext}"
+        save_path = os.path.join(UPLOAD_DIR, safe_name)
+
+        content = await upload.read()
+        with open(save_path, "wb") as f:
+            f.write(content)
+
+        if first_saved_path is None:
+            first_saved_path = save_path
+
+        saved_items.append(
+            {
+                "name": safe_name,
+                "url": _abs_url(request, f"/uploads/{safe_name}"),
+            }
+        )
+
+    if first_saved_path:
+        run_pipeline(first_saved_path, debug_viz=True)
+        # Also generate marker/composite outputs for survey uploads.
+        try:
+            latest_json = os.path.join(RESULT_DIR, "result_latest.json")
+            data: Dict[str, Any] = {}
+            if os.path.exists(latest_json):
+                with open(latest_json, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+
+            best_point = extract_best_point(data)
+            marker_path = os.path.join(RESULT_DIR, "result_latest_marker.png")
+            composite_path = os.path.join(RESULT_DIR, "result_latest_composite.png")
+            plant_asset = os.path.join(BASE_DIR, "assets", "plants", "default.png")
+
+            _ = composite_plant_on_original(
+                original_image_path=first_saved_path,
+                best_point_obj=best_point,
+                out_path=marker_path,
+                plant_png_path=None,
+                add_green_dot=True,
+                plant_width_ratio=0.22,
+                anchor="bottom_center",
+            )
+
+            _ = composite_plant_on_original(
+                original_image_path=first_saved_path,
+                best_point_obj=best_point,
+                out_path=composite_path,
+                plant_png_path=plant_asset if os.path.exists(plant_asset) else None,
+                plant_width_ratio=0.22,
+                anchor="bottom_center",
+                add_green_dot=True,
+            )
+        except Exception as e:
+            print("[WARN] survey marker/composite generation failed:", e)
+
+    key = _user_key(request, username)
+    SURVEY_UPLOADS.setdefault(key, []).extend(saved_items)
+
+    return {
+        "ok": True,
+        "survey_key": survey_key,
+        "items": saved_items,
+    }
+
+
+# -------------------------
 # v3 Contract: /api/chat/stream (SSE heartbeat) - 절대 제거 금지
 # -------------------------
 @router.get("/api/chat/stream")
@@ -249,17 +551,34 @@ def chat_get():
         "messages": [
             {
                 "type": "text",
-                "text": "필터를 선택해주세요.",
-                "payload": {
-                    "type": "filters",
-                    "groups": [
-                        {"key": "experience", "label": "식물 경험", "options": ["beginner", "expert"]},
-                        {"key": "pet", "label": "반려동물 여부", "options": ["true", "false"]},
-                    ],
-                },
+                "text": "식물을 추천해 드릴게요.",
             }
         ]
     }
+
+
+# -------------------------
+# v3 Contract: GET /api/chat/results (latest images)
+# -------------------------
+@router.get("/api/chat/results")
+def chat_results(request: Request):
+    latest_viz = os.path.join(RESULT_DIR, "result_latest_viz.png")
+    marker_path = os.path.join(RESULT_DIR, "result_latest_marker.png")
+    composite_path = os.path.join(RESULT_DIR, "result_latest_composite.png")
+
+    items = []
+    def _versioned_url(path: str, rel: str) -> str:
+        ts = int(os.path.getmtime(path)) if os.path.exists(path) else int(time.time())
+        return f"{_abs_url(request, rel)}?v={ts}"
+
+    if os.path.exists(latest_viz):
+        items.append({"name": "result_latest_viz", "url": _versioned_url(latest_viz, "/results/result_latest_viz.png")})
+    if os.path.exists(marker_path):
+        items.append({"name": "result_latest_marker", "url": _versioned_url(marker_path, "/results/result_latest_marker.png")})
+    if os.path.exists(composite_path):
+        items.append({"name": "result_latest_composite", "url": _versioned_url(composite_path, "/results/result_latest_composite.png")})
+
+    return {"ok": True, "images": items}
 
 
 # -------------------------
@@ -269,6 +588,8 @@ def chat_get():
 async def chat_post(request: Request):
     body = await request.json()
     text = (body.get("text") or "").strip()
+    username = body.get("username") if isinstance(body, dict) else None
+    key = _user_key(request, username)
 
     if text == "마음에 들어요":
         return {
@@ -283,7 +604,6 @@ async def chat_post(request: Request):
 
     is_filter_summary = ("식물 경험" in text) or ("반려동물 여부" in text)
     if is_filter_summary and isinstance(body.get("filters"), dict) and len(body["filters"]) > 0:
-        key = _client_key(request)
         USER_CTX.setdefault(key, {})
         USER_CTX[key]["filters"] = body["filters"]
         return {
@@ -353,7 +673,6 @@ async def chat_post(request: Request):
         return {"messages": messages}
 
     if text == "상세 입력":
-        key = _client_key(request)
         USER_STATE.setdefault(key, {})
         USER_STATE[key]["mode"] = "awaiting_detail"
         return {"messages": [{"type": "text", "text": "상세 내용을 입력해주세요.", "payload": {"input": {"type": "text"}}}]}
@@ -377,7 +696,6 @@ async def chat_post(request: Request):
             ]
         }
 
-    key = _client_key(request)
     mode = USER_STATE.get(key, {}).get("mode")
 
     is_option = text in [
@@ -394,7 +712,7 @@ async def chat_post(request: Request):
         constraints = parse_detail_text_to_constraints(text)
 
         # ✅ 구형 handle_chat 요구사항 충족
-        user_num = _client_user_num(request)
+        user_num = _client_user_num(request, username)
         session_id = None
 
         kg_answer = handle_chat(
@@ -450,6 +768,7 @@ async def chat_image(
     files: Optional[List[UploadFile]] = File(None),
     image: Optional[UploadFile] = File(None),
     meta: Optional[str] = Form(None),
+    username: Optional[str] = Form(None),
 ):
     upload: Optional[UploadFile] = None
     if files and len(files) > 0:
@@ -514,8 +833,21 @@ async def chat_image(
     if solar_payload:
         data["solar_profile"] = solar_payload
 
-    key = _client_key(request)
-    user_filters = USER_CTX.get(key, {}).get("filters", {}) if isinstance(USER_CTX.get(key, {}), dict) else {}
+    key = _user_key(request, username)
+    ctx = USER_CTX.get(key, {}) if isinstance(USER_CTX.get(key, {}), dict) else {}
+    filters = ctx.get("filters", {}) if isinstance(ctx.get("filters"), dict) else {}
+    survey_answers = ctx.get("survey", {}) if isinstance(ctx.get("survey"), dict) else {}
+    if not survey_answers and username:
+        latest = _load_latest_survey(username)
+        answers = latest.get("answers") if isinstance(latest, dict) else {}
+        if isinstance(answers, dict):
+            survey_answers = answers
+            USER_CTX.setdefault(key, {})
+            USER_CTX[key]["survey"] = survey_answers
+    derived = _derive_filters_from_survey(survey_answers) if survey_answers else {}
+    user_filters = {**filters, **derived}
+    if survey_answers:
+        user_filters["survey_answers"] = survey_answers
     data = recommend_for_analysis(data, user_filters=user_filters)
 
     try:

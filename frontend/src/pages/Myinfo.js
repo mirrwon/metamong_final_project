@@ -58,9 +58,11 @@ const Myinfo = ({ user }) => {
     if (!effectiveUser) return fallback;
 
     const merged = { ...fallback, ...effectiveUser };
+    const resolvedUsername = merged.user_name || merged.username || fallback.username;
 
     return {
       ...merged,
+      username: resolvedUsername,
       profileImageUrl: withCacheBust(
         merged.profileImageUrl,
         effectiveUser?.profileImageCacheBust
@@ -135,7 +137,7 @@ const Myinfo = ({ user }) => {
             <Button text="내 정보 수정" type="primary" onClick={goEditMyinfo} />
           </div>
         </section>
-{/* 
+
         <section className="">
           <h2 className="">Results</h2>
           {resultError ? (
@@ -156,7 +158,7 @@ const Myinfo = ({ user }) => {
               ))}
             </div>
           )}
-        </section> */}
+        </section>
       </div>
     </div>
   );

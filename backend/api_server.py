@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
 
-from app.config import RESULT_DIR, UPLOAD_DIR, PLANTS_DIR  # ✅ config 단일 소스 사용
+from app.config import RESULT_DIR, UPLOAD_DIR, PLANTS_DIR, ASSET_DIR  # ✅ config 단일 소스 사용
 
 from app.db.redis_client import get_redis, get_redis_error
 from app.db.mysql_client import get_mysql, get_mysql_error
@@ -26,6 +26,7 @@ AUTH_UPLOAD_MOUNT = "/auth-uploads"
 os.makedirs(RESULT_DIR, exist_ok=True)
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 os.makedirs(PLANTS_DIR, exist_ok=True)
+os.makedirs(ASSET_DIR, exist_ok=True)
 
 load_dotenv()
 
@@ -36,6 +37,7 @@ app = FastAPI()
 app.mount("/results", StaticFiles(directory=RESULT_DIR), name="results")
 app.mount("/plants", StaticFiles(directory=PLANTS_DIR), name="plants")
 app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
+app.mount("/assets", StaticFiles(directory=ASSET_DIR), name="assets")
 app.mount(AUTH_UPLOAD_MOUNT, StaticFiles(directory=AUTH_UPLOAD_DIR), name="auth-uploads")
 
 app.add_middleware(
