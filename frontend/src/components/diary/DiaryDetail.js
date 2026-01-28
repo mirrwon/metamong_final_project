@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import Button from "../common/Button";
 import api from "../../services/api";
-import './JoinDiaryDetail.css'
+import './DiaryDetail.css'
 
 const API_BASE = "/api/diary";
 const BACKEND_ORIGIN = "http://localhost:8000";
@@ -61,7 +61,7 @@ const formatDateLabel = (value) => {
   return date.toLocaleDateString("en-CA"); // YYYY-MM-DD
 };
 
-const JoinDiaryDetail = () => {
+const DiaryDetail = () => {
   const { id } = useParams();
   const nav = useNavigate();
 
@@ -211,4 +211,4 @@ const JoinDiaryDetail = () => {
   );
 };
 
-export default JoinDiaryDetail;
+export default DiaryDetail;

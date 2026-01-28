@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import JoinDiaryForm from "./JoinDiaryForm";
+import DiaryForm from "./DiaryForm";
 import { diaryApi } from "../../services/diaryApi";
 import { getStoredUsername } from "../../services/user";
 
@@ -9,7 +9,7 @@ const toDateInputValue = (value) => {
   return String(value).slice(0, 10);
 };
 
-const JoinDiaryNewContainer = () => {
+const DiaryNewContainer = () => {
   const nav = useNavigate();
 
   const [title, setTitle] = useState("");
@@ -71,7 +71,7 @@ const JoinDiaryNewContainer = () => {
   };
 
   return (
-    <JoinDiaryForm
+    <DiaryForm
       mode="create"
       title={title}
       content={content}
@@ -91,4 +91,4 @@ const JoinDiaryNewContainer = () => {
   );
 };
 
-export default JoinDiaryNewContainer;
+export default DiaryNewContainer;

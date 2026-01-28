@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 
-export function JoinDiaryStorage({
-  plantsKey = "plants_v2",
-  logsKey = "logs_v2",
+export function useTimeLogStorage({
+  plantsKey = "plants_timelog",
+  logsKey = "logs_timelog",
   initialPlants = [],
   initialLogs = [],
 }) {
@@ -36,7 +36,7 @@ export function JoinDiaryStorage({
     } catch {}
   }, [logsKey, logs]);
 
-  const resetDiaryStorage = () => {
+  const resetTimeLogStorage = () => {
     try {
       localStorage.removeItem(plantsKey);
       localStorage.removeItem(logsKey);
@@ -45,5 +45,5 @@ export function JoinDiaryStorage({
     setLogs(initialLogs);
   };
 
-  return { plants, setPlants, logs, setLogs, resetDiaryStorage };
+  return { plants, setPlants, logs, setLogs, resetTimeLogStorage };
 }

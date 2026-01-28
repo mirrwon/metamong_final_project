@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import JoinDiaryForm from "./JoinDiaryForm";
+import DiaryForm from "./DiaryForm";
 import { diaryApi } from "../../services/diaryApi";
 import { getStoredUsername } from "../../services/user";
 
@@ -52,7 +52,7 @@ const toDateInputValue = (value) => {
   return String(value).slice(0, 10);
 };
 
-const JoinDiaryEditContainer = () => {
+const DiaryEditContainer = () => {
   const { id } = useParams();
   const nav = useNavigate();
 
@@ -141,7 +141,7 @@ const JoinDiaryEditContainer = () => {
   if (loadStatus === "notfound") return <div>Post not found.</div>;
 
   return (
-    <JoinDiaryForm
+    <DiaryForm
       mode="edit"
       title={title}
       content={content}
@@ -161,4 +161,4 @@ const JoinDiaryEditContainer = () => {
   );
 };
 
-export default JoinDiaryEditContainer;
+export default DiaryEditContainer;

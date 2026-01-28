@@ -1,8 +1,6 @@
-// import { useNavigate } from "react-router-dom";
 import ProcessCarousel from "../components/home/ProcessCarousel";
 import FAQs from "../components/home/FAQs";
 import PlantPreview from "../components/home/PlantPreview";
-// import { ROUTES } from "../constants/routes";
 import "./Home.css";
 
 const Home = () => {

@@ -10,12 +10,14 @@ export const ROUTES = {
 
     CHAT: '/chat',
 
+    PLANTBOARD: '/plantboard',
+
+    TIMELOG: '/timelog',
+
     DIARY: '/diary',
     DIARY_NEW: '/diary/new',
     DIARY_DETAIL: '/diary/:id',
     DIARY_EDIT: '/diary/:id/edit',
-
-    DIARY_V2: '/diary-v2',
 
     PLANT_DATA: '/plant-data',
 };

@@ -22,17 +22,18 @@ import Login from './pages/auth/Login';
 import Register from './pages/auth/Register';
 import Myinfo from './pages/Myinfo';
 import MyinfoEdit from './pages/MyinfoEdit';
-import Chat from './pages/Chat';
+import ChatPage from "./pages/ChatPage";
 import PlantData from './pages/PlantData';
 
-// Diary pages
-import Diary from './pages/Diary';
-import DiaryNew from './pages/DiaryNew';
-import DiaryDetail from './pages/DiaryDetail';
-import DiaryEdit from './pages/DiaryEdit';
+//게시판
+import PlantBoard from "./pages/plantboard/PlantBoard";
 
-//DiaryV2 pages
-import DiaryV2 from "./pages/DiaryV2";
+import DiaryMainPage from "./pages/plantboard/DiaryMainPage";
+import DiaryNewPage from "./pages/plantboard/DiaryNewPage";
+import DiaryDetailPage from "./pages/plantboard/DiaryDetailPage";
+import DiaryEditPage from "./pages/plantboard/DiaryEditPage";
+
+import TimeLogPage from "./pages/plantboard/TimeLogPage";
 
 
 // layout (공통 레이아웃)
@@ -128,30 +129,37 @@ function App() {
             {/* Chat: 로그인한 사용자만 접근 */}
             <Route
               path={ROUTES.CHAT}
-              element={user ? <Chat /> : <Navigate to={ROUTES.LOGIN} />}
+              element={user ? <ChatPage /> : <Navigate to={ROUTES.LOGIN} />}
             />
 
-              {/* Diary: 로그인한 사용자만 접근 */}
+            {/* PlantBoard: 로그인한 사용자만 접근 */}
+
+            < Route
+              path={ROUTES.PLANTBOARD}
+              element={user ? <PlantBoard/> : <Navigate to={ROUTES.LOGIN} />}
+            /> 
+
+
             <Route
               path={ROUTES.DIARY}
-              element={user ? <Diary /> : <Navigate to={ROUTES.LOGIN} />}
+              element={user ? <DiaryMainPage /> : <Navigate to={ROUTES.LOGIN} />}
             />
             <Route
               path={ROUTES.DIARY_NEW}
-              element={user ? <DiaryNew /> : <Navigate to={ROUTES.LOGIN} />}
+              element={user ? <DiaryNewPage /> : <Navigate to={ROUTES.LOGIN} />}
             />
             <Route
               path={ROUTES.DIARY_DETAIL}
-              element={user ? <DiaryDetail /> : <Navigate to={ROUTES.LOGIN} />}
+              element={user ? <DiaryDetailPage /> : <Navigate to={ROUTES.LOGIN} />}
             />
             <Route
               path={ROUTES.DIARY_EDIT}
-              element={user ? <DiaryEdit /> : <Navigate to={ROUTES.LOGIN} />}
+              element={user ? <DiaryEditPage /> : <Navigate to={ROUTES.LOGIN} />}
             />
 
             <Route
-              path={ROUTES.DIARY_V2}  
-              element={user ? <DiaryV2 /> : <Navigate to={ROUTES.LOGIN} />}
+              path={ROUTES.TIMELOG}  
+              element={user ? <TimeLogPage /> : <Navigate to={ROUTES.LOGIN} />}
             />
 
             <Route

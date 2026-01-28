@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import Button from "../common/Button";
 import api from "../../services/api";
-import "./JoinDiaryList.css";
+import "./DiaryList.css";
 import { getStoredUsername } from "../../services/user";
 import { fetchWithSession } from "../../services/session";
 
@@ -51,7 +51,7 @@ const formatDateLabel = (value) => {
   return date.toLocaleDateString("en-CA"); // YYYY-MM-DD
 };
 
-const JoinDiaryList = () => {
+const DiaryList = () => {
   const nav = useNavigate();
   const [items, setItems] = useState([]);
   const [status, setStatus] = useState("loading"); // loading | ready | error
@@ -220,4 +220,4 @@ const JoinDiaryList = () => {
   );
 };
 
-export default JoinDiaryList;
+export default DiaryList;
