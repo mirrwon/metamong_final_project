@@ -1,17 +1,14 @@
-// src/pages/DiaryV2.js (혹은 네 프로젝트 경로에 맞게)
-// ✅ 너가 분리해둔 파일들(Join*.)에 맞춰서 DiaryV2 최종 정리본
-
 import { useEffect, useMemo, useState } from "react";
 
-import JoinDiarySummary from "../components/diaryV2/JoinDiarySummary";
-import JoinDiaryFilterTabs from "../components/diaryV2/JoinDiaryFilterTabs";
-import JoinDiaryTimeline from "../components/diaryV2/JoinDiaryTimeline";
+import TimeLogSummary from "../../components/timelog/TimeLogSummary";
+import TimeLogFilterTabs from "../../components/timelog/TimeLogFilterTabs";
+import TimeLogLine from "../../components/timelog/TimeLogLine";
+import { useTimeLogStorage } from "../../components/timelog/TimeLogStorage";
 
-import { JoinDiaryStorage } from "../components/diaryV2/JoinDiaryStorage";
-import { readPendingDiaryPhoto, clearPendingDiaryPhoto } from "../components/diaryV2/JoinDiaryPending";
-import { JoinFileToDataUrl } from "../components/diaryV2/JoinFileToDataUrl";
+import { readPendingDiaryPhoto, clearPendingDiaryPhoto } from "../../components/timelog/TimeLogPending";
+import { FileToDataUrl } from "../../components/timelog/FileToDataUrl";
 
-import "./DiaryV2.css";
+import "./TimeLog.css";
 
 /** =========================
  *  MOCK (백 붙이면 여기만 교체)
@@ -36,41 +33,37 @@ const MOCK_LOGS = [
     time: "21:00",
     title: "배치 사진 저장",
     detail: "거실 배치 기록",
-    imageUrl: "https://images.unsplash.com/photo-1505693314120-0d443867891c?auto=format&fit=crop&w=900&q=60",
+    imageUrl:
+      "https://images.unsplash.com/photo-1505693314120-0d443867891c?auto=format&fit=crop&w=900&q=60",
   },
   { id: "6", plantId: "p_3", plantName: "테이블야자", type: "new", date: "2026-01-18", time: "15:10", title: "새 식물 추가", detail: "" },
 ];
 
-export default function DiaryV2() {
+export default function TimeLogPage() {
   /** 탭 */
   const [activeTab, setActiveTab] = useState("all");
 
   /** ✅ plants/logs: localStorage 저장/복원은 훅에서 처리 */
-  const { plants, setPlants, logs, setLogs } = JoinDiaryStorage({
+  const { plants, setPlants, logs, setLogs } = useTimeLogStorage({
     plantsKey: "plants_v2",
     logsKey: "logs_v2",
     initialPlants: MOCK_PLANTS,
     initialLogs: MOCK_LOGS,
   });
-  
-  const [activePlantId, setActivePlantId] = useState("");
 
+  const [activePlantId, setActivePlantId] = useState("");
 
   const [isAddPlantOpen, setIsAddPlantOpen] = useState(false);
   const [newPlantName, setNewPlantName] = useState("");
   const [newPlantFile, setNewPlantFile] = useState(null);
 
- 
   const activePlant = useMemo(() => {
     return plants.find((p) => p.id === activePlantId) || null;
   }, [plants, activePlantId]);
 
-
   const isPlantSelected = Boolean(activePlantId);
 
-
   const showPlantTag = !activePlantId;
-
 
   useEffect(() => {
     const applyPending = async () => {
@@ -121,8 +114,7 @@ export default function DiaryV2() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-
-  //수동 새 식물 추가 
+  //수동 새 식물 추가
   const addPlantManually = async () => {
     const name = (newPlantName || "").trim();
     if (!name) return alert("식물 이름을 입력하세요.");
@@ -133,7 +125,7 @@ export default function DiaryV2() {
 
     let coverUrl = "";
     try {
-      coverUrl = await JoinFileToDataUrl(newPlantFile);
+      coverUrl = await FileToDataUrl(newPlantFile);
     } catch {
       return alert("이미지 처리에 실패했어요. 다른 파일로 다시 시도해 주세요.");
     }
@@ -218,7 +210,7 @@ export default function DiaryV2() {
 
     let imageUrl = "";
     try {
-      imageUrl = await JoinFileToDataUrl(file);
+      imageUrl = await FileToDataUrl(file);
     } catch {
       return alert("이미지 업로드에 실패했어요. 다른 파일로 다시 시도해 주세요.");
     }
@@ -304,16 +296,16 @@ export default function DiaryV2() {
    *  Render
    *  ========================= */
   return (
-    <div className="diaryV2">
-      <div className="diaryV2__header">
-        <h1 className="diaryV2__title">나의 다이어리 🌿</h1>
+    <div className="timelog">
+      <div className="timelog__header">
+        <h1 className="timelog__title">나의 다이어리 🌿</h1>
       </div>
 
       {/* ✅ 식물 선택 */}
-      <div className="dv2-plant">
-        <label className="dv2-plant__label">식물 선택</label>
+      <div className="timelog-plant">
+        <label className="timelog-plant__label">식물 선택</label>
         <select
-          className="dv2-plant__select"
+          className="timelog-plant__select"
           value={activePlantId}
           onChange={(e) => setActivePlantId(e.target.value)}
         >
@@ -326,41 +318,41 @@ export default function DiaryV2() {
         </select>
       </div>
 
-      <div className="dv2-summaryRow">
-        <JoinDiarySummary counts={counts} />
-        <div className="dv2-topActions">
-          <button type="button" className="dv2-addPlantBtn" onClick={() => setIsAddPlantOpen(true)}>
+      <div className="timelog-summaryRow">
+        <TimeLogSummary counts={counts} />
+        <div className="timelog-topActions">
+          <button type="button" className="timelog-addPlantBtn" onClick={() => setIsAddPlantOpen(true)}>
             + 새 식물 추가
           </button>
         </div>
       </div>
 
       {isAddPlantOpen && (
-        <div className="dv2-modal" onClick={() => setIsAddPlantOpen(false)}>
-          <div className="dv2-modal__panel" onClick={(e) => e.stopPropagation()}>
-            <div className="dv2-modal__title">새 식물 추가</div>
+        <div className="timelog-modal" onClick={() => setIsAddPlantOpen(false)}>
+          <div className="timelog-modal__panel" onClick={(e) => e.stopPropagation()}>
+            <div className="timelog-modal__title">새 식물 추가</div>
 
-            <label className="dv2-modal__label">식물 이름</label>
+            <label className="timelog-modal__label">식물 이름</label>
             <input
-              className="dv2-modal__input"
+              className="timelog-modal__input"
               value={newPlantName}
               onChange={(e) => setNewPlantName(e.target.value)}
               placeholder="예) 몬스테라"
             />
 
-            <label className="dv2-modal__label">대표 사진</label>
+            <label className="timelog-modal__label">대표 사진</label>
             <input
-              className="dv2-modal__file"
+              className="timelog-modal__file"
               type="file"
               accept="image/*"
               onChange={(e) => setNewPlantFile(e.target.files?.[0] || null)}
             />
 
-            <div className="dv2-modal__actions">
-              <button type="button" className="dv2-modal__btn" onClick={() => setIsAddPlantOpen(false)}>
+            <div className="timelog-modal__actions">
+              <button type="button" className="timelog-modal__btn" onClick={() => setIsAddPlantOpen(false)}>
                 취소
               </button>
-              <button type="button" className="dv2-modal__btn dv2-modal__btn--primary" onClick={addPlantManually}>
+              <button type="button" className="timelog-modal__btn timelog-modal__btn--primary" onClick={addPlantManually}>
                 등록
               </button>
             </div>
@@ -368,31 +360,31 @@ export default function DiaryV2() {
         </div>
       )}
 
-      <JoinDiaryFilterTabs activeTab={activeTab} counts={counts} onChangeTab={setActiveTab} />
+      <TimeLogFilterTabs activeTab={activeTab} counts={counts} onChangeTab={setActiveTab} />
 
-      <div className="diaryV2__sectionTitle">오늘의 타임라인</div>
-      <JoinDiaryTimeline groups={groups} onDelete={deleteDiaryLog} showPlantTag={showPlantTag} />
+      <div className="timelog__sectionTitle">오늘의 타임라인</div>
+      <TimeLogLine groups={groups} onDelete={deleteDiaryLog} showPlantTag={showPlantTag} />
 
       {/* ✅ 하단 액션바 */}
-      <div className="dv2-actions">
-        <div className="dv2-actions__row">
-          <button type="button" className="dv2-actionBtn" onClick={() => addDiaryLog("water")} disabled={!isPlantSelected}>
+      <div className="timelog-actions">
+        <div className="timelog-actions__row">
+          <button type="button" className="timelog-actionBtn" onClick={() => addDiaryLog("water")} disabled={!isPlantSelected}>
             💧 물 줬어요
           </button>
-          <button type="button" className="dv2-actionBtn" onClick={() => addDiaryLog("fertilizer")} disabled={!isPlantSelected}>
+          <button type="button" className="timelog-actionBtn" onClick={() => addDiaryLog("fertilizer")} disabled={!isPlantSelected}>
             🧪 비료 줬어요
           </button>
-          <button type="button" className="dv2-actionBtn" onClick={() => addDiaryLog("move")} disabled={!isPlantSelected}>
+          <button type="button" className="timelog-actionBtn" onClick={() => addDiaryLog("move")} disabled={!isPlantSelected}>
             🪴 위치 옮겼어요
           </button>
-          <button type="button" className="dv2-actionBtn" onClick={() => addDiaryLog("note")} disabled={!isPlantSelected}>
+          <button type="button" className="timelog-actionBtn" onClick={() => addDiaryLog("note")} disabled={!isPlantSelected}>
             📝 특이사항
           </button>
 
-          <button type="button" className="dv2-actionBtn dv2-actionBtn--file" disabled={!isPlantSelected}>
+          <button type="button" className="timelog-actionBtn timelog-actionBtn--file" disabled={!isPlantSelected}>
             🖼️ 사진추가
             <input
-              className="dv2-fileInput"
+              className="timelog-fileInput"
               type="file"
               accept="image/*"
               onChange={handleUploadPhoto}
@@ -404,7 +396,6 @@ export default function DiaryV2() {
     </div>
   );
 }
-
 
 function buildLocalLog({ type, date, time, plant, detailOverride }) {
   const base = {

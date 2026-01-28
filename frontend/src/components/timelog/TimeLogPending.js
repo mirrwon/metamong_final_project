@@ -1,3 +1,5 @@
+//페이지 이동 사이에서 사진 잃어버리지 않게 임시 보관하는 장치
+
 const KEY = "pendingDiaryPhoto";
 
 export function readPendingDiaryPhoto() {

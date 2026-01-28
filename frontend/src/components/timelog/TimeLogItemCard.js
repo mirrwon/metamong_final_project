@@ -1,4 +1,4 @@
-export default function DiaryItemCard({ item, onDelete, showPlantTag = false }) {
+export default function TimeLogItemCard({ item, onDelete, showPlantTag = false }) {
   const icon = getTypeIcon(item?.type);
   const plantLabel = item?.plantName || item?.plant?.name || "";
 
@@ -13,26 +13,26 @@ export default function DiaryItemCard({ item, onDelete, showPlantTag = false }) 
   const showImageBlock = hasImage && (item?.type === "photo" || item?.type === "new");
 
   return (
-    <div className="dv2-item">
-      <div className="dv2-item__time">{item?.time}</div>
+    <div className="timelog-item">
+      <div className="timelog-item__time">{item?.time}</div>
 
-      <div className="dv2-item__card">
-        <div className="dv2-item__top">
-          <div className="dv2-item__topLeft">
-            <span className="dv2-item__icon" aria-hidden>
+      <div className="timelog-item__card">
+        <div className="timelog-item__top">
+          <div className="timelog-item__topLeft">
+            <span className="timelog-item__icon" aria-hidden>
               {icon}
             </span>
 
-            <span className="dv2-item__title">{item?.title}</span>
+            <span className="timelog-item__title">{item?.title}</span>
 
             {showPlantTag && plantLabel ? (
-              <span className="dv2-item__plantTag">{plantLabel}</span>
+              <span className="timelog-item__plantTag">{plantLabel}</span>
             ) : null}
           </div>
 
           <button
             type="button"
-            className="dv2-item__more"
+            className="timelog-item__more"
             onClick={handleDelete}
             aria-label="기록 삭제"
             title="삭제"
@@ -41,12 +41,14 @@ export default function DiaryItemCard({ item, onDelete, showPlantTag = false }) 
           </button>
         </div>
 
-        {item?.detail ? <div className="dv2-item__detail">{item.detail}</div> : null}
+        {item?.detail ? (
+          <div className="timelog-item__detail">{item.detail}</div>
+        ) : null}
 
         {showImageBlock ? (
-          <div className="dv2-item__image">
+          <div className="timelog-item__image">
             <img
-              className="dv2-item__img"
+              className="timelog-item__img"
               src={item.imageUrl}
               alt={plantLabel || item?.title || "image"}
             />

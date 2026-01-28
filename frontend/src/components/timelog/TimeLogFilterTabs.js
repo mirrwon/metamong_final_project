@@ -15,14 +15,14 @@ const TABS = [
   { key: "new", label: "새 식물" },
 ];
 
-export default function DiaryFilterTabs({ activeTab, onChangeTab, counts }) {
+export default function TimeLogFilterTabs({ activeTab, onChangeTab, counts }) {
   /** 탭 눌렀을 때 부모에게 key 전달 */
   const handleClickTab = (key) => {
     onChangeTab(key);
   };
 
   return (
-    <div className="dv2-tabs" role="tablist" aria-label="다이어리 필터">
+    <div className="timelog-tabs" role="tablist" aria-label="다이어리 필터">
       {TABS.map((tab) => {
         const isActive = activeTab === tab.key;
 
@@ -30,14 +30,16 @@ export default function DiaryFilterTabs({ activeTab, onChangeTab, counts }) {
           <button
             key={tab.key}
             type="button"
-            className={`dv2-tab ${isActive ? "is-active" : ""}`}
+            className={`timelog-tab ${isActive ? "is-active" : ""}`}
             onClick={() => handleClickTab(tab.key)}
             role="tab"
             aria-selected={isActive}
           >
-            <span className="dv2-tab__label">{tab.label}</span>
+            <span className="timelog-tab__label">{tab.label}</span>
 
-            <span className="dv2-tab__badge">{counts?.[tab.key] ?? 0}</span>
+            <span className="timelog-tab__badge">
+              {counts?.[tab.key] ?? 0}
+            </span>
           </button>
         );
       })}

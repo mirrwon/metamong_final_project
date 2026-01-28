@@ -1,7 +1,7 @@
 import Button from "../common/Button";
-import "./JoinDiaryForm.css";
+import "./DiaryForm.css";
 
-const JoinDiaryForm = ({
+const DiaryForm = ({
   mode, // "create" | "edit"
   title,
   content,
@@ -104,4 +104,4 @@ const JoinDiaryForm = ({
   );
 };
 
-export default JoinDiaryForm;
+export default DiaryForm;

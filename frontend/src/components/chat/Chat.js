@@ -4,7 +4,7 @@ import { ROUTES } from "../../constants/routes";
 import Button from "../common/Button";
 import { fetchWithSession } from "../../services/session";
 
-import "./JoinChat.css";
+import "./Chat.css";
 
 const API_BASE = "http://localhost:8000/api/chat";
 const IMAGE_API = `${API_BASE}/image`;
@@ -140,11 +140,11 @@ export default function Chat() {
       createdAt: new Date().toISOString(),
     };
 
-    //(중요) DiaryV2로 넘길 "대기 이벤트"
+
     localStorage.setItem("pendingDiaryPhoto", JSON.stringify(payload));
 
-    //DiaryV2로 이동
-    nav(ROUTES.DIARY_V2);
+
+    nav(ROUTES.TIMELOG);
 
   }
 
