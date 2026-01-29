@@ -7,14 +7,38 @@ import "./Chat.css";
 
 const API_BASE = "http://localhost:8000/api/chat";
 const IMAGE_API = `${API_BASE}/image`;
-const RESULTS_API = `${API_BASE}/results`;
+const SCENES_API = `${API_BASE.replace(/\/api\/chat$/, "")}/api/chat/scenes`;
+const SPOT_API = `${API_BASE}/spot`;
+
+function normalizeCvResult(raw) {
+  const out = raw && typeof raw === "object" ? raw : {};
+  const spots = Array.isArray(out.spots) ? out.spots : [];
+  const best = out.best_spot ?? spots[0] ?? null;
+
+  return {
+    ...out,
+    spots,
+    best_spot: best,
+    window: out.window ?? null,
+    pnp: out.pnp ?? null,
+    scene: out.scene ?? null,
+  };
+}
 
 const normalizeMessages = (payload) => {
   if (!payload) return [];
   const raw = Array.isArray(payload) ? payload : payload.messages || payload.data || [];
 
   return raw
-    .filter((item) => item && item.text)
+    .filter((item) => {
+      if (!item) return false;
+      // ✅ text가 없어도 images가 있으면 살린다
+      if (item.text) return true;
+      if (Array.isArray(item.images) && item.images.length > 0) return true;
+      // ✅ scene_required 같은 payload-only도 살린다
+      if (item.payload) return true;
+      return false;
+    })
     .map((item, index) => ({
       id: item.id || `${Date.now()}-${index}`,
       role: item.role || "bot",
@@ -22,8 +46,11 @@ const normalizeMessages = (payload) => {
       timestamp: item.timestamp || null,
       type: item.type,
       images: item.images,
+      payload: item.payload,
     }));
 };
+
+
 
 const normalizePayload = (data) => {
   if (!data) return null;
@@ -83,6 +110,9 @@ export default function Chat() {
   const [payload, setPayload] = useState(null);
   const [status, setStatus] = useState("idle");
 
+  // ✅ CV result 저장(필요하면 나중에 카드 UI로 확장 가능)
+  const [cvResult, setCvResult] = useState(null);
+
   const [input, setInput] = useState("");
   const [imageFiles, setImageFiles] = useState([]);
   const [startHour, setStartHour] = useState("");
@@ -100,6 +130,22 @@ export default function Chat() {
   const [lightboxIndex, setLightboxIndex] = useState(0);
 
   const hasMessages = messages.length > 0;
+
+  const [regenSpotImage, setRegenSpotImage] = useState(false);
+
+
+  // =========================================================
+  // ✅ Scene Select 상태 (합침)
+  // =========================================================
+  const [needSceneSelect, setNeedSceneSelect] = useState(false);
+  const [sceneOptions, setSceneOptions] = useState([]);
+  const [selectedScene, setSelectedScene] = useState("");
+  const [pendingImageFile, setPendingImageFile] = useState(null); // 재전송용
+  const [sceneErrorText, setSceneErrorText] = useState("");
+
+  const [showAltSpots, setShowAltSpots] = useState(false);
+  const [altSpotCount, setAltSpotCount] = useState(0);
+  const [selectedSpotIndex, setSelectedSpotIndex] = useState(0);
 
   const statusText = useMemo(() => {
     if (status === "loading") return "서버 응답 대기중";
@@ -129,26 +175,59 @@ export default function Chat() {
     Array.isArray(payload?.groups) &&
     payload.groups.some((group) => group.key === "plants");
 
+  const handlePickAltSpot = async (spotIndex) => {
+    setSelectedSpotIndex(spotIndex);
+    setStatus("loading");
+
+    // UX: 사용자가 뭘 눌렀는지 메시지로 남김(선택)
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: `${Date.now()}-user-spot`,
+        role: "user",
+        text: `다른 후보 보기: ${spotIndex + 1}`,
+        timestamp: Date.now(),
+      },
+    ]);
+
+    try {
+      const res = await fetchWithSession(SPOT_API, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+        spot_index: spotIndex,
+        regen: regenSpotImage, // ✅ 체크박스 값
+        }),
+      });
+
+      if (!res.ok) throw new Error("failed");
+
+      const data = await res.json();
+
+      // ✅ 메시지/이미지 반영
+      const incoming = normalizeMessages(data);
+      if (incoming.length) setMessages((prev) => [...prev, ...incoming]);
+
+      // ✅ cv_result도 갱신(있으면)
+      const cvRaw =
+        data?.cv_result ??
+        data?.data?.cv_result ??
+        data?.payload?.cv_result ??
+        data?.result ??
+        data?.data?.result ??
+        null;
+
+      if (cvRaw) setCvResult(normalizeCvResult(cvRaw));
+
+      setStatus("connected");
+    } catch (e) {
+      setStatus("error");
+    }
+  };
 
 
-    //최종선택 (이미지 -> 다이어리 자동 저장)
-  const nav = useNavigate();
-
-  const handleFinalSelect = ({ plantName, imageUrl, resultId}) => {
-    const payload = {
-      plantName,
-      imageUrl,
-      resultId: resultId || null,
-      createdAt: new Date().toISOString(),
-    };
 
 
-    localStorage.setItem("pendingDiaryPhoto", JSON.stringify(payload));
-
-
-    nav(ROUTES.TIMELOG);
-
-  }
 
 
   // -----------------------------
@@ -167,6 +246,59 @@ export default function Chat() {
     if (parts.length === 0) return "선택한 속성 없음";
     return parts.join(" / ");
   };
+
+  // =========================================================
+  // ✅ scene list fetch (필요할 때만)
+  // =========================================================
+  const fetchScenesIfNeeded = async () => {
+    if (sceneOptions.length > 0) return;
+    try {
+      const res = await fetchWithSession(SCENES_API, { method: "GET" });
+      if (!res.ok) throw new Error("failed");
+      const data = await res.json();
+      if (data?.ok && Array.isArray(data?.scenes)) {
+        setSceneOptions(data.scenes);
+      }
+    } catch (e) {
+      setSceneErrorText(
+        "scene 목록을 불러오지 못했습니다. 백엔드의 /api/chat/scenes 라우트를 확인해주세요."
+      );
+    }
+  };
+
+  // =========================================================
+  // ✅ 서버 메시지에서 scene_required 감지
+  // =========================================================
+  const detectSceneRequired = (incomingMessages = []) => {
+    for (const m of incomingMessages) {
+      const p = m?.payload;
+      if (!p) continue;
+
+      if (p.type === "scene_required") {
+        if (Array.isArray(p.scenes) && p.scenes.length > 0) {
+          setSceneOptions(p.scenes);
+        } else {
+          fetchScenesIfNeeded();
+        }
+        setNeedSceneSelect(true);
+        setSceneErrorText(p.message || "이 사진은 공간(scene) 선택이 필요합니다.");
+        return true;
+      }
+    }
+    return false;
+  };
+
+  const detectAiEditArrived = (incomingMessages = []) => {
+    return incomingMessages.some((m) => {
+      if (!Array.isArray(m?.images)) return false;
+      return m.images.some((img) => {
+        const name = String(img?.name || "");
+        const url = String(img?.url || "");
+        return name === "ai_edit" || name.includes("ai_edit") || url.includes("ai_edit");
+      });
+    });
+  };
+
 
   const sendWithFilters = async () => {
     setFiltersSent(false);
@@ -197,6 +329,44 @@ export default function Chat() {
       if (!response.ok) throw new Error("failed");
 
       const data = await response.json();
+
+      // ✅ (합침) cv_result 파싱/정규화
+      const cvRaw =
+        data?.cv_result ??
+        data?.data?.cv_result ??
+        data?.payload?.cv_result ??
+        data?.result ??
+        data?.data?.result ??
+        null;
+
+      const cv = normalizeCvResult(cvRaw);
+      setCvResult(cvRaw ? cv : null);
+
+      if (cv?.best_spot?.pt) {
+        const [px, py] = cv.best_spot.pt;
+        const spotsCount = Array.isArray(cv.spots) ? cv.spots.length : 0;
+
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `${Date.now()}-cv-summary`,
+            role: "bot",
+            text: `✅ 추천 위치가 계산됐어요!\n- Best: (${px}, ${py})\n- 후보 개수: ${spotsCount}개`,
+            timestamp: Date.now(),
+          },
+        ]);
+      } else if (cvRaw) {
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `${Date.now()}-cv-summary-warn`,
+            role: "bot",
+            text: `⚠️ CV 결과는 받았지만(best_spot 없음) 표시할 추천 좌표를 찾지 못했어요. (응답 스키마 확인 필요)`,
+            timestamp: Date.now(),
+          },
+        ]);
+      }
+
       const incoming = normalizeMessages(data);
       const nextPayload = normalizePayload(data);
 
@@ -490,14 +660,24 @@ export default function Chat() {
   const handleImageChange = (event) => {
     const files = event.target.files ? Array.from(event.target.files) : [];
     setImageFiles(files);
+
+    // ✅ scene 재전송 대비: 첫 파일 기억
+    if (files.length > 0) {
+      setPendingImageFile(files[0]);
+      setNeedSceneSelect(false);
+      setSelectedScene("");
+      setSceneErrorText("");
+    }
   };
 
-  // ✅ 이미지 업로드는 항상 /api/chat/image 로만 보냄
-  const handleImageSubmit = async (event) => {
+  // ✅ 이미지 업로드 (sceneId optional)
+  const handleImageSubmit = async (event, sceneId = null) => {
     event.preventDefault();
-    if (imageFiles.length === 0) return;
 
-    const label = `이미지 업로드 ${imageFiles.length}장`;
+    const fileToSend = imageFiles.length > 0 ? imageFiles[0] : pendingImageFile;
+    if (!fileToSend) return;
+
+    const label = `이미지 업로드 1장`;
 
     setMessages((prev) => [
       ...prev,
@@ -505,21 +685,43 @@ export default function Chat() {
         id: `${Date.now()}-user-images`,
         role: "user",
         type: "images",
-        images: imageFiles.map((file) => ({
-          name: file.name,
-          url: URL.createObjectURL(file),
-        })),
+        images: [
+          {
+            name: fileToSend.name,
+            url: URL.createObjectURL(fileToSend),
+          },
+        ],
         text: label,
         timestamp: Date.now(),
       },
     ]);
 
     const formData = new FormData();
-    formData.append("image", imageFiles[0]);
-    formData.append("meta", label);
-    if (username) {
-      formData.append("username", username);
+    formData.append("image", fileToSend);
+
+    formData.append(
+      "meta",
+      JSON.stringify({
+        lat: 37.5665,
+        lon: 126.9780,
+        label,           
+        // hhmm: "0900",  // 필요하면
+      })
+    );
+
+    // ✅ scene_id (있으면)
+    if (sceneId !== null && sceneId !== undefined && String(sceneId).trim() !== "") {
+      formData.append("scene_id", String(sceneId));
     }
+
+    // ✅ scene_id 추가 전송 (빈문자/0 같은 falsy 방지)
+    if (sceneId !== null && sceneId !== undefined && String(sceneId).trim() !== "") {
+      formData.append("scene_id", String(sceneId));
+    }
+
+    console.log("[handleImageSubmit] sceneId =", sceneId);
+    for (const [k, v] of formData.entries()) console.log("[FormData]", k, v);
+
 
     setStatus("loading");
     try {
@@ -530,13 +732,72 @@ export default function Chat() {
       if (!response.ok) throw new Error("failed");
 
       const data = await response.json();
+
+      // ✅ (합침) cv_result 파싱/정규화 (이미지 업로드 응답에서)
+      const cvRaw =
+        data?.cv_result ??
+        data?.data?.cv_result ??
+        data?.payload?.cv_result ??
+        data?.result ??
+        data?.data?.result ??
+        null;
+
+      const cv = normalizeCvResult(cvRaw);
+      setCvResult(cvRaw ? cv : null);
+
+      if (cv?.best_spot?.pt) {
+        const [px, py] = cv.best_spot.pt;
+        const spotsCount = Array.isArray(cv.spots) ? cv.spots.length : 0;
+
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `${Date.now()}-cv-summary-image`,
+            role: "bot",
+            text: `✅ 추천 위치가 계산됐어요!\n- Best: (${px}, ${py})\n- 후보 개수: ${spotsCount}개`,
+            timestamp: Date.now(),
+          },
+        ]);
+      } else if (cvRaw) {
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `${Date.now()}-cv-summary-image-warn`,
+            role: "bot",
+            text: `⚠️ CV 결과는 받았지만(best_spot 없음) 표시할 추천 좌표를 찾지 못했어요. (응답 스키마 확인 필요)`,
+            timestamp: Date.now(),
+          },
+        ]);
+      }
+
       const incoming = normalizeMessages(data);
       const nextPayload = normalizePayload(data);
+
+      // ✅ ai_edit 도착하면: 후보 버튼 노출 준비
+      const aiEditArrived = detectAiEditArrived(incoming);
+      if (aiEditArrived) {
+        const spotsLen = Array.isArray(cv?.spots) ? cv.spots.length : 0;
+        const cnt = Math.min(5, spotsLen || 5); // spots 없으면 일단 5 가정
+        setAltSpotCount(cnt);
+        setSelectedSpotIndex(0);
+        setShowAltSpots(true);
+      }
+
+      // ✅ scene_required 감지 후 UI 띄우고 종료
+      const needScene = detectSceneRequired(incoming);
+      if (needScene) {
+        setStatus("connected");
+        return;
+      }
 
       if (incoming.length) setMessages((prev) => [...prev, ...incoming]);
       if (nextPayload) setPayload(nextPayload);
 
       setImageFiles([]);
+      setNeedSceneSelect(false);
+      setSelectedScene("");
+      setSceneErrorText("");
+
       setStatus("connected");
     } catch (error) {
       setStatus("error");
@@ -654,6 +915,30 @@ export default function Chat() {
     });
   };
 
+  // ✅ Scene 선택 후 재분석 (초기 업로드와 동일 경로로 재전송)
+  const handleSceneResubmit = async (e) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    if (!pendingImageFile || !selectedScene) return;
+
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: `${Date.now()}-user-scene`,
+        role: "user",
+        text: `scene 선택: ${selectedScene}`,
+        timestamp: Date.now(),
+      },
+    ]);
+
+    // ✅ 핵심: 재분석도 handleImageSubmit으로 통일 (IMAGE_API + fetchWithSession 사용)
+    const fakeEvent = { preventDefault: () => {} };
+    await handleImageSubmit(fakeEvent, selectedScene);
+  };
+
+
   return (
     <div className="chatPage">
       <div className="chatShell">
@@ -719,7 +1004,10 @@ export default function Chat() {
 
                       {payload.attributeSchema.length > 0 && (
                         <div className="payloadTable">
-                          <div className="payloadTable__head" style={attributeGridTemplate || undefined}>
+                          <div
+                            className="payloadTable__head"
+                            style={attributeGridTemplate || undefined}
+                          >
                             <span className="payloadTable__th">사진</span>
                             {payload.attributeSchema.map((schema) => (
                               <span key={schema.key} className="payloadTable__th">
@@ -748,7 +1036,9 @@ export default function Chat() {
                       )}
 
                       <div className="payloadActions">
-                        <div className="payloadActions__q">마음에 들지 않으면 상세 입력으로 이어갈까요?</div>
+                        <div className="payloadActions__q">
+                          마음에 들지 않으면 상세 입력으로 이어갈까요?
+                        </div>
                         <div className="payloadActions__btns">
                           <Button
                             type="option"
@@ -790,15 +1080,76 @@ export default function Chat() {
                   ) : (
                     <>
                       <div className="msgBubble">{message.text}</div>
-                      {message.timestamp && (
-                        <div className="msgTime">{formatTime(message.timestamp)}</div>
-                      )}
+                      {message.timestamp && <div className="msgTime">{formatTime(message.timestamp)}</div>}
                     </>
                   )}
                 </div>
               </div>
             );
           })}
+
+          {/* ✅ scene_required UI (합침) */}
+          {needSceneSelect && (
+            <div className="filterPanel" style={{ marginTop: 12 }}>
+              <div className="filterGroup">
+                <div className="filterGroup__title">[공간(scene) 선택 필요]</div>
+                <div style={{ marginBottom: 8, opacity: 0.9 }}>
+                  {sceneErrorText || "이 사진은 공간(scene) 선택이 필요합니다."}
+                </div>
+
+                {sceneOptions.length === 0 ? (
+                  <div style={{ color: "#c00" }}>
+                    scene 목록이 없습니다. 백엔드 <b>/api/chat/scenes</b> 라우트를 확인해주세요.
+                  </div>
+                ) : (
+                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                    <select
+                      value={selectedScene}
+                      onChange={(e) => setSelectedScene(e.target.value)}
+                      style={{ padding: 6, minWidth: 260 }}
+                    >
+                      <option value="">선택하세요</option>
+                      {sceneOptions.map((s) => (
+                        <option key={s} value={s}>
+                          {s}
+                        </option>
+                      ))}
+                    </select>
+                    <button type="button" onClick={handleSceneResubmit}>
+                      다시 분석
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+          
+          {showAltSpots && altSpotCount > 0 && (
+            <div className="optionBar" style={{ marginTop: 10 }}>
+              <div style={{ marginBottom: 6, opacity: 0.9 }}>
+                다른 후보 보기 (최대 {altSpotCount}개)
+              </div>
+              <div className="optionBar__grid">
+                {Array.from({ length: altSpotCount }, (_, i) => i).map((idx) => (
+                  <Button
+                    key={`alt-spot-${idx}`}
+                    type={idx === selectedSpotIndex ? "primary" : "option"}
+                    onClick={() => handlePickAltSpot(idx)}
+                    text={`후보 ${idx + 1}`}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+
+          <label style={{ display: "flex", gap: 8, alignItems: "center", margin: "8px 0" }}>
+            <input
+              type="checkbox"
+              checked={regenSpotImage}
+              onChange={(e) => setRegenSpotImage(e.target.checked)}
+            />
+            같은 후보 다시 누르면 이미지 재생성
+          </label>
 
           {/* 옵션 버튼 */}
           {payload?.options?.length > 0 && (
@@ -931,7 +1282,6 @@ export default function Chat() {
               </button>
             </form>
           )}
-
           <div ref={endRef} />
         </div>
 
@@ -981,10 +1331,3 @@ export default function Chat() {
     </div>
   );
 }
-
-
-
-
-{/* <button onClick={() => handleFinalSelect(item)}>
-  최종 선택
-</button> */}
