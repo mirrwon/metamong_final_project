@@ -256,7 +256,7 @@ export default function Chat() {
       if (!res.ok) throw new Error("failed");
       const data = await res.json();
       if (data?.ok && Array.isArray(data?.scenes)) {
-        setSceneOptions(data.scenes);
+        setSceneOptions(normalizeSceneOptions(data.scenes));
       }
     } catch (e) {
       setSceneErrorText(
@@ -264,6 +264,25 @@ export default function Chat() {
       );
     }
   };
+
+  const normalizeSceneOptions = (arr) => {
+  if (!Array.isArray(arr)) return [];
+  return arr
+    .map((s) => {
+      if (!s) return null;
+      // ✅ 백엔드가 string 주는 경우도 커버
+      if (typeof s === "string") return { id: s, label: s };
+      // ✅ 백엔드가 {id,label} 주는 경우
+      if (typeof s === "object") {
+        const id = String(s.id ?? s.scene_id ?? s.value ?? "").trim();
+        const label = String(s.label ?? s.name ?? id).trim();
+        if (!id) return null;
+        return { id, label };
+      }
+      return null;
+    })
+    .filter(Boolean);
+};
 
   // =========================================================
   // ✅ 서버 메시지에서 scene_required 감지
@@ -275,7 +294,7 @@ export default function Chat() {
 
       if (p.type === "scene_required") {
         if (Array.isArray(p.scenes) && p.scenes.length > 0) {
-          setSceneOptions(p.scenes);
+          setSceneOptions(normalizeSceneOptions(p.scenes));
         } else {
           fetchScenesIfNeeded();
         }
@@ -911,26 +930,36 @@ export default function Chat() {
 
   // ✅ Scene 선택 후 재분석 (초기 업로드와 동일 경로로 재전송)
   const handleSceneResubmit = async (e) => {
-    if (e) {
-      e.preventDefault();
-      e.stopPropagation();
-    }
-    if (!pendingImageFile || !selectedScene) return;
+  if (e) {
+    e.preventDefault();
+    e.stopPropagation();
+  }
 
-    setMessages((prev) => [
-      ...prev,
-      {
-        id: `${Date.now()}-user-scene`,
-        role: "user",
-        text: `scene 선택: ${selectedScene}`,
-        timestamp: Date.now(),
-      },
-    ]);
+  // ✅ “실제로 보낼 파일” 기준으로 체크
+  const fileToSend = imageFiles.length > 0 ? imageFiles[0] : pendingImageFile;
+  if (!fileToSend) return;
 
-    // ✅ 핵심: 재분석도 handleImageSubmit으로 통일 (IMAGE_API + fetchWithSession 사용)
-    const fakeEvent = { preventDefault: () => {} };
-    await handleImageSubmit(fakeEvent, selectedScene);
+  const sceneId = (selectedScene || "").trim();
+  if (!sceneId) return;
+
+  setMessages((prev) => [
+    ...prev,
+    {
+      id: `${Date.now()}-user-scene`,
+      role: "user",
+      text: `scene 선택: ${sceneId}`,
+      timestamp: Date.now(),
+    },
+  ]);
+
+  // ✅ handleImageSubmit이 stopPropagation을 쓰면 여기서도 제공
+  const fakeEvent = {
+    preventDefault: () => {},
+    stopPropagation: () => {},
   };
+
+  await handleImageSubmit(fakeEvent, sceneId);
+};
 
 
   return (
@@ -1104,8 +1133,8 @@ export default function Chat() {
                     >
                       <option value="">선택하세요</option>
                       {sceneOptions.map((s) => (
-                        <option key={s} value={s}>
-                          {s}
+                        <option key={s.id} value={s.id}>
+                          {s.label || s.id}
                         </option>
                       ))}
                     </select>

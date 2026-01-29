@@ -1,4 +1,4 @@
-import os, json, time
+import os, json, time, glob
 import cv2
 import numpy as np
 import torch
@@ -48,64 +48,87 @@ DATASET_71765_ROOT = os.environ.get(
     r"C:\Users\나\Desktop\71765_json\71765_json"
 )
 
-import os, glob
+def _peek_label(scene_dir: str) -> str:
+    # 폴더 안 json 하나 집어서 label 비슷한 키 찾아보기
+    js = glob.glob(os.path.join(scene_dir, "*.json"))
+    if not js:
+        return ""
+    try:
+        with open(js[0], "r", encoding="utf-8") as f:
+            d = json.load(f)
+    except Exception:
+        return ""
 
-def list_71765_scenes():
+    # 흔한 키 후보들
+    for k in ("room_type","space_type","category","scene_type","label","place","name"):
+        v = d.get(k) if isinstance(d, dict) else None
+        if isinstance(v, str) and v.strip():
+            return v.strip()
+        if isinstance(v, dict):
+            for kk in ("label","name","type"):
+                vv = v.get(kk)
+                if isinstance(vv, str) and vv.strip():
+                    return vv.strip()
+    return ""
+
+def list_71765_scenes() -> list:
     """
-    scene 목록을 반환.
-    - 1순위: ENV 71765_JSON_ROOT (데이터셋 루트)
-    - 2순위: 프로젝트 기준으로 흔한 위치 탐색
-    - 3순위: 못 찾으면 최소 기본값 반환(프론트/흐름 unblock)
+    71765 3D 실내데이터 폴더에서 scene_id 목록을 전부 수집한다.
+
+    ✅ 루트: C:\\Users\\나\\Desktop\\71765_json\\71765_json
+    - 내부에 'Training/02.labeling/3D 공간 모델/<scene_id>/<scene_id>.json'
+      같은 구조가 있을 수 있음
+    - 어떤 하위 폴더 구조든 상관없이:
+      "<scene_id>.json" 파일을 찾고,
+      파일명에서 scene_id를 추출해서 반환한다.
+
+    반환: ["residence_house_1_s_001", "etc_education_l_002", ...]
     """
-    # ✅ 1) env로 강제 지정 (가장 확실)
-    root = os.getenv("JSON_71765_ROOT") or os.getenv("DATASET_71765_ROOT") or os.getenv("71765_JSON_ROOT")
 
-    candidates = []
-    if root:
-        candidates.append(root)
+    ROOT = r"C:\Users\나\Desktop\71765_json\71765_json\Training\02.labeling\3D 공간 모델"
 
-    # ✅ 2) 흔한 후보들 (너가 Desktop에 두었던 케이스 포함)
-    candidates += [
-        os.path.join(os.getcwd(), "71765_json"),
-        os.path.join(os.getcwd(), "..", "71765_json"),
-        r"C:\Users\201\Desktop\71765_json",
-        r"C:\Users\201\Desktop\71765_json\71765_json",
-    ]
+    if not os.path.isdir(ROOT):
+        print("[list_71765_scenes] ROOT not found:", ROOT)
+        return []
 
-    # ✅ 3) 실제 존재하는 루트 하나를 찾는다
-    dataset_root = None
-    for c in candidates:
-        if c and os.path.exists(c):
-            dataset_root = c
-            break
+    # ✅ 모든 json 파일을 수집(너무 많으면 시간이 걸릴 수 있음)
+    # - 일반적으로 scene json은 "<scene_id>.json" 형태
+    # - assets 같은 대용량 json이라도 확장자는 .json이므로 일단 다 잡고 필터링
+    all_jsons = glob.glob(os.path.join(ROOT, "**", "*.json"), recursive=True)
 
-    if not dataset_root:
-        print("[list_71765_scenes] dataset root not found. candidates =", candidates)
-        # 🔥 unblock용 기본값 (너가 말한 욕실/주방 포함)
-        return ["욕실", "주방", "거실", "침실"]
+    scene_ids = set()
 
-    # ✅ 4) dataset_root 아래에서 scene 폴더를 추출 (가장 단순/튼튼한 방식)
-    # 네 로그에 등장하던 파일 패턴: *.windows_pnp_4pts.json
-    pattern = os.path.join(dataset_root, "**", "*.windows_pnp_4pts.json")
-    files = glob.glob(pattern, recursive=True)
+    for p in all_jsons:
+        base = os.path.basename(p)
 
-    if not files:
-        print("[list_71765_scenes] no pnp json found under =", dataset_root)
-        return ["욕실", "주방", "거실", "침실"]
+        # 1) 파일명이 scene_id.json 형태면 scene_id 후보
+        if base.lower().endswith(".json"):
+            sid = base[:-5]  # remove ".json"
+            if not sid:
+                continue
 
-    # 파일 경로에서 scene 폴더명(예: etc_education_l_002)을 추출
-    scenes = []
-    for fp in files[:5000]:  # 너무 많을 수 있어서 상한
-        # 보통 ...\3D 공간 모델\{SCENE}\{SCENE}.windows_pnp_4pts.json 형태
-        base = os.path.basename(fp)
-        # "{scene}.windows_pnp_4pts.json" 앞부분이 scene id
-        scene_id = base.replace(".windows_pnp_4pts.json", "")
-        if scene_id and scene_id not in scenes:
-            scenes.append(scene_id)
+            # 2) 너무 일반적인 파일명/라벨/메타 파일은 제외하고 싶으면 여기서 필터
+            #    (프로젝트 상황에 따라 조정)
+            # 예: windows_pnp_4pts 같은 보조 json 제외
+            if sid.endswith(".windows_pnp_4pts"):
+                continue
+            if sid.endswith("_windows_pnp_4pts"):
+                continue
+            if "windows_pnp" in sid:
+                continue
 
-    scenes = scenes[:200]  # UI 부담 줄이기
-    print("[list_71765_scenes] root =", dataset_root, "scenes_n =", len(scenes))
-    return scenes
+            # 네가 원하는 건 원룸/투룸 위주라면 residence 계열만 추려도 됨(옵션)
+            if not sid.startswith("residence_"):
+                continue
+
+            scene_ids.add(sid)
+
+    out = sorted(scene_ids)
+    print("[list_71765_scenes] found scenes =", len(out))
+    if len(out) > 0:
+        print("[list_71765_scenes] sample =", out[:10])
+
+    return out
 
 
 def build_windows_pnp_json_path(scene_id: str) -> str | None:
