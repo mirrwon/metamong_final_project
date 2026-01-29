@@ -6,6 +6,7 @@ import time
 import random
 import uuid, pathlib
 import glob
+import inspect
 
 from typing import Any, Dict, List, Optional
 from pydantic import BaseModel
@@ -16,6 +17,7 @@ from fastapi import UploadFile, File, Form, Request
 from fastapi.responses import JSONResponse
 
 from app.cv.pipeline import run_pipeline
+from app.cv.space_classifier import classify_space
 from app.config import BASE_DIR, RESULT_DIR, RESULT_JSON_LATEST, UPLOAD_DIR, ASSET_DIR
 
 from app.llm.image_edit import composite_plant_on_original
@@ -40,6 +42,8 @@ from .chat_utils import (
     get_lat_lot_from_meta,
     safe_float,
     parse_hh_from_any,
+    scene_to_label,
+    scene_id_to_room_label,
 )
 
 load_dotenv()
@@ -543,6 +547,48 @@ def _sanitize_kier_time(hhmm: str) -> str:
 
     return out
 
+def _run_pipeline_compat(save_path: str, user_opts: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """
+    run_pipeline 파라미터명이 환경마다 달라서 scene_id가 씹히는 문제를 막기 위한 호환 호출.
+    - user_opts / opts / options / kwargs 등 다양한 케이스를 순서대로 시도한다.
+    """
+    user_opts = user_opts or {}
+
+    # 1) 시그니처 기반으로 가능한 키워드만 시도
+    try:
+        sig = inspect.signature(run_pipeline)
+        params = sig.parameters
+
+        if "user_opts" in params:
+            return run_pipeline(save_path, user_opts=user_opts)
+        if "opts" in params:
+            return run_pipeline(save_path, opts=user_opts)
+        if "options" in params:
+            return run_pipeline(save_path, options=user_opts)
+        if "config" in params:
+            # 일부 구현에서 config dict를 받는 경우가 있음
+            return run_pipeline(save_path, config=user_opts)
+    except Exception:
+        # signature 조회 실패하면 아래 fallback들로 간다
+        pass
+
+    # 2) 키워드 시도(실패하면 다음으로)
+    try:
+        return run_pipeline(save_path, user_opts=user_opts)
+    except TypeError:
+        pass
+    try:
+        return run_pipeline(save_path, opts=user_opts)
+    except TypeError:
+        pass
+    try:
+        return run_pipeline(save_path, options=user_opts)
+    except TypeError:
+        pass
+
+    # 3) 최후 fallback: opts를 못 받으면 그냥 호출 (단, 이 경우 scene_id 반영 불가)
+    return run_pipeline(save_path)
+
 # =========================
 # /api/chat/image handler
 # =========================
@@ -605,26 +651,111 @@ async def handle_chat_image(
         user_opts["scene_id"] = scene_id
 
     try:
-        try:
-            out = run_pipeline(save_path, user_opts=user_opts)
-        except TypeError:
-            out = run_pipeline(save_path)
+        out = _run_pipeline_compat(save_path, user_opts=user_opts)
     except Exception as e:
         progress(cid, "error", f"분석 중 오류가 발생했습니다: {str(e)}")
         return _json_with_sid(
-            {"messages": [{"type": "text", "text": f"분석 중 오류가 발생했습니다: {str(e)}", "payload": {"input": {"type": "image"}}}]},
+            {"messages": [
+                {"type": "text", "text": f"분석 중 오류가 발생했습니다: {str(e)}", "payload": {"input": {"type": "image"}}}]},
             sid,
             sid_is_new,
         )
 
+    # =========================
+    # SPACE 분류 + scene 자동추론
+    # =========================
+
+    space = None
+    if isinstance(out, dict):
+        space = classify_space(out)
+        out["space"] = space
+
+    auto_scene_id = None
+
+    scene_info = out.get("scene") if isinstance(out, dict) else None
+    scenes_raw = scene_info.get("scenes") if isinstance(scene_info, dict) else None
+
+    # 자동추론 조건
+    if (
+            (not scene_id)  # ✅ 사용자가 선택해서 보낸 scene_id가 있으면 자동추론 금지
+            and isinstance(scene_info, dict)
+            and scene_info.get("reason") == "scene_required"
+            and isinstance(space, dict)
+            and space.get("confidence", 0) >= 0.7
+            and isinstance(scenes_raw, list)
+    ):
+        space_type = space.get("type")  # "욕실" | "거실" | "방"
+
+        for s0 in scenes_raw:
+            # scenes_raw는 str 또는 dict 섞여올 수 있음 → id 문자열로 정규화
+            sid0 = None
+            if isinstance(s0, str):
+                sid0 = s0
+            elif isinstance(s0, dict):
+                sid0 = s0.get("id") or s0.get("scene_id")
+
+            if not isinstance(sid0, str) or not sid0.strip():
+                continue
+
+            lbl = scene_to_label(sid0)
+            if isinstance(lbl, str) and space_type and (space_type in lbl):
+                auto_scene_id = sid0.strip()
+                break
+
+    # 자동 scene 성공 → pipeline 재실행
+    if auto_scene_id:
+        user_opts2 = dict(user_opts or {})
+        user_opts2["scene_id"] = auto_scene_id
+
+        try:
+            out = _run_pipeline_compat(save_path, user_opts=user_opts2)
+        except Exception as e:
+            progress(cid, "error", f"재분석 중 오류: {str(e)}")
+            return _json_with_sid(
+                {"messages": [{"type": "text", "text": f"재분석 중 오류: {str(e)}"}]},
+                sid,
+                sid_is_new,
+            )
+
+        # 재분석 후 space 다시 계산
+        out["space"] = classify_space(out)
+
+
+
+
     progress(cid, "cv_done")
 
-    scene_info = (out or {}).get("scene") if isinstance(out, dict) else None
+    scene_info = out.get("scene")
     if isinstance(scene_info, dict) and scene_info.get("reason") == "scene_required":
         scenes_raw = scene_info.get("scenes") or []
-        scenes_for_ui = (
-            [scene_to_label(x) for x in scenes_raw] if isinstance(scenes_raw, list) else []
-        )
+
+        scenes_for_ui = []
+        for x in scenes_raw:
+            # scene_id 추출 (str / dict 둘 다 처리)
+            _id = None
+            if isinstance(x, str):
+                _id = x
+            elif isinstance(x, dict):
+                _id = x.get("id") or x.get("scene_id") or x.get("sceneId")
+
+            if not isinstance(_id, str) or not _id.strip():
+                continue
+
+            _id = _id.strip()
+
+            # ✅ 라벨(거실/욕실/침실/주방 등)
+            room = scene_id_to_room_label(_id)
+
+            # ✅ 드롭다운에서 중복 안 보이게 id 일부를 같이 보여줌
+            short_id = _id
+            if len(short_id) > 18:
+                short_id = "…" + short_id[-18:]
+
+            scenes_for_ui.append({
+                "id": _id,
+                "label": f"{room} ({short_id})" if room else short_id,
+            })
+
         return _json_with_sid(
             {
                 "messages": [
@@ -827,6 +958,15 @@ async def handle_chat_image(
 
     messages: List[Dict[str, Any]] = [{"type": "text", "text": "분석이 완료되었습니다."}]
 
+    space_type = None
+    if isinstance(data, dict):
+        sp = data.get("space")
+        if isinstance(sp, dict):
+            space_type = sp.get("type")
+
+    if space_type:
+        messages.append({"type": "text", "text": f"공간 분석 결과: {space_type}"})
+
     ts_ms = int(time.time() * 1000)
     images_payload: List[Dict[str, Any]] = []
 
@@ -908,11 +1048,20 @@ def get_scenes():
 
     raw = list_71765_scenes()
 
-    scenes: List[str] = []
+    scenes: List[Dict[str, str]] = []
+
     if isinstance(raw, list):
-        scenes = [scene_to_label(x) for x in raw]
+        for x in raw:
+            if isinstance(x, str):
+                scenes.append({"id": x, "label": scene_to_label(x)})
+            elif isinstance(x, dict):
+                _id = x.get("id") or x.get("scene_id")
+                if _id:
+                    scenes.append({"id": _id, "label": scene_to_label(_id)})
     elif isinstance(raw, dict):
-        scenes = [str(k) for k in raw.keys()]
+        for k in raw.keys():
+            _id = str(k)
+            scenes.append({"id": _id, "label": scene_to_label(_id)})
 
     print("[SCENES_ROUTE] raw type =", type(raw), "raw =", raw)
     return {"ok": True, "scenes": scenes, "raw": raw}
