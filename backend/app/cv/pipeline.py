@@ -2,6 +2,9 @@ import os, json, time
 import cv2
 import numpy as np
 import torch
+import re
+import shutil
+from pathlib import Path
 
 from app.config import (
     BASE_DIR, RESULT_DIR, RESULT_JSON_LATEST, FAIL_LOG_PATH, FB_LOG_PATH, WEIGHTS_PATH,
@@ -40,6 +43,153 @@ from app.cv.camera_intrinsics import make_K_from_fov
 
 print("[PIPELINE FILE]", __file__)
 
+DATASET_71765_ROOT = os.environ.get(
+    "DATASET_71765_ROOT",
+    r"C:\Users\나\Desktop\71765_json\71765_json"
+)
+
+import os, glob
+
+def list_71765_scenes():
+    """
+    scene 목록을 반환.
+    - 1순위: ENV 71765_JSON_ROOT (데이터셋 루트)
+    - 2순위: 프로젝트 기준으로 흔한 위치 탐색
+    - 3순위: 못 찾으면 최소 기본값 반환(프론트/흐름 unblock)
+    """
+    # ✅ 1) env로 강제 지정 (가장 확실)
+    root = os.getenv("JSON_71765_ROOT") or os.getenv("DATASET_71765_ROOT") or os.getenv("71765_JSON_ROOT")
+
+    candidates = []
+    if root:
+        candidates.append(root)
+
+    # ✅ 2) 흔한 후보들 (너가 Desktop에 두었던 케이스 포함)
+    candidates += [
+        os.path.join(os.getcwd(), "71765_json"),
+        os.path.join(os.getcwd(), "..", "71765_json"),
+        r"C:\Users\201\Desktop\71765_json",
+        r"C:\Users\201\Desktop\71765_json\71765_json",
+    ]
+
+    # ✅ 3) 실제 존재하는 루트 하나를 찾는다
+    dataset_root = None
+    for c in candidates:
+        if c and os.path.exists(c):
+            dataset_root = c
+            break
+
+    if not dataset_root:
+        print("[list_71765_scenes] dataset root not found. candidates =", candidates)
+        # 🔥 unblock용 기본값 (너가 말한 욕실/주방 포함)
+        return ["욕실", "주방", "거실", "침실"]
+
+    # ✅ 4) dataset_root 아래에서 scene 폴더를 추출 (가장 단순/튼튼한 방식)
+    # 네 로그에 등장하던 파일 패턴: *.windows_pnp_4pts.json
+    pattern = os.path.join(dataset_root, "**", "*.windows_pnp_4pts.json")
+    files = glob.glob(pattern, recursive=True)
+
+    if not files:
+        print("[list_71765_scenes] no pnp json found under =", dataset_root)
+        return ["욕실", "주방", "거실", "침실"]
+
+    # 파일 경로에서 scene 폴더명(예: etc_education_l_002)을 추출
+    scenes = []
+    for fp in files[:5000]:  # 너무 많을 수 있어서 상한
+        # 보통 ...\3D 공간 모델\{SCENE}\{SCENE}.windows_pnp_4pts.json 형태
+        base = os.path.basename(fp)
+        # "{scene}.windows_pnp_4pts.json" 앞부분이 scene id
+        scene_id = base.replace(".windows_pnp_4pts.json", "")
+        if scene_id and scene_id not in scenes:
+            scenes.append(scene_id)
+
+    scenes = scenes[:200]  # UI 부담 줄이기
+    print("[list_71765_scenes] root =", dataset_root, "scenes_n =", len(scenes))
+    return scenes
+
+
+def build_windows_pnp_json_path(scene_id: str) -> str | None:
+    """
+    scene_id -> .../3D 공간 모델/<scene_id>/<scene_id>.windows_pnp_4pts.json
+    """
+    if not re.fullmatch(r"etc_education_l_\d{3}", str(scene_id)):
+        return None
+    p = Path(DATASET_71765_ROOT) / "Training" / "02.labeling" / "3D 공간 모델" / scene_id / f"{scene_id}.windows_pnp_4pts.json"
+    return str(p) if p.exists() else None
+
+# =========================================================
+# Helpers (2D ordering / quad validation)
+# =========================================================
+def _find_pnp_json_by_uploaded_filename(image_path: str) -> str | None:
+    """
+    uploads/room2.jpg 같은 업로드 이미지에서 scene_id를 못 찾을 때:
+    - 파일 stem(room2)로 71765 3D 폴더 내부를 탐색해서
+      <scene>/<stem>.jpg 가 있는 scene을 찾고
+      그 scene의 <scene>.windows_pnp_4pts.json 경로를 반환
+    """
+    stem = Path(image_path).stem  # room2
+    root = Path(DATASET_71765_ROOT)
+
+    base_3d = root / "Training" / "02.labeling" / "3D 공간 모델"
+    if not base_3d.exists():
+        return None
+
+    # etc_education_l_XXX 폴더들 순회
+    for scene_dir in base_3d.glob("etc_education_l_*"):
+        if not scene_dir.is_dir():
+            continue
+        # scene_dir/room2.jpg 존재하면 매칭
+        cand_img = scene_dir / f"{stem}.jpg"
+        if cand_img.exists():
+            scene_id = scene_dir.name
+            json_path = scene_dir / f"{scene_id}.windows_pnp_4pts.json"
+            if json_path.exists():
+                return str(json_path)
+
+    return None
+
+def order_2d_tl_tr_br_bl(pts4):
+    """
+    pts4: (4,2)
+    return: (4,2) in TL,TR,BR,BL
+    """
+    p = np.array(pts4, dtype=np.float32).reshape(4, 2)
+    s = p.sum(axis=1)           # x+y
+    d = (p[:, 0] - p[:, 1])     # x-y
+
+    tl = p[np.argmin(s)]
+    br = p[np.argmax(s)]
+    tr = p[np.argmax(d)]
+    bl = p[np.argmin(d)]
+    return np.array([tl, tr, br, bl], dtype=np.float32)
+
+
+def quad_is_valid(pts4, min_area=50.0):
+    """
+    - area too small -> fail
+    - self-intersection (bow-tie) -> fail
+    """
+    p = np.array(pts4, dtype=np.float32).reshape(4, 2)
+
+    # polygon area (shoelace)
+    x = p[:, 0]
+    y = p[:, 1]
+    area = 0.5 * abs(np.dot(x, np.roll(y, -1)) - np.dot(y, np.roll(x, -1)))
+    if area < float(min_area):
+        return False, f"area too small: {area:.2f}"
+
+    def _ccw(a, b, c):
+        return (c[1] - a[1]) * (b[0] - a[0]) > (b[1] - a[1]) * (c[0] - a[0])
+
+    def _intersect(a, b, c, d):
+        return (_ccw(a, c, d) != _ccw(b, c, d)) and (_ccw(a, b, c) != _ccw(a, b, d))
+
+    TL, TR, BR, BL = p
+    if _intersect(TL, TR, BR, BL) or _intersect(TR, BR, BL, TL):
+        return False, "self-intersection"
+
+    return True, "ok"
+
 
 def _bbox_to_corners4(win_bbox):
     x, y, w, h = [float(v) for v in win_bbox]
@@ -63,6 +213,295 @@ def _is_bbox_like(c4, bbox4, eps=3.0) -> bool:
     return True
 
 
+# =========================================================
+# Helpers (71765 A 방식 로더: scene -> windows_pnp_4pts.json)
+# =========================================================
+def _find_scene_dir_from_image(image_path: str) -> Path | None:
+    """
+    image_path에서 etc_education_l_XXX scene 폴더를 최대한 관대하게 찾아 반환.
+    - 폴더명으로 못 찾으면, 전체 경로 문자열에서 패턴으로 scene_id를 추출해서
+      2D/3D 베이스 경로를 재구성할 수 있게 보조 정보를 남김.
+    """
+    p = Path(image_path)
+
+    # 1) 부모 경로를 올라가며 폴더명으로 찾기 (기존 방식 + 강화)
+    for parent in [p] + list(p.parents):
+        name = parent.name
+        if name.startswith("etc_education_l_") and re.fullmatch(r"etc_education_l_\d{3}", name):
+            return parent
+
+    # 2) 경로 문자열 전체에서 패턴으로 scene_id 찾기 (폴더명이 중간에 누락/변형된 케이스 대비)
+    m = re.search(r"(etc_education_l_\d{3})", str(p))
+    if m:
+        # 여기서는 "scene 폴더 Path"를 직접 만들 수 없으니,
+        # 호출부에서 string 기반으로 2D->3D 변환할 수 있게
+        # 임시로 해당 문자열을 name으로 갖는 가상 Path를 반환하지 않고,
+        # None 반환하되, 호출부에서 m.group(1)로 처리하는 방식이 안전.
+        return Path(m.group(1))  # 주의: 실제 경로 아님(식별자 용도)
+
+    return None
+
+def load_windows_pnp_4pts_from_71765(
+    image_path: str,
+    override_json_path: str | None = None,
+    scene_id: str | None = None
+):
+    """
+    image_path가 2D/3D 어디를 가리켜도,
+    scene_id 기반으로 .../3D 공간 모델/<scene_id>/<scene_id>.windows_pnp_4pts.json 을 찾아 로드.
+    override_json_path가 있으면 그걸 최우선으로 사용.
+    """
+    dbg = {"ok": False, "reason": "", "json_path": None, "picked": None, "num_windows": 0}
+
+    # --------------------------
+    # 0) override json path 우선
+    # --------------------------
+    if override_json_path:
+        json_path = Path(override_json_path)
+        dbg["json_path"] = str(json_path)
+
+        if not json_path.exists():
+            dbg["reason"] = "override_json_not_found"
+            return None, dbg
+
+        try:
+            with open(json_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except Exception as e:
+            dbg["reason"] = f"json_load_failed: {e}"
+            return None, dbg
+
+        # 아래 windows 파싱/선택 로직으로 진행
+        windows = None
+        if isinstance(data, dict) and isinstance(data.get("windows"), list):
+            windows = data["windows"]
+        elif isinstance(data, list):
+            windows = data
+        else:
+            dbg["reason"] = "unexpected_json_schema"
+            return None, dbg
+
+        dbg["num_windows"] = int(len(windows))
+        if not windows:
+            dbg["reason"] = "windows_list_empty"
+            return None, dbg
+
+        candidates = []
+        for w in windows:
+            c4 = w.get("pnp_corners_4")
+            if not (isinstance(c4, list) and len(c4) == 4):
+                continue
+
+            score = 0.0
+            if isinstance(w.get("size"), list) and len(w["size"]) >= 3:
+                try:
+                    score = float(w["size"][1]) * float(w["size"][2])
+                except Exception:
+                    score = 0.0
+            candidates.append((score, w))
+
+        if not candidates:
+            dbg["reason"] = "no_valid_pnp_corners_4"
+            return None, dbg
+
+        candidates.sort(key=lambda x: x[0], reverse=True)
+        picked = candidates[0][1]
+        c4 = picked["pnp_corners_4"]  # (4,3)
+
+        dbg["ok"] = True
+        dbg["picked"] = {
+            "id": picked.get("id"),
+            "asset_id": picked.get("asset_id"),
+            "label": picked.get("label"),
+            "semantic_type": picked.get("semantic_type"),
+            "size": picked.get("size"),
+            "score": candidates[0][0],
+        }
+
+        # ✅ 여기: windows(list)가 아니라 "picked 4pts"를 반환해야 타입이 안 꼬임
+        return c4, dbg
+
+    # --------------------------
+    # 1) scene_id 인자 우선 적용
+    # --------------------------
+    if scene_id:
+        jp = build_windows_pnp_json_path(scene_id)
+        if jp:
+            # scene_id로 json_path 강제 지정해서 override처럼 처리
+            return load_windows_pnp_4pts_from_71765(image_path, override_json_path=jp)
+
+    # --------------------------
+    # 1) scene_id 찾기
+    # --------------------------
+    scene_dir = _find_scene_dir_from_image(image_path)
+
+    print("[PNP3D][PATH] image_path =", image_path)
+    print("[PNP3D][PATH] scene_dir =", scene_dir)
+
+    scene_id = None
+    if scene_dir is not None and re.fullmatch(r"etc_education_l_\d{3}", scene_dir.name):
+        scene_id = scene_dir.name
+    else:
+        m = re.search(r"(etc_education_l_\d{3})", str(image_path))
+        if m:
+            scene_id = m.group(1)
+
+    if scene_id is None:
+        auto_json = _find_pnp_json_by_uploaded_filename(image_path)
+        if auto_json:
+            return load_windows_pnp_4pts_from_71765(image_path, override_json_path=auto_json)
+
+        dbg["reason"] = "scene_required"
+        dbg["image_path"] = str(image_path)
+        dbg["scenes"] = list_71765_scenes()[:200]  # 너무 길면 제한
+        return None, dbg
+
+    # --------------------------
+    # 2) 02.labeling 기준으로 3D 경로 만들기
+    #    (2D로 들어오든 3D로 들어오든 둘 다 처리)
+    # --------------------------
+    p = Path(image_path)
+    parts = list(p.parts)
+
+    try:
+        idx = parts.index("02.labeling")
+    except ValueError:
+        dbg["reason"] = "cannot_locate_02.labeling_in_path"
+        dbg["image_path"] = str(image_path)
+        return None, dbg
+
+    folder = parts[idx + 1] if (idx + 1) < len(parts) else None
+
+    if folder == "2D 공간 이미지":
+        parts[idx + 1] = "3D 공간 모델"
+    elif folder == "3D 공간 모델":
+        # 이미 3D면 그대로
+        pass
+    else:
+        dbg["reason"] = f"unexpected_folder_after_02.labeling: {folder}"
+        dbg["image_path"] = str(image_path)
+        return None, dbg
+
+    scene_dir_3d = Path(*parts[: idx + 2]) / scene_id
+    json_path = scene_dir_3d / f"{scene_id}.windows_pnp_4pts.json"
+
+    dbg["json_path"] = str(json_path)
+    if not json_path.exists():
+        dbg["reason"] = "windows_pnp_4pts_json_not_found"
+        return None, dbg
+
+    # --------------------------
+    # 3) JSON 로드 + window 선택
+    # --------------------------
+    try:
+        with open(json_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except Exception as e:
+        dbg["reason"] = f"json_load_failed: {e}"
+        return None, dbg
+
+    windows = None
+    if isinstance(data, dict) and isinstance(data.get("windows"), list):
+        windows = data["windows"]
+    elif isinstance(data, list):
+        windows = data
+    else:
+        dbg["reason"] = "unexpected_json_schema"
+        return None, dbg
+
+    dbg["num_windows"] = int(len(windows))
+    if not windows:
+        dbg["reason"] = "windows_list_empty"
+        return None, dbg
+
+    candidates = []
+    for w in windows:
+        c4 = w.get("pnp_corners_4")
+        if not (isinstance(c4, list) and len(c4) == 4):
+            continue
+
+        score = 0.0
+        if isinstance(w.get("size"), list) and len(w["size"]) >= 3:
+            try:
+                score = float(w["size"][1]) * float(w["size"][2])
+            except Exception:
+                score = 0.0
+
+        candidates.append((score, w))
+
+    if not candidates:
+        dbg["reason"] = "no_valid_pnp_corners_4"
+        return None, dbg
+
+    candidates.sort(key=lambda x: x[0], reverse=True)
+    picked = candidates[0][1]
+    c4 = picked["pnp_corners_4"]
+
+    dbg["ok"] = True
+    dbg["picked"] = {
+        "id": picked.get("id"),
+        "asset_id": picked.get("asset_id"),
+        "label": picked.get("label"),
+        "semantic_type": picked.get("semantic_type"),
+        "size": picked.get("size"),
+        "score": candidates[0][0],
+    }
+    return c4, dbg
+
+
+
+# =========================================================
+# Helpers (3D ordering + reprojection error)
+# =========================================================
+def order_3d_tl_tr_br_bl(c4_3d):
+    """
+    3D 4pts를 해당 평면 좌표계로 투영한 뒤 TL/TR/BR/BL로 정렬.
+    """
+    P = np.array(c4_3d, dtype=np.float32).reshape(4, 3)
+
+    c = P.mean(axis=0)
+    v1 = P[1] - P[0]
+    v2 = P[3] - P[0]
+
+    u = v1 / (np.linalg.norm(v1) + 1e-6)
+    n = np.cross(v1, v2)
+    n = n / (np.linalg.norm(n) + 1e-6)
+    v = np.cross(n, u)
+    v = v / (np.linalg.norm(v) + 1e-6)
+
+    uv = np.stack([np.dot(P - c, u), np.dot(P - c, v)], axis=1)  # (4,2)
+
+    uv_ord = order_2d_tl_tr_br_bl(uv)
+
+    out = []
+    used = set()
+    for q in uv_ord:
+        d = np.linalg.norm(uv - q[None, :], axis=1)
+        for idx in np.argsort(d):
+            if int(idx) not in used:
+                used.add(int(idx))
+                out.append(P[int(idx)])
+                break
+
+    return np.array(out, dtype=np.float32)  # (4,3)
+
+
+def reproj_error(obj3d, img2d, rvec, tvec, K, dist=None):
+    obj3d = np.array(obj3d, dtype=np.float32).reshape(-1, 3)
+    img2d = np.array(img2d, dtype=np.float32).reshape(-1, 2)
+    K = np.array(K, dtype=np.float32).reshape(3, 3)
+    if dist is None:
+        dist = np.zeros((4, 1), dtype=np.float32)
+
+    proj, _ = cv2.projectPoints(obj3d, rvec, tvec, K, dist)
+    proj = proj.reshape(-1, 2)
+    err = np.linalg.norm(proj - img2d, axis=1)
+    return float(np.mean(err))
+
+
+# =========================================================
+# Main
+# =========================================================
 def run_pipeline(
     image_path: str,
     user_opts: dict | None = None,
@@ -73,7 +512,25 @@ def run_pipeline(
     debug_print_paths()
     os.makedirs(RESULT_DIR, exist_ok=True)
 
-    img = cv2.imread(image_path)
+    print("[PIPELINE][RUN] ts_ms =", int(time.time() * 1000))
+    print("[PIPELINE][RUN] file  =", __file__)
+
+    # === TEMP TEST: force dataset path ===
+    def imread_unicode(path: str):
+        try:
+            data = np.fromfile(path, dtype=np.uint8)
+            if data.size == 0:
+                return None
+            img = cv2.imdecode(data, cv2.IMREAD_COLOR)
+            return img
+        except Exception:
+            return None
+
+    img = imread_unicode(image_path)
+    if img is None:
+        # 폴백으로 cv2.imread도 한 번 시도
+        img = cv2.imread(image_path)
+
     if img is None:
         raise RuntimeError(f"image read failed: {image_path}")
 
@@ -98,7 +555,7 @@ def run_pipeline(
         core = floor
 
     # =========================
-    # WINDOW DETECT + REFINE (ONE PASS)
+    # WINDOW DETECT + REFINE
     # =========================
     win = detect_window_candidate(img, floor, prefer="right", debug=debug_viz)
 
@@ -107,26 +564,20 @@ def run_pipeline(
     corners4_h = None
 
     if win is not None:
-        x, y, w, h = win
         bbox4 = _bbox_to_corners4(win)
 
         # 1) EDGE refine
-        corners4_edge = extract_window_corners_edge(
-            img, win, debug_dir=RESULT_DIR, tag="window"
-        )
-
+        corners4_edge = extract_window_corners_edge(img, win, debug_dir=RESULT_DIR, tag="window")
         corners4 = corners4_edge
         source = "edge"
 
-        # edge 결과가 bbox랑 거의 같으면 실패로 간주 -> hough 시도
+        # edge가 bbox랑 거의 같으면 실패로 보고 hough 시도
         if corners4 is None or _is_bbox_like(corners4, bbox4, eps=3.0):
             print("[WIN] edge failed or bbox-like -> try hough")
             corners4 = None
             source = "edge_looks_like_bbox"
 
-            corners4_h = extract_window_corners_hough(
-                img, win, debug_dir=RESULT_DIR, tag="window"
-            )
+            corners4_h = extract_window_corners_hough(img, win, debug_dir=RESULT_DIR, tag="window")
             if corners4_h is not None:
                 corners4 = corners4_h
                 source = "hough"
@@ -136,17 +587,49 @@ def run_pipeline(
             corners4 = bbox4
             source = "bbox_fallback"
 
+
+        c4 = order_2d_tl_tr_br_bl(np.array(corners4, dtype=np.float32).reshape(4, 2))
+        ok, msg = quad_is_valid(c4, min_area=80.0)
+        if not ok:
+            print("[WIN][WARN] invalid quad:", msg, "-> fallback bbox corners")
+            c4 = order_2d_tl_tr_br_bl(bbox4)
+            source = (source + "+fallback_bbox").strip("+")
+
+        print("[WIN][BBOX4]   =", bbox4.tolist())
+        print("[WIN][EDGE4]   =",
+              None if corners4_edge is None else np.array(corners4_edge, dtype=np.float32).reshape(4, 2).tolist())
+        print("[WIN][HOUGH4]  =",
+              None if corners4_h is None else np.array(corners4_h, dtype=np.float32).reshape(4, 2).tolist())
+        print("[WIN][FINAL4]  =", c4.tolist())
+        print("[WIN][DIFF] bbox-final L2 mean =",
+              float(np.mean(np.linalg.norm(bbox4.astype(np.float32) - np.array(c4, dtype=np.float32), axis=1))))
+
+        x, y, w, h = [int(v) for v in win]
         window_info = {
-            "bbox_xywh": [int(x), int(y), int(w), int(h)],
-            "corners_4": np.array(corners4, dtype=np.float32).reshape(4, 2).tolist(),
+            "bbox_xywh": [x, y, w, h],
+            "corners_4": c4.tolist(),           # TL_TR_BR_BL 확정
             "source": source,
+            "pnp_order": "TL_TR_BR_BL",
+            "valid_quad": True,
+            "valid_msg": "ok" if ok else "fallback_bbox",
         }
 
-        # 안전한 디버그 출력
         print("[WIN] win bbox:", win)
         print("[WIN] edge corners:", None if corners4_edge is None else np.array(corners4_edge).reshape(4, 2))
-        print("[WIN] edge bbox-like?:", _is_bbox_like(corners4_edge, bbox4, eps=3.0) if corners4_edge is not None else None)
         print("[WIN] hough corners:", None if corners4_h is None else np.array(corners4_h).reshape(4, 2))
+        print("[WIN] final source:", source)
+        print("[WIN][FINAL] source =", window_info["source"])
+
+    # =========================
+    # VIZ WINDOWS CACHE (GLOBAL)
+    # =========================
+    windows_for_viz = []
+    if isinstance(window_info, dict) and window_info.get("corners_4"):
+        windows_for_viz.append({
+            "corners_4": window_info["corners_4"],
+            "bbox_xywh": window_info.get("bbox_xywh"),
+            "source": window_info.get("source"),
+        })
 
     # =========================
     # LIGHT ORIGIN / DIR
@@ -188,7 +671,6 @@ def run_pipeline(
     scored = []
     MARGIN = 12
 
-    # floor depth stats for surface
     if depth_ok:
         floor_depth = depth[core > 0]
         if floor_depth.size > 0:
@@ -250,7 +732,9 @@ def run_pipeline(
 
         scored.append((float(raw_score), (int(x), int(y)), meta))
 
-    # surface penalty pass
+    # =========================
+    # surface penalty
+    # =========================
     has_floor_candidate = any(m.get("surface") == "floor" for (_, _, m) in scored)
 
     scored2 = []
@@ -279,7 +763,9 @@ def run_pipeline(
     if not chosen:
         raise RuntimeError("No spots chosen. Try lowering thresholds.")
 
-    # relative light level
+    # =========================
+    # light level + bias
+    # =========================
     chosen_light = [float(meta.get("light_eff", 0.0)) for (_, _, meta) in chosen]
     if len(chosen_light) >= 3:
         p20 = float(np.percentile(chosen_light, 20))
@@ -300,6 +786,7 @@ def run_pipeline(
         k = max(times, key=lambda kk: float(times.get(kk, 0.0)))
         return str(k)
 
+    # =========================
     # best spot reselect
     best_idx = 0
     best_val = -1e9
@@ -359,52 +846,294 @@ def run_pipeline(
             "top_plants": []
         })
 
+    def _fmt_arr(a):
+        try:
+            a = np.asarray(a)
+            return f"shape={a.shape} dtype={a.dtype} min={a.min():.2f} max={a.max():.2f} first={a.reshape(-1, a.shape[-1])[:4].tolist()}"
+        except Exception as e:
+            return f"(format_failed) {type(a)} {e}"
+
+    def _ensure_4x2(corners, name="corners"):
+        a = np.asarray(corners, dtype=np.float32)
+        if a.shape == (4, 2):
+            return a
+        if a.size == 8:
+            return a.reshape(4, 2)
+        raise ValueError(f"{name} invalid shape: {a.shape}, value={corners}")
+
     # =========================
-    # PNP (ONLY ONE)
+    # PNP (A 방식): scene windows_pnp_4pts.json
+    # - uploads 이미지도 자동 매칭
+    # - window 후보 전체 + fov sweep -> reproj error 최소 조합 선택
     # =========================
+    scene_result = {"ok": True, "reason": "", "scenes": []}
+
     pnp_result = None
+
+    def _pack_pnp_success(K_use, rvec_use, tvec_use, R_use, reproj_err_px, picked_window, pnp3d_dbg, used_fov):
+        n = window_normal_world(R_use, face_axis="z")
+        return {
+            "K": K_use.tolist(),
+            "rvec": [float(x) for x in rvec_use.reshape(-1)],
+            "tvec": [float(x) for x in tvec_use.reshape(-1)],
+            "window_normal": [float(x) for x in n.reshape(-1)],
+            "reproj_err_px": float(reproj_err_px),
+            "used_fov": float(used_fov),
+            "picked_window": picked_window,
+            "dbg_3d": pnp3d_dbg,
+            "note": "PnP(A): choose best window + best fov by reprojection error",
+        }
+
     try:
-        if isinstance(window_info, dict) and window_info.get("corners_4"):
-            img_corners_2d = np.array(window_info["corners_4"], dtype=np.float32)  # TL,TR,BR,BL
-
-            # 3D window rectangle model (meters) - 임시(71765 매칭 전)
-            Wm = 1.8
-            Hm = 1.5
-            obj_corners_3d = np.array([
-                [-Wm / 2, +Hm / 2, 0.0],  # TL
-                [+Wm / 2, +Hm / 2, 0.0],  # TR
-                [+Wm / 2, -Hm / 2, 0.0],  # BR
-                [-Wm / 2, -Hm / 2, 0.0],  # BL
-            ], dtype=np.float32)
-
-            K = make_K_from_fov(Wimg, H, fov_deg=65.0)
-            dist = np.zeros((4, 1), dtype=np.float32)
-
-            rvec, tvec, R = solve_pnp_from_4pts(
-                obj_corners_3d.tolist(),
-                img_corners_2d.tolist(),
-                K.tolist(),
-                dist=dist
-            )
-
-            n = window_normal_world(R, face_axis="z")
-
-            pnp_result = {
-                "K": K.tolist(),
-                "rvec": [float(x) for x in rvec.reshape(-1)],
-                "tvec": [float(x) for x in tvec.reshape(-1)],
-                "window_normal": [float(x) for x in n.reshape(-1)],
-                "model": {"Wm": Wm, "Hm": Hm, "plane": "z=0"},
-                "note": f"FOV_K + rectangle_3d_model + {window_info.get('source')}",
-            }
-        else:
+        if not (isinstance(window_info, dict) and window_info.get("corners_4")):
             pnp_result = {"error": "window_info.corners_4 missing"}
+        else:
+            img_corners_2d = np.array(window_info["corners_4"], dtype=np.float32).reshape(4, 2)  # TL,TR,BR,BL
+
+            # =========================
+            # PNP PRECHECK (2D corners sanity)
+            # =========================
+            print("\n[PNP_PRECHECK] -----------------------------")
+            print("[PNP_PRECHECK] img.shape(H,W,C) =", getattr(img, "shape", None))
+            print("[PNP_PRECHECK] win bbox =", win)
+            print("[PNP_PRECHECK] window_info['corners_4'] raw =", window_info.get("corners_4", None))
+            print("[PNP_PRECHECK] window_info['corners_4'] fmt =", _fmt_arr(window_info.get("corners_4", None)))
+
+            # ✅ 여기서 img_corners_2d는 이미 위에서 정의됨
+            img_corners_2d = _ensure_4x2(img_corners_2d, "img_corners_2d")
+            w_c4 = _ensure_4x2(window_info.get("corners_4", None), "window_info['corners_4']")
+
+            print("[PNP_PRECHECK] img_corners_2d =", img_corners_2d.tolist())
+            print("[PNP_PRECHECK] window_info.corners_4 =", w_c4.tolist())
+            print("[PNP_PRECHECK] same_as_window_info =", bool(np.allclose(img_corners_2d, w_c4)))
+            print("[PNP_PRECHECK] --------------------------------\n")
+
+
+            # 1) 3D json 찾기 (override -> 자동)
+            override_json = None
+            if isinstance(user_opts, dict):
+                override_json = user_opts.get("pnp_3d_json_path")
+
+            scene_id_opt = None
+            if isinstance(user_opts, dict):
+                scene_id_opt = user_opts.get("scene_id")
+
+            obj_corners_3d, pnp3d_dbg = load_windows_pnp_4pts_from_71765(
+                image_path,
+                override_json_path=override_json,
+                scene_id=scene_id_opt,
+            )
+            print("[PNP3D]", pnp3d_dbg)
+
+            # ✅ scene_required를 PNP와 분리해서 out["scene"]로 올림
+            if isinstance(pnp3d_dbg, dict) and pnp3d_dbg.get("reason") == "scene_required":
+                scene_result = {
+                    "ok": False,
+                    "reason": "scene_required",
+                    "scenes": pnp3d_dbg.get("scenes") or [],
+                }
+
+            if obj_corners_3d is None:
+                pnp_result = {"error": "3d_pnp_corners_missing", "dbg": pnp3d_dbg}
+            else:
+                # 2) JSON에서 windows 전체를 가져와서 "best window"를 고르기 위해
+                #    load_windows...는 1개만 주니까, 여기서 json을 직접 다시 읽는다.
+                #    (pnp3d_dbg["json_path"]는 확정)
+                json_path = pnp3d_dbg.get("json_path")
+                if not json_path or not Path(json_path).exists():
+                    pnp_result = {"error": "json_path_missing_or_not_found", "dbg": pnp3d_dbg}
+                else:
+                    with open(json_path, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+
+                    windows = None
+                    if isinstance(data, dict) and isinstance(data.get("windows"), list):
+                        windows = data["windows"]
+                    elif isinstance(data, list):
+                        windows = data
+                    else:
+                        windows = []
+
+                    # 3) 후보 만들기: pnp_corners_4 있는 window만
+                    cand_windows = []
+                    for w in windows:
+                        c4 = w.get("pnp_corners_4")
+                        if isinstance(c4, list) and len(c4) == 4:
+                            cand_windows.append(w)
+
+                    if not cand_windows:
+                        pnp_result = {"error": "no_valid_pnp_corners_4_in_json", "dbg": pnp3d_dbg}
+                    else:
+                        dist = np.zeros((4, 1), dtype=np.float32)
+
+                        # 4) (window 후보) x (fov 후보) 중 reproj err 최소를 고른다
+                        fov_candidates = [35, 40, 45, 50, 55, 60, 65, 70, 75, 85]
+                        best = None
+                        # best = (err, fov, K, rvec, tvec, R, picked_window_dict, obj3d_used)
+
+                        for w in cand_windows:
+                            c4_3d = w.get("pnp_corners_4")
+                            if not (isinstance(c4_3d, list) and len(c4_3d) == 4):
+                                continue
+
+                            obj3d = order_3d_tl_tr_br_bl(c4_3d)  # TL,TR,BR,BL 정렬
+
+                            for fov in fov_candidates:
+                                Kt = make_K_from_fov(Wimg, H, fov_deg=float(fov))
+                                rvec, tvec, R = solve_pnp_from_4pts(
+                                    obj3d.tolist(),
+                                    img_corners_2d.tolist(),
+                                    Kt.tolist(),
+                                    dist=dist
+                                )
+
+                                # 카메라 앞쪽
+                                if float(tvec.reshape(-1)[2]) <= 0:
+                                    continue
+
+                                e = reproj_error(obj3d, img_corners_2d, rvec, tvec, Kt, dist=dist)
+
+                                if best is None or e < best[0]:
+                                    picked_window = {
+                                        "id": w.get("id"),
+                                        "asset_id": w.get("asset_id"),
+                                        "size": w.get("size"),
+                                    }
+                                    best = (float(e), float(fov), Kt, rvec, tvec, R, picked_window, obj3d)
+
+                        if best is None:
+                            pnp_result = {"error": "pnp_failed_all_candidates", "dbg": pnp3d_dbg}
+                        else:
+                            best_err, best_fov, K_best, rvec_best, tvec_best, R_best, picked_window, obj3d_best = best
+
+                            print("[PNP] picked_window =", picked_window, "best_fov =", best_fov, "best_err =",
+                                  best_err)
+
+                            # 5) reprojection debug viz (초록=실제2D, 빨강=재투영)
+                            try:
+                                H_img, W_img = img.shape[:2]
+                                ts_ms = int(time.time() * 1000)
+
+                                def _pt_clamp(x, y, W, H, pad=2):
+                                    xi = int(round(float(x)))
+                                    yi = int(round(float(y)))
+                                    xi = max(pad, min(W - 1 - pad, xi))
+                                    yi = max(pad, min(H - 1 - pad, yi))
+                                    return xi, yi
+
+                                def _text_pos(x, y, W, H, dx=6, dy=6, pad=2):
+                                    return _pt_clamp(float(x) + dx, float(y) + dy, W, H, pad=pad)
+
+                                # --- (A) 입력 2D만 찍은 디버그 (PnP에 들어간 점이 "창 코너"인지 확인) ---
+                                try:
+                                    dbg_in = img.copy()
+                                    c2 = img_corners_2d.reshape(-1, 2)
+                                    for i in range(4):
+                                        x2, y2 = _pt_clamp(c2[i, 0], c2[i, 1], W_img, H_img)
+                                        tx2, ty2 = _text_pos(c2[i, 0], c2[i, 1], W_img, H_img)
+                                        cv2.circle(dbg_in, (x2, y2), 10, (0, 255, 0), -1)
+                                        cv2.putText(dbg_in, f"IN-{i}", (tx2, ty2),
+                                                    cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2)
+
+                                    in_path = os.path.join(RESULT_DIR, f"pnp_2d_input_debug_{ts_ms}.png")
+                                    ok_in = cv2.imwrite(in_path, dbg_in)
+                                    print("[PNP] 2d input debug saved ->", in_path, "ok=", ok_in)
+                                except Exception as e:
+                                    print("[PNP][WARN] 2d input debug save failed:", e)
+
+                                # --- (B) window_info corners를 그대로 찍는 디버그 (window_info 자체가 이상한지 확인) ---
+                                try:
+                                    dbg_win = img.copy()
+                                    w2 = np.array(window_info["corners_4"], dtype=np.float32).reshape(-1, 2)
+                                    for i in range(4):
+                                        xw, yw = _pt_clamp(w2[i, 0], w2[i, 1], W_img, H_img)
+                                        txw, tyw = _text_pos(w2[i, 0], w2[i, 1], W_img, H_img)
+                                        cv2.circle(dbg_win, (xw, yw), 10, (255, 0, 255), -1)
+                                        cv2.putText(dbg_win, f"WIN-{i}", (txw, tyw),
+                                                    cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255, 0, 255), 2)
+
+                                    win_path = os.path.join(RESULT_DIR, f"pnp_windowinfo_corners_debug_{ts_ms}.png")
+                                    ok_win = cv2.imwrite(win_path, dbg_win)
+                                    print("[PNP] window corners debug saved ->", win_path, "ok=", ok_win)
+                                except Exception as e:
+                                    print("[PNP][WARN] window corners debug save failed:", e)
+
+                                # --- (C) reprojection 디버그 (초록=입력2D, 빨강=재투영) ---
+                                proj, _ = cv2.projectPoints(
+                                    obj3d_best.astype(np.float32), rvec_best, tvec_best, K_best, dist
+                                )
+                                proj = proj.reshape(-1, 2)
+
+                                # =========================
+                                # PNP RAW PROJECTION CHECK (OOB 확인)
+                                # =========================
+                                print("\n[PNP][PROJ_RAW]", proj.tolist())
+                                print("[PNP][2D_RAW]", img_corners_2d.tolist())
+
+                                for i in range(4):
+                                    x = float(proj[i, 0])
+                                    y = float(proj[i, 1])
+                                    oob = (x < 0 or x >= W_img or y < 0 or y >= H_img)
+                                    print(f"[PNP][PROJ_OOB] i={i} x={x:.2f} y={y:.2f} oob={oob}")
+                                print()
+
+                                dbg_img = img.copy()
+                                c2 = img_corners_2d.reshape(-1, 2)
+
+                                for i in range(4):
+                                    x2, y2 = _pt_clamp(c2[i, 0], c2[i, 1], W_img, H_img)
+                                    xr, yr = _pt_clamp(proj[i, 0], proj[i, 1], W_img, H_img)
+
+                                    cv2.circle(dbg_img, (x2, y2), 8, (0, 255, 0), -1)  # 2D green
+                                    cv2.circle(dbg_img, (xr, yr), 8, (0, 0, 255), -1)  # reproj red
+                                    # 2D-3D 오차를 선으로 표시 (cyan)
+                                    cv2.line(dbg_img, (x2, y2), (xr, yr), (255, 255, 0), 2)
+
+                                    tx2, ty2 = _text_pos(c2[i, 0], c2[i, 1], W_img, H_img)
+                                    txr, tyr = _text_pos(proj[i, 0], proj[i, 1], W_img, H_img)
+
+                                    cv2.putText(dbg_img, f"2D-{i}", (tx2, ty2),
+                                                cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
+                                    cv2.putText(dbg_img, f"3D-{i}", (txr, tyr),
+                                                cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
+
+                                dbg_path = os.path.join(RESULT_DIR, f"pnp_reproj_debug_{ts_ms}.png")
+                                ok = cv2.imwrite(dbg_path, dbg_img)
+                                print("[PNP] reproj debug saved ->", dbg_path, "ok=", ok)
+
+                            except Exception as e:
+                                print("[PNP][WARN] reproj debug save failed:", e)
+
+                            # 6) 품질 컷 (권장)
+                            tz = float(tvec_best.reshape(-1)[2])
+                            if tz <= 0:
+                                pnp_result = {"error": "tvec_z<=0", "tvec_z": tz, "dbg_3d": pnp3d_dbg}
+                            elif best_err > 15.0:
+                                pnp_result = {
+                                    "error": "reproj_err_too_large",
+                                    "reproj_err_px": float(best_err),
+                                    "used_fov": float(best_fov),
+                                    "picked_window": picked_window,
+                                    "dbg_3d": pnp3d_dbg,
+                                    "note": "PnP rejected by reprojection error cutoff",
+                                }
+                            else:
+                                pnp_result = _pack_pnp_success(
+                                    K_use=K_best,
+                                    rvec_use=rvec_best,
+                                    tvec_use=tvec_best,
+                                    R_use=R_best,
+                                    reproj_err_px=best_err,
+                                    picked_window=picked_window,
+                                    pnp3d_dbg=pnp3d_dbg,
+                                    used_fov=best_fov
+                                )
 
     except Exception as e:
-        pnp_result = {"error": str(e), "note": "solvePnP failed"}
+        pnp_result = {"error": str(e), "note": "PnP failed (exception)"}
 
     # =========================
-    # OUT
+    # OUT (딱 1번만 생성)
     # =========================
     out = {
         "ts": float(time.time()),
@@ -416,26 +1145,74 @@ def run_pipeline(
         "light_origin": [float(origin[0]), float(origin[1])],
         "best_spot": packed[0],
         "spots": packed,
-        "window": window_info,     # ✅ 여기 1번만
-        "pnp": pnp_result,         # ✅ PNP도 1번만
+        "window": window_info,
+        "pnp": pnp_result,
+        "scene": scene_result,
     }
 
     # =========================
-    # WINDOW VIZ (FORCE SAVE)
+    # WINDOW VIZ
     # =========================
     try:
         viz2 = img.copy()
         if win is not None:
             x, y, ww, hh = win
-            cv2.rectangle(viz2, (int(x), int(y)), (int(x + ww), int(y + hh)), (0, 255, 255), 4)
+            cv2.rectangle(viz2, (x, y), (x + ww, y + hh), (0, 255, 255), 4)
 
-            if isinstance(window_info, dict) and window_info.get("corners_4"):
-                poly = np.array(window_info["corners_4"], dtype=np.int32).reshape(-1, 1, 2)
+            if windows_for_viz:
+                poly = np.array(windows_for_viz[0]["corners_4"], dtype=np.int32).reshape(-1, 1, 2)
                 cv2.polylines(viz2, [poly], True, (0, 255, 255), 3)
 
-        viz_path2 = os.path.join(RESULT_DIR, "result_latest_viz_window.png")
+        # =========================
+        # PNP OVERLAY (MAIN WINDOW VIZ)
+        # =========================
+        if isinstance(pnp_result, dict) and pnp_result.get("K") and pnp_result.get("rvec"):
+            try:
+                Kp = np.array(pnp_result["K"], dtype=np.float32)
+                rvecp = np.array(pnp_result["rvec"], dtype=np.float32).reshape(3, 1)
+                tvecp = np.array(pnp_result["tvec"], dtype=np.float32).reshape(3, 1)
+
+                # PnP에서 사용한 3D / 2D
+                obj3d = obj3d_best.astype(np.float32)
+                img2d = img_corners_2d.astype(np.float32)
+
+                proj, _ = cv2.projectPoints(obj3d, rvecp, tvecp, Kp, None)
+                proj = proj.reshape(-1, 2)
+
+                for i in range(4):
+                    x2, y2 = int(img2d[i, 0]), int(img2d[i, 1])
+                    xr, yr = int(proj[i, 0]), int(proj[i, 1])
+
+                    # input 2D (green)
+                    cv2.circle(viz2, (x2, y2), 7, (0, 255, 0), -1)
+                    # reprojection (red)
+                    cv2.circle(viz2, (xr, yr), 7, (0, 0, 255), -1)
+                    # error line (cyan)
+                    cv2.line(viz2, (x2, y2), (xr, yr), (255, 255, 0), 2)
+
+                    cv2.putText(viz2, f"2D-{i}", (x2 + 5, y2 + 5),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
+                    cv2.putText(viz2, f"3D-{i}", (xr + 5, yr + 5),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
+
+            except Exception as e:
+                print("[VIZ][PNP_OVERLAY][WARN]", e)
+
+        viz_ts = int(time.time() * 1000)
+        viz_path2 = os.path.join(RESULT_DIR, f"result_latest_viz_window_{viz_ts}.png")
         ok = cv2.imwrite(viz_path2, viz2)
         print("[VIZ_WINDOW] saved ->", viz_path2, "ok=", ok)
+
+        # ✅ fixed 파일을 항상 갱신
+        if ok:
+            fixed_viz_path = os.path.join(RESULT_DIR, "result_latest_viz.png")
+            try:
+                shutil.copyfile(viz_path2, fixed_viz_path)
+                print("[VIZ] copied ->", fixed_viz_path, "ok=True")
+            except Exception as e:
+                print("[VIZ] copy failed ->", fixed_viz_path, "err=", e)
+
+
     except Exception as e:
         print("[WARN] VIZ_WINDOW save failed:", e)
 
@@ -471,15 +1248,24 @@ def run_pipeline(
     if debug_viz:
         try:
             best_xy = tuple((out.get("best_spot") or {}).get("pt") or (0, 0))
+            print("[VIZ_MAIN] window_info corners_4 =", None if not window_info else window_info.get("corners_4"))
+            print("[VIZ_MAIN] win bbox =", win)
+            print("[VIZ_MAIN] best_xy =", best_xy)
+
+            viz_main_path = os.path.join(RESULT_DIR, f"result_latest_viz_{int(time.time())}.png")
+
             draw_debug(
                 image=img,
                 floor_mask=(core > 0),
-                windows=None,
+                windows=windows_for_viz,
                 light_map=None,
                 best_point=best_xy,
-                save_path=os.path.join(RESULT_DIR, "result_latest_viz.png"),
+                save_path=viz_main_path
             )
-            print("[VIZ] saved ->", os.path.join(RESULT_DIR, "result_latest_viz.png"))
+
+            # print("[VIZ] saved ->", os.path.join(RESULT_DIR, "result_latest_viz.png"))
+            print("[VIZ_MAIN] saved ->", viz_main_path)
+
         except Exception as e:
             print("[WARN] draw_debug failed:", e)
 
