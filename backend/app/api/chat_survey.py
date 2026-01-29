@@ -126,8 +126,9 @@ async def submit_survey(request: Request):
     key = sid
 
     # "설문 이미지를 먼저 올려야 한다" 룰 유지
-    if not SURVEY_UPLOADS.get(key):
-        raise HTTPException(status_code=400, detail="survey_image_required")
+
+    # if not SURVEY_UPLOADS.get(key):
+    #     raise HTTPException(status_code=400, detail="survey_image_required")
 
     answers = body.get("answers") if isinstance(body, dict) else None
     if isinstance(answers, dict):

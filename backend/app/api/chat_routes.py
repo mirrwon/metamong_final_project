@@ -12,6 +12,7 @@ from .chat_handlers import (
     get_filters,
     get_scenes,
     PickSpotBody,
+    get_results,
 )
 
 from .chat_survey import survey_router
@@ -60,3 +61,7 @@ async def route_chat_image(
 @router.post("/api/chat/spot")
 async def route_chat_spot(request: Request, body: PickSpotBody):
     return await chat_pick_spot(request, body)
+
+@router.get("/api/chat/results")
+def route_results():
+    return get_results()

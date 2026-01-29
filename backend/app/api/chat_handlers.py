@@ -5,6 +5,7 @@ import json
 import time
 import random
 import uuid, pathlib
+import glob
 
 from typing import Any, Dict, List, Optional
 from pydantic import BaseModel
@@ -15,15 +16,10 @@ from fastapi import UploadFile, File, Form, Request
 from fastapi.responses import JSONResponse
 
 from app.cv.pipeline import run_pipeline
-from app.config import BASE_DIR, RESULT_DIR, UPLOAD_DIR, ASSET_DIR
+from app.config import BASE_DIR, RESULT_DIR, RESULT_JSON_LATEST, UPLOAD_DIR, ASSET_DIR
 
 from app.llm.image_edit import composite_plant_on_original
 from app.llm.gemini.gemini_image_edit import gemini_edit_image
-
-from app.kg.rules import load_rules
-from app.kg.context_loader import ContextLoader
-from app.kg.llm_client import LLMClient
-from app.kg.service import handle_chat
 
 from app.solar.kier_client import KierSolarClient
 from app.reco.recommender import recommend_for_analysis
@@ -52,6 +48,26 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 os.makedirs(RESULT_DIR, exist_ok=True)
 
 solar_client = KierSolarClient()
+
+def get_results():
+    """
+    프론트가 /api/chat/results로 받아갈 '최신 결과 메타'를 반환.
+    필요하면 형식은 프론트에 맞춰 확장.
+    """
+    latest_json_path = str(RESULT_JSON_LATEST)
+    exists = os.path.exists(latest_json_path)
+
+    # 최신 결과 이미지들(예: result_latest_*.png) 목록
+    files = sorted(
+        [os.path.basename(p) for p in glob.glob(os.path.join(str(RESULT_DIR), "result_latest_*.png"))]
+    )
+
+    return JSONResponse({
+        "ok": True,
+        "latest_json_exists": exists,
+        "latest_json": os.path.basename(latest_json_path),
+        "latest_images": files,
+    })
 
 # =========================
 # Detail text -> constraints (원본 유지)

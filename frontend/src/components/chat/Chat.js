@@ -1,12 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { ROUTES } from "../../constants/routes";
 import Button from "../common/Button";
 import { fetchWithSession, readStoredUser } from "../../services/session";
 import "./Chat.css";
 
 const API_BASE = "http://localhost:8000/api/chat";
 const IMAGE_API = `${API_BASE}/image`;
+const RESULTS_API = `${API_BASE}/results`;
 const SCENES_API = `${API_BASE.replace(/\/api\/chat$/, "")}/api/chat/scenes`;
 const SPOT_API = `${API_BASE}/spot`;
 
@@ -703,18 +702,13 @@ export default function Chat() {
       "meta",
       JSON.stringify({
         lat: 37.5665,
-        lon: 126.9780,
+        lot: 126.9780,
         label,           
         // hhmm: "0900",  // 필요하면
       })
     );
 
     // ✅ scene_id (있으면)
-    if (sceneId !== null && sceneId !== undefined && String(sceneId).trim() !== "") {
-      formData.append("scene_id", String(sceneId));
-    }
-
-    // ✅ scene_id 추가 전송 (빈문자/0 같은 falsy 방지)
     if (sceneId !== null && sceneId !== undefined && String(sceneId).trim() !== "") {
       formData.append("scene_id", String(sceneId));
     }

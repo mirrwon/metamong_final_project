@@ -61,13 +61,20 @@ export const readStoredUser = () => {
   }
 };
 
-export const fetchWithSession = async (input, init) => {
+export const fetchWithSession = async (input, init = {}) => {
   if (isSessionExpired()) {
     expireSession();
     throw new Error("Session expired");
   }
 
-  const response = await fetch(input, init);
+  // ✅ 쿠키(세션 sid) 항상 포함
+  const nextInit = {
+    ...init,
+    credentials: "include",
+  };
+
+  const response = await fetch(input, nextInit);
+
   if (response.ok) {
     touchActivity();
   } else if (response.status === 401) {
