@@ -11,7 +11,7 @@ from app.config import RESULT_DIR, UPLOAD_DIR, PLANTS_DIR, ASSET_DIR  # ✅ conf
 
 from app.db.redis_client import get_redis, get_redis_error
 from app.db.mysql_client import get_mysql, get_mysql_error
-from app.db.vercel_blob_client import ping_vercel_blob, get_vercel_blob_error
+from app.db.s3_client import ping_s3, get_s3_error, get_presigned_url
 
 from app.api.chat_routes import router as chat_router
 from app.api.diary_routes import router as diary_router
@@ -60,6 +60,14 @@ _plants_cache = {}
 _plants_key_cache = {}
 
 
+def _get_scan_limit() -> int:
+    raw = os.getenv("REDIS_PLANTS_SCAN_LIMIT", "").strip()
+    try:
+        return max(0, int(raw))
+    except Exception:
+        return 0
+
+
 def _normalize_plant_id(key: str, prefix: str) -> str:
     if prefix and key.startswith(prefix):
         return key[len(prefix) :]
@@ -105,9 +113,13 @@ def _get_cached_keys(r, prefix: str, cache_ttl: int) -> list:
         return keys
 
     cursor = 0
+    scan_limit = _get_scan_limit()
     while True:
         cursor, batch = r.scan(cursor=cursor, match=f"{prefix}*" if prefix else None, count=1000)
         keys.extend(batch)
+        if scan_limit and len(keys) >= scan_limit:
+            keys = keys[:scan_limit]
+            break
         if cursor == 0:
             break
 
@@ -120,27 +132,111 @@ def _get_cached_keys(r, prefix: str, cache_ttl: int) -> list:
     return keys
 
 
+def _fetch_redis_json_items(r, keys: list, json_path: str) -> list:
+    if not keys:
+        return []
+    try:
+        raw_items = r.execute_command("JSON.MGET", *keys, json_path)
+    except Exception:
+        raw_items = None
+
+    if raw_items is None:
+        try:
+            pipe = r.pipeline()
+            for key in keys:
+                pipe.execute_command("JSON.GET", key, json_path)
+            raw_items = pipe.execute()
+        except Exception:
+            pipe = r.pipeline()
+            for key in keys:
+                pipe.get(key)
+            raw_items = pipe.execute()
+
+    items = []
+    for payload in raw_items:
+        if payload is None:
+            items.append(None)
+            continue
+        try:
+            decoded = json.loads(payload)
+        except Exception:
+            decoded = payload
+        if isinstance(decoded, list) and len(decoded) == 1:
+            decoded = decoded[0]
+        items.append(decoded)
+    return items
+
+
+def _get_s3_settings() -> tuple[str, bool, str]:
+    base_url = os.getenv("S3_PLANT_IMAGE_BASE_URL", "").strip().rstrip("/")
+    use_presigned = os.getenv("S3_USE_PRESIGNED_URLS", "").strip().lower() in ("1", "true", "yes")
+    prefix_path = os.getenv("S3_PLANT_IMAGE_PREFIX", "").strip().strip("/") or "plant_img"
+    return base_url, use_presigned, prefix_path
+
+
+def _s3_extract_key(value: str, base_url: str, prefix_path: str) -> str | None:
+    if not value:
+        return None
+    val = value.strip()
+    if not val:
+        return None
+
+    key = None
+    if val.lower().startswith(("http://", "https://")):
+        if base_url and val.startswith(base_url):
+            remainder = val[len(base_url) :].lstrip("/")
+            if base_url.lower().endswith(prefix_path.lower()):
+                key = f"{prefix_path}/{remainder}" if remainder else prefix_path
+            else:
+                key = remainder
+        elif ".amazonaws.com/" in val:
+            remainder = val.split(".amazonaws.com/", 1)[1]
+            key = remainder.lstrip("/")
+        else:
+            return None
+    else:
+        key = val
+        if base_url and val.startswith(base_url):
+            key = val[len(base_url) :].lstrip("/")
+
+    if not key:
+        return None
+    if not key.lower().startswith(f"{prefix_path.lower()}/"):
+        key = f"{prefix_path}/{key.lstrip('/')}"
+    return key
+
+
+def _s3_presign_value(value: str, base_url: str, prefix_path: str) -> str:
+    key = _s3_extract_key(value, base_url, prefix_path)
+    if not key:
+        return value
+    return get_presigned_url(key) or value
+
+
 def _resolve_plant_image(raw: dict, key: str, prefix: str):
     image = raw.get("image") or raw.get("\uc774\ubbf8\uc9c0")
-    base_url = os.getenv("VERCEL_PLANT_IMAGE_BASE_URL", "").strip().rstrip("/")
+    base_url, use_presigned, prefix_path = _get_s3_settings()
 
     if isinstance(image, str) and image.strip():
         image = image.strip()
+        if use_presigned:
+            return _s3_presign_value(image, base_url, prefix_path)
         if image.lower().startswith(("http://", "https://")):
             return image
 
         if not base_url:
             return image
 
-        if image.lower().startswith("plant_img/") and base_url.lower().endswith("plant_img"):
-            image = image[len("plant_img/") :]
+        prefix_token = f"{prefix_path.lower()}/"
+        if image.lower().startswith(prefix_token) and base_url.lower().endswith(prefix_path.lower()):
+            image = image[len(prefix_path) + 1 :]
         image = image.lstrip("/")
         return f"{base_url}/{image}"
 
-    if not base_url:
+    if not base_url and not use_presigned:
         return None
 
-    exts = os.getenv("VERCEL_PLANT_IMAGE_EXTS", "").strip()
+    exts = os.getenv("S3_PLANT_IMAGE_EXTS", "").strip()
     ext_list = [ext.strip() for ext in exts.split(",") if ext.strip()] or [".jpg"]
     ext = ext_list[0]
     if not ext.startswith("."):
@@ -149,19 +245,28 @@ def _resolve_plant_image(raw: dict, key: str, prefix: str):
     plant_id = _normalize_plant_id(key, prefix)
     if not plant_id:
         return None
-    return f"{base_url}/plant_{plant_id}_1{ext}"
+    filename = f"plant_{plant_id}_1{ext}"
+    if use_presigned:
+        key_path = f"{prefix_path}/{filename}"
+        return get_presigned_url(key_path)
+    return f"{base_url}/{filename}"
 
 
 def _resolve_plant_images(raw: dict, key: str, prefix: str) -> list:
-    base_url = os.getenv("VERCEL_PLANT_IMAGE_BASE_URL", "").strip().rstrip("/")
-    if not base_url:
+    base_url, use_presigned, prefix_path = _get_s3_settings()
+    if not base_url and not use_presigned:
         return []
 
     image_count = (
         raw.get("photo_count")
+        or raw.get("photoCount")
+        or raw.get("photo_cnt")
         or raw.get("image_count")
+        or raw.get("imageCount")
         or raw.get("images_count")
+        or raw.get("imagesCount")
         or raw.get("\uc0ac\uc9c4_\uac1c\uc218")
+        or raw.get("\uc0ac\uc9c4_\uac2f\uc218")
     )
     try:
         image_count = int(image_count)
@@ -177,22 +282,26 @@ def _resolve_plant_images(raw: dict, key: str, prefix: str) -> list:
             if not isinstance(item, str) or not item.strip():
                 continue
             item = item.strip()
+            if use_presigned:
+                resolved.append(_s3_presign_value(item, base_url, prefix_path))
+                continue
             if item.lower().startswith(("http://", "https://")):
                 resolved.append(item)
                 continue
-            if item.lower().startswith("plant_img/") and base_url.lower().endswith("plant_img"):
-                item = item[len("plant_img/") :]
+            prefix_token = f"{prefix_path.lower()}/"
+            if item.lower().startswith(prefix_token) and base_url.lower().endswith(prefix_path.lower()):
+                item = item[len(prefix_path) + 1 :]
             item = item.lstrip("/")
             resolved.append(f"{base_url}/{item}")
         return resolved
 
-    exts = os.getenv("VERCEL_PLANT_IMAGE_EXTS", "").strip()
+    exts = os.getenv("S3_PLANT_IMAGE_EXTS", "").strip()
     ext_list = [ext.strip() for ext in exts.split(",") if ext.strip()] or [".jpg"]
     ext = ext_list[0]
     if not ext.startswith("."):
         ext = f".{ext}"
 
-    max_images_raw = os.getenv("VERCEL_PLANT_IMAGE_MAX", "").strip()
+    max_images_raw = os.getenv("S3_PLANT_IMAGE_MAX", "").strip()
     try:
         max_images = max(1, min(int(max_images_raw), 12))
     except Exception:
@@ -204,7 +313,11 @@ def _resolve_plant_images(raw: dict, key: str, prefix: str) -> list:
     if not plant_id:
         return []
 
-    return [f"{base_url}/plant_{plant_id}_{idx}{ext}" for idx in range(1, max_images + 1)]
+    filenames = [f"plant_{plant_id}_{idx}{ext}" for idx in range(1, max_images + 1)]
+    if use_presigned:
+        signed = [get_presigned_url(f"{prefix_path}/{name}") for name in filenames]
+        return [url for url in signed if url]
+    return [f"{base_url}/{name}" for name in filenames]
 
 
 def _normalize_plant_payload(raw, key: str, prefix: str) -> dict:
@@ -216,12 +329,13 @@ def _normalize_plant_payload(raw, key: str, prefix: str) -> dict:
             return ", ".join([str(item) for item in val if item is not None])
         return val
 
-    name_ko = raw.get("\uc774\ub984ko")
-    name_en = raw.get("\uc774\ub984_en")
+    name_ko = raw.get("\uc774\ub984ko") or raw.get("\uc774\ub984_\ud55c\uad6d\uc5b4")
+    name_en = raw.get("\uc774\ub984_en") or raw.get("\uc774\ub984_\uc601\uc5b4")
     care_level = raw.get("\uad00\ub9ac_\ub09c\uc774\ub3c4") or raw.get("\uad00\ub9ac_\uc694\uad6c\ub3c4")
     allergy_notice = raw.get("\uc0ac\ub78c_\uc54c\ub7ec\uc9c0_\uc8fc\uc758")
     allergy_type = raw.get("\uc0ac\ub78c_\uc54c\ub7ec\uc9c0_\uc720\ud615")
-    allergy = allergy_type or allergy_notice
+    allergy_symptom = raw.get("\uc0ac\ub78c_\uc54c\ub7ec\uc9c0_\uc99d\uc0c1")
+    allergy = allergy_type or allergy_notice or allergy_symptom
 
     pet_target = raw.get("\ubc18\ub824\ub3d9\ubb3c_\ub300\uc0c1")
     pet_symptom = raw.get("\ubc18\ub824\ub3d9\ubb3c_\uc99d\uc0c1")
@@ -287,17 +401,24 @@ def redis_debug():
         return {"ok": False, "reason": "ping_failed"}
 
     prefix = os.getenv("REDIS_PLANTS_PREFIX", "").strip()
+    ids_set = os.getenv("REDIS_PLANTS_ID_SET", "").strip() or "plants:ids"
     count = None
     if prefix:
         try:
-            cursor = 0
-            count = 0
-            limit = 5000
-            while True:
-                cursor, keys = r.scan(cursor=cursor, match=f"{prefix}*", count=200)
-                count += len(keys)
-                if cursor == 0 or count >= limit:
-                    break
+            if ids_set and r.exists(ids_set):
+                count = r.scard(ids_set)
+            else:
+                cursor = 0
+                count = 0
+                limit = 5000
+                scan_limit = _get_scan_limit()
+                if scan_limit:
+                    limit = min(limit, scan_limit)
+                while True:
+                    cursor, keys = r.scan(cursor=cursor, match=f"{prefix}*", count=200)
+                    count += len(keys)
+                    if cursor == 0 or count >= limit:
+                        break
         except Exception:
             count = None
 
@@ -305,7 +426,7 @@ def redis_debug():
     if prefix:
         try:
             sample_key = f"{prefix}1"
-            raw = r.execute_command("JSON.GET", sample_key, "$.이름ko")
+            raw = r.execute_command("JSON.GET", sample_key, "$.\uc774\ub984_\ud55c\uad6d\uc5b4")
             sample_name = raw
         except Exception:
             sample_name = None
@@ -366,27 +487,10 @@ def list_plants(cursor: int = 0, limit: int = 24, offset: int | None = None):
         slice_keys = keys[offset_val : offset_val + limit_val]
         items = []
         if slice_keys:
-            try:
-                pipe = r.pipeline()
-                for key in slice_keys:
-                    pipe.execute_command("JSON.GET", key, json_path)
-                raw_items = pipe.execute()
-            except Exception:
-                pipe = r.pipeline()
-                for key in slice_keys:
-                    pipe.get(key)
-                raw_items = pipe.execute()
-
-            for key, payload in zip(slice_keys, raw_items):
-                if payload is None:
+            raw_items = _fetch_redis_json_items(r, slice_keys, json_path)
+            for key, decoded in zip(slice_keys, raw_items):
+                if decoded is None:
                     continue
-                try:
-                    decoded = json.loads(payload)
-                except Exception:
-                    decoded = payload
-
-                if isinstance(decoded, list) and len(decoded) == 1:
-                    decoded = decoded[0]
                 items.append(_normalize_plant_payload(decoded, key, prefix))
 
         next_offset = offset_val + limit_val
@@ -411,27 +515,10 @@ def list_plants(cursor: int = 0, limit: int = 24, offset: int | None = None):
                 count=max(limit_val * 2, 50),
             )
             if keys:
-                try:
-                    pipe = r.pipeline()
-                    for key in keys:
-                        pipe.execute_command("JSON.GET", key, json_path)
-                    raw_items = pipe.execute()
-                except Exception:
-                    pipe = r.pipeline()
-                    for key in keys:
-                        pipe.get(key)
-                    raw_items = pipe.execute()
-                for key, payload in zip(keys, raw_items):
-                    if payload is None:
+                raw_items = _fetch_redis_json_items(r, keys, json_path)
+                for key, decoded in zip(keys, raw_items):
+                    if decoded is None:
                         continue
-                    try:
-                        decoded = json.loads(payload)
-                    except Exception:
-                        decoded = payload
-
-                    if isinstance(decoded, list) and len(decoded) == 1:
-                        decoded = decoded[0]
-
                     items.append(_normalize_plant_payload(decoded, key, prefix))
                     if len(items) >= limit_val:
                         break
@@ -457,9 +544,9 @@ def mysql_debug():
         return {"ok": False, "reason": "ping_failed"}
     return {"ok": True}
 
-@app.get("/debug/vercel-blob")
-def vercel_blob_debug():
-    ok = ping_vercel_blob()
+@app.get("/debug/s3")
+def s3_debug():
+    ok = ping_s3()
     if not ok:
-        return {"ok": False, "error": get_vercel_blob_error()}
+        return {"ok": False, "error": get_s3_error()}
     return {"ok": True}
