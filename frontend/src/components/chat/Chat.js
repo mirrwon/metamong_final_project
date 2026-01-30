@@ -140,7 +140,11 @@ export default function Chat() {
   const [sceneOptions, setSceneOptions] = useState([]);
   const [selectedScene, setSelectedScene] = useState("");
   const [pendingImageFile, setPendingImageFile] = useState(null); // 재전송용
+
   const [sceneErrorText, setSceneErrorText] = useState("");
+  const [sceneSelectMode, setSceneSelectMode] = useState(null); // "scene" | "space" | null
+  const [selectedSpace, setSelectedSpace] = useState("");
+  const [spaceOptions, setSpaceOptions] = useState([]);
 
   const [showAltSpots, setShowAltSpots] = useState(false);
   const [altSpotCount, setAltSpotCount] = useState(0);
@@ -292,12 +296,28 @@ export default function Chat() {
       const p = m?.payload;
       if (!p) continue;
 
+      // ✅ 1) space_required (거실/침실/욕실/주방)
+      if (p.type === "space_required") {
+        const opts = Array.isArray(p.options) ? p.options : [];
+        setSpaceOptions(opts.map((x) => ({ id: String(x), label: String(x) })));
+        setSelectedSpace("");
+        setSceneSelectMode("space");
+
+        setNeedSceneSelect(true);
+        setSceneErrorText(p.message || "이 사진이 어떤 공간인지 선택해주세요.");
+        return true;
+      }
+
+      // ✅ 2) scene_required (residence_house_... 같은 씬)
       if (p.type === "scene_required") {
         if (Array.isArray(p.scenes) && p.scenes.length > 0) {
           setSceneOptions(normalizeSceneOptions(p.scenes));
         } else {
           fetchScenesIfNeeded();
         }
+        setSelectedScene("");
+        setSceneSelectMode("scene");
+
         setNeedSceneSelect(true);
         setSceneErrorText(p.message || "이 사진은 공간(scene) 선택이 필요합니다.");
         return true;
@@ -305,6 +325,7 @@ export default function Chat() {
     }
     return false;
   };
+
 
   const detectAiEditArrived = (incomingMessages = []) => {
     return incomingMessages.some((m) => {
@@ -689,7 +710,7 @@ export default function Chat() {
   };
 
   // ✅ 이미지 업로드 (sceneId optional)
-  const handleImageSubmit = async (event, sceneId = null) => {
+  const handleImageSubmit = async (event, sceneId = null, spaceType = null) => {
     event.preventDefault();
 
     const fileToSend = imageFiles.length > 0 ? imageFiles[0] : pendingImageFile;
@@ -727,9 +748,14 @@ export default function Chat() {
       })
     );
 
-    // ✅ scene_id (있으면)
+    // ✅ scene_id
     if (sceneId !== null && sceneId !== undefined && String(sceneId).trim() !== "") {
       formData.append("scene_id", String(sceneId));
+    }
+
+    // ✅ space_type
+    if (spaceType !== null && spaceType !== undefined && String(spaceType).trim() !== "") {
+      formData.append("space_type", String(spaceType));
     }
 
     console.log("[handleImageSubmit] sceneId =", sceneId);
@@ -930,37 +956,40 @@ export default function Chat() {
 
   // ✅ Scene 선택 후 재분석 (초기 업로드와 동일 경로로 재전송)
   const handleSceneResubmit = async (e) => {
-  if (e) {
-    e.preventDefault();
-    e.stopPropagation();
-  }
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
 
-  // ✅ “실제로 보낼 파일” 기준으로 체크
-  const fileToSend = imageFiles.length > 0 ? imageFiles[0] : pendingImageFile;
-  if (!fileToSend) return;
+    const fileToSend = imageFiles.length > 0 ? imageFiles[0] : pendingImageFile;
+    if (!fileToSend) return;
 
-  const sceneId = (selectedScene || "").trim();
-  if (!sceneId) return;
+    const fakeEvent = { preventDefault: () => {}, stopPropagation: () => {} };
 
-  setMessages((prev) => [
-    ...prev,
-    {
-      id: `${Date.now()}-user-scene`,
-      role: "user",
-      text: `scene 선택: ${sceneId}`,
-      timestamp: Date.now(),
-    },
-  ]);
+    if (sceneSelectMode === "space") {
+      const st = (selectedSpace || "").trim();
+      if (!st) return;
 
-  // ✅ handleImageSubmit이 stopPropagation을 쓰면 여기서도 제공
-  const fakeEvent = {
-    preventDefault: () => {},
-    stopPropagation: () => {},
+      setMessages((prev) => [
+        ...prev,
+        { id: `${Date.now()}-user-space`, role: "user", text: `공간 선택: ${st}`, timestamp: Date.now() },
+      ]);
+
+      await handleImageSubmit(fakeEvent, null, st);
+      return;
+    }
+
+    // default: scene mode
+    const sceneId = (selectedScene || "").trim();
+    if (!sceneId) return;
+
+    setMessages((prev) => [
+      ...prev,
+      { id: `${Date.now()}-user-scene`, role: "user", text: `scene 선택: ${sceneId}`, timestamp: Date.now() },
+    ]);
+
+    await handleImageSubmit(fakeEvent, sceneId, null);
   };
-
-  await handleImageSubmit(fakeEvent, sceneId);
-};
-
 
   return (
     <div className="chatPage">
@@ -1115,24 +1144,32 @@ export default function Chat() {
           {needSceneSelect && (
             <div className="filterPanel" style={{ marginTop: 12 }}>
               <div className="filterGroup">
-                <div className="filterGroup__title">[공간(scene) 선택 필요]</div>
+                <div className="filterGroup__title">
+                  {sceneSelectMode === "space"
+                    ? "[공간 타입 선택]"
+                    : "[공간(scene) 선택 필요]"}
+                </div>
                 <div style={{ marginBottom: 8, opacity: 0.9 }}>
                   {sceneErrorText || "이 사진은 공간(scene) 선택이 필요합니다."}
                 </div>
 
-                {sceneOptions.length === 0 ? (
+                {(sceneSelectMode === "space" ? spaceOptions : sceneOptions).length === 0 ? (
                   <div style={{ color: "#c00" }}>
-                    scene 목록이 없습니다. 백엔드 <b>/api/chat/scenes</b> 라우트를 확인해주세요.
+                    선택 옵션이 없습니다. 백엔드 payload를 확인해주세요.
                   </div>
                 ) : (
                   <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                     <select
-                      value={selectedScene}
-                      onChange={(e) => setSelectedScene(e.target.value)}
+                      value={sceneSelectMode === "space" ? selectedSpace : selectedScene}
+                      onChange={(e) =>
+                        sceneSelectMode === "space"
+                          ? setSelectedSpace(e.target.value)
+                          : setSelectedScene(e.target.value)
+                      }
                       style={{ padding: 6, minWidth: 260 }}
                     >
                       <option value="">선택하세요</option>
-                      {sceneOptions.map((s) => (
+                      {(sceneSelectMode === "space" ? spaceOptions : sceneOptions).map((s) => (
                         <option key={s.id} value={s.id}>
                           {s.label || s.id}
                         </option>
@@ -1143,6 +1180,7 @@ export default function Chat() {
                     </button>
                   </div>
                 )}
+
               </div>
             </div>
           )}

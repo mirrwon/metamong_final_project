@@ -85,7 +85,8 @@ def list_71765_scenes() -> list:
     반환: ["residence_house_1_s_001", "etc_education_l_002", ...]
     """
 
-    ROOT = r"C:\Users\나\Desktop\71765_json\71765_json\Training\02.labeling\3D 공간 모델"
+    # ROOT = r"C:\Users\나\Desktop\71765_json\71765_json\Training\02.labeling\3D 공간 모델"
+    ROOT = r"C:\Users\201\Desktop\71765_json\71765_json\Training\02.labeling\3D 공간 모델"
 
     if not os.path.isdir(ROOT):
         print("[list_71765_scenes] ROOT not found:", ROOT)

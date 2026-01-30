@@ -46,6 +46,8 @@ from .chat_utils import (
     scene_id_to_room_label,
 )
 
+from app.cv.scene_catalog import pick_scene_for_room
+
 load_dotenv()
 
 os.makedirs(UPLOAD_DIR, exist_ok=True)
@@ -598,9 +600,12 @@ async def handle_chat_image(
     image: Optional[UploadFile] = File(None),
     meta: Optional[str] = Form(None),
     scene_id: Optional[str] = Form(None),
+    room_type: Optional[str] = Form(None),
 ) -> JSONResponse:
     sid, sid_is_new = _get_or_create_sid(request)
     key = sid
+
+    print("[DEBUG] handle_chat_image FILE =", __file__)
 
     upload: Optional[UploadFile] = None
     if files and len(files) > 0:
@@ -647,8 +652,19 @@ async def handle_chat_image(
             print("[CHAT_IMAGE][WARN] failed to remove old ai_edit:", e)
 
     user_opts: Dict[str, Any] = {}
+
+    # 1) 사용자가 scene_id를 직접 고른 경우가 최우선
     if scene_id:
         user_opts["scene_id"] = scene_id
+
+    # 2) scene_id 없고 room_type만 있으면 -> 내부에서 scene_id 하나 픽
+    elif room_type:
+        try:
+            picked = pick_scene_for_room(room_type)  # "거실"|"침실"|"주방"|"욕실"
+            if picked:
+                user_opts["scene_id"] = picked
+        except Exception as e:
+            print("[WARN] pick_scene_for_room failed:", e)
 
     try:
         out = _run_pipeline_compat(save_path, user_opts=user_opts)
@@ -720,14 +736,55 @@ async def handle_chat_image(
         # 재분석 후 space 다시 계산
         out["space"] = classify_space(out)
 
-
-
-
     progress(cid, "cv_done")
 
     scene_info = out.get("scene")
     if isinstance(scene_info, dict) and scene_info.get("reason") == "scene_required":
+        # ✅ 2번 방식: scene_id 리스트를 유저에게 안 보여주고, room_type만 고르게 함
+        return _json_with_sid(
+            {
+                "messages": [
+                    {
+                        "type": "text",
+                        "text": "이 사진의 공간 유형을 선택해주세요. (선택하면 그 공간에 맞춰 다시 분석합니다)",
+                        "payload": {
+                            "type": "room_type_required",
+                            "options": ["거실", "침실", "주방", "욕실"],
+                        },
+                    }
+                ]
+            },
+            sid,
+            sid_is_new,
+        )
+
         scenes_raw = scene_info.get("scenes") or []
+
+        # ✅ space_classifier 결과로 후보 필터링 (UX 개선 + 과대판정 완화)
+        space_type = None
+        sp = out.get("space") if isinstance(out, dict) else None
+        if isinstance(sp, dict):
+            space_type = sp.get("type")  # 예: "욕실" | "거실" | "방"
+
+        if isinstance(space_type, str) and space_type.strip():
+            filtered = []
+            for x in scenes_raw:
+                _id = None
+                if isinstance(x, str):
+                    _id = x
+                elif isinstance(x, dict):
+                    _id = x.get("id") or x.get("scene_id") or x.get("sceneId")
+
+                if not isinstance(_id, str) or not _id.strip():
+                    continue
+
+                room = scene_id_to_room_label(_id.strip())
+                if room == space_type:
+                    filtered.append(x)
+
+            # 필터 결과가 너무 적으면(예: 0~2개) 원본 유지
+            if len(filtered) >= 5:
+                scenes_raw = filtered
 
         scenes_for_ui = []
         for x in scenes_raw:
@@ -746,14 +803,9 @@ async def handle_chat_image(
             # ✅ 라벨(거실/욕실/침실/주방 등)
             room = scene_id_to_room_label(_id)
 
-            # ✅ 드롭다운에서 중복 안 보이게 id 일부를 같이 보여줌
-            short_id = _id
-            if len(short_id) > 18:
-                short_id = "…" + short_id[-18:]
-
             scenes_for_ui.append({
                 "id": _id,
-                "label": f"{room} ({short_id})" if room else short_id,
+                "label": room if room else _id,
             })
 
         return _json_with_sid(
@@ -1021,8 +1073,9 @@ async def chat_image(
     image: Optional[UploadFile] = File(None),
     meta: Optional[str] = Form(None),
     scene_id: Optional[str] = Form(None),
+    room_type: Optional[str] = Form(None),
 ) -> JSONResponse:
-    return await handle_chat_image(request, files=files, image=image, meta=meta, scene_id=scene_id)
+    return await handle_chat_image(request, files=files, image=image, meta=meta, scene_id=scene_id, room_type=room_type,)
 
 # =========================
 # Spot pick / Filters / Scenes
