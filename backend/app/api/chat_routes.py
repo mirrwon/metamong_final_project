@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Request, UploadFile, File, Form
+from fastapi.responses import JSONResponse
 from typing import Optional, List
 
 from .chat_progress import stream_route
@@ -10,9 +11,12 @@ from .chat_handlers import (
     chat_image,
     chat_pick_spot,
     get_filters,
-    get_scenes,
     PickSpotBody,
     get_results,
+    get_scenes,
+    get_scenes_all,
+    handle_chat_analyze,
+    AnalyzeBody,
 )
 
 from .chat_survey import survey_router
@@ -29,9 +33,15 @@ router.include_router(survey_router)
 def route_filters():
     return get_filters()
 
+# ✅ room group options만 반환
 @router.get("/api/chat/scenes")
 def route_scenes():
     return get_scenes()
+
+# ✅ 전체 scene 리스트(라벨 포함) 반환
+@router.get("/api/chat/scenes/all")
+def route_scenes_all():
+    return get_scenes_all()
 
 # -------------------------
 # v3 Contract: /api/chat/stream (SSE heartbeat) - 절대 제거 금지
@@ -55,8 +65,16 @@ async def route_chat_image(
     image: Optional[UploadFile] = File(None),
     meta: Optional[str] = Form(None),
     scene_id: Optional[str] = Form(None),
+    room_type: Optional[str] = Form(None),
 ):
-    return await chat_image(request, files=files, image=image, meta=meta, scene_id=scene_id)
+    return await chat_image(
+        request,
+        files=files,
+        image=image,
+        meta=meta,
+        scene_id=scene_id,
+        room_type=room_type,
+    )
 
 @router.post("/api/chat/spot")
 async def route_chat_spot(request: Request, body: PickSpotBody):
@@ -65,3 +83,7 @@ async def route_chat_spot(request: Request, body: PickSpotBody):
 @router.get("/api/chat/results")
 def route_results():
     return get_results()
+
+@router.post("/api/chat/analyze")
+async def chat_analyze(request: Request, body: AnalyzeBody) -> JSONResponse:
+    return await handle_chat_analyze(request, body)

@@ -7,6 +7,7 @@ const API_BASE = "http://localhost:8000/api/chat";
 const IMAGE_API = `${API_BASE}/image`;
 const RESULTS_API = `${API_BASE}/results`;
 const SCENES_API = `${API_BASE.replace(/\/api\/chat$/, "")}/api/chat/scenes`;
+const SCENES_API_ALL = `${API_BASE.replace(/\/api\/chat$/, "")}/api/chat/scenes/all`;
 const SPOT_API = `${API_BASE}/spot`;
 
 function normalizeCvResult(raw) {
@@ -140,7 +141,11 @@ export default function Chat() {
   const [sceneOptions, setSceneOptions] = useState([]);
   const [selectedScene, setSelectedScene] = useState("");
   const [pendingImageFile, setPendingImageFile] = useState(null); // 재전송용
+
   const [sceneErrorText, setSceneErrorText] = useState("");
+  const [sceneSelectMode, setSceneSelectMode] = useState(null); // "scene" | "space" | null
+  const [selectedSpace, setSelectedSpace] = useState("");
+  const [spaceOptions, setSpaceOptions] = useState([]);
 
   const [showAltSpots, setShowAltSpots] = useState(false);
   const [altSpotCount, setAltSpotCount] = useState(0);
@@ -255,8 +260,11 @@ export default function Chat() {
       const res = await fetchWithSession(SCENES_API, { method: "GET" });
       if (!res.ok) throw new Error("failed");
       const data = await res.json();
-      if (data?.ok && Array.isArray(data?.scenes)) {
-        setSceneOptions(normalizeSceneOptions(data.scenes));
+
+      // ✅ 백엔드 /api/chat/scenes 는 scenes가 아니라 options를 준다
+      if (data?.ok && Array.isArray(data?.options)) {
+        // room group options({key,label})를 spaceOptions로 넣는 게 맞다
+        setSpaceOptions(data.options.map((x) => ({ id: String(x.key), label: String(x.label) })));
       }
     } catch (e) {
       setSceneErrorText(
@@ -292,19 +300,52 @@ export default function Chat() {
       const p = m?.payload;
       if (!p) continue;
 
+      // ✅ 1) space_required (거실/침실/욕실/주방)
+      if (p.type === "space_required") {
+        const opts = Array.isArray(p.options) ? p.options : [];
+        setSpaceOptions(opts.map((x) => ({ id: String(x), label: String(x) })));
+        setSelectedSpace("");
+        setSceneSelectMode("space");
+
+        setNeedSceneSelect(true);
+        setSceneErrorText(p.message || "이 사진이 어떤 공간인지 선택해주세요.");
+        return true;
+      }
+
+      // ✅ 2) scene_required (residence_house_... 같은 씬)
       if (p.type === "scene_required") {
         if (Array.isArray(p.scenes) && p.scenes.length > 0) {
           setSceneOptions(normalizeSceneOptions(p.scenes));
         } else {
           fetchScenesIfNeeded();
         }
+        setSelectedScene("");
+        setSceneSelectMode("scene");
+
         setNeedSceneSelect(true);
         setSceneErrorText(p.message || "이 사진은 공간(scene) 선택이 필요합니다.");
         return true;
       }
+
+      // ✅ 3) room_type_required (거실/침실/주방/욕실)
+      if (p.type === "room_type_required") {
+        const opts = Array.isArray(p.options) ? p.options : [];
+        setSpaceOptions(opts.map((x) => ({ id: String(x), label: String(x) }))); 
+        setSelectedSpace("");
+        setSceneSelectMode("room_type"); 
+        setNeedSceneSelect(true);
+        setSceneErrorText(
+          p.message ||
+            "이 사진의 공간 유형을 선택해주세요. (선택하면 그 공간에 맞춰 다시 분석합니다)"
+        );
+        return true;
+      }
+
+
     }
     return false;
   };
+
 
   const detectAiEditArrived = (incomingMessages = []) => {
     return incomingMessages.some((m) => {
@@ -688,8 +729,81 @@ export default function Chat() {
     }
   };
 
+  const sendRoomTypeReanalyze = async (roomType) => {
+    const rt = String(roomType || "").trim();
+    if (!rt) return;
+
+    const fileToSend = imageFiles.length > 0 ? imageFiles[0] : pendingImageFile;
+    if (!fileToSend) {
+      alert("재분석할 이미지가 없습니다. 다시 업로드해주세요.");
+      return;
+    }
+
+    // UX: 사용자가 뭘 눌렀는지 남김
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: `${Date.now()}-user-roomtype`,
+        role: "user",
+        text: `공간 선택: ${rt}`,
+        timestamp: Date.now(),
+      },
+    ]);
+
+    const formData = new FormData();
+    formData.append("image", fileToSend);
+
+    // 기존과 동일 meta
+    formData.append(
+      "meta",
+      JSON.stringify({
+        lat: 37.5665,
+        lot: 126.978,
+        label: `room_type=${rt} 재분석`,
+      })
+    );
+
+    // ✅ 핵심: room_type 반드시 포함
+    formData.append("room_type", rt);
+
+    setStatus("loading");
+    try {
+      const response = await fetchWithSession(IMAGE_API, {
+        method: "POST",
+        body: formData,
+      });
+      if (!response.ok) throw new Error("failed");
+
+      const data = await response.json();
+
+      // scene_required 다시 뜨는지 먼저 감지
+      const incoming = normalizeMessages(data);
+
+      const needScene = detectSceneRequired(incoming);
+      if (needScene) {
+        setStatus("connected");
+        return;
+      }
+
+      const nextPayload = normalizePayload(data);
+
+      if (incoming.length) setMessages((prev) => [...prev, ...incoming]);
+      if (nextPayload) setPayload(nextPayload);
+
+      setNeedSceneSelect(false);
+      setSceneSelectMode(null);
+      setSelectedSpace("");
+      setSceneErrorText("");
+
+      setStatus("connected");
+    } catch (e) {
+      setStatus("error");
+    }
+  };
+
+
   // ✅ 이미지 업로드 (sceneId optional)
-  const handleImageSubmit = async (event, sceneId = null) => {
+  const handleImageSubmit = async (event, sceneId = null, spaceType = null) => {
     event.preventDefault();
 
     const fileToSend = imageFiles.length > 0 ? imageFiles[0] : pendingImageFile;
@@ -727,9 +841,15 @@ export default function Chat() {
       })
     );
 
-    // ✅ scene_id (있으면)
+    // ✅ scene_id
     if (sceneId !== null && sceneId !== undefined && String(sceneId).trim() !== "") {
       formData.append("scene_id", String(sceneId));
+    }
+
+    // ✅ space_type
+    // ✅ room_type (거실/침실/주방/욕실)
+    if (spaceType !== null && spaceType !== undefined && String(spaceType).trim() !== "") {
+      formData.append("room_type", String(spaceType));
     }
 
     console.log("[handleImageSubmit] sceneId =", sceneId);
@@ -928,38 +1048,44 @@ export default function Chat() {
     });
   };
 
-  // ✅ Scene 선택 후 재분석 (초기 업로드와 동일 경로로 재전송)
-  const handleSceneResubmit = async (e) => {
-  if (e) {
-    e.preventDefault();
-    e.stopPropagation();
-  }
+  // ✅ Scene/RoomType 선택 후 재분석 (override 지원)
+  const handleSceneResubmit = async (e, overrideSpace = null) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
 
-  // ✅ “실제로 보낼 파일” 기준으로 체크
-  const fileToSend = imageFiles.length > 0 ? imageFiles[0] : pendingImageFile;
-  if (!fileToSend) return;
+    const fileToSend = imageFiles.length > 0 ? imageFiles[0] : pendingImageFile;
+    if (!fileToSend) return;
 
-  const sceneId = (selectedScene || "").trim();
-  if (!sceneId) return;
+    const fakeEvent = { preventDefault: () => {}, stopPropagation: () => {} };
 
-  setMessages((prev) => [
-    ...prev,
-    {
-      id: `${Date.now()}-user-scene`,
-      role: "user",
-      text: `scene 선택: ${sceneId}`,
-      timestamp: Date.now(),
-    },
-  ]);
+    // ✅ room_type 도 space처럼 처리
+    if (sceneSelectMode === "space" || sceneSelectMode === "room_type") {
+      const st = String(overrideSpace ?? selectedSpace ?? "").trim();
+      if (!st) return;
 
-  // ✅ handleImageSubmit이 stopPropagation을 쓰면 여기서도 제공
-  const fakeEvent = {
-    preventDefault: () => {},
-    stopPropagation: () => {},
+      setMessages((prev) => [
+        ...prev,
+        { id: `${Date.now()}-user-space`, role: "user", text: `공간 선택: ${st}`, timestamp: Date.now() },
+      ]);
+
+      // handleImageSubmit의 3번째 인자를 "room_type" 용으로 사용
+      await handleImageSubmit(fakeEvent, null, st);
+      return;
+    }
+
+    // default: scene mode
+    const sceneId = String(selectedScene || "").trim();
+    if (!sceneId) return;
+
+    setMessages((prev) => [
+      ...prev,
+      { id: `${Date.now()}-user-scene`, role: "user", text: `scene 선택: ${sceneId}`, timestamp: Date.now() },
+    ]);
+
+    await handleImageSubmit(fakeEvent, sceneId, null);
   };
-
-  await handleImageSubmit(fakeEvent, sceneId);
-};
 
 
   return (
@@ -1115,24 +1241,46 @@ export default function Chat() {
           {needSceneSelect && (
             <div className="filterPanel" style={{ marginTop: 12 }}>
               <div className="filterGroup">
-                <div className="filterGroup__title">[공간(scene) 선택 필요]</div>
-                <div style={{ marginBottom: 8, opacity: 0.9 }}>
-                  {sceneErrorText || "이 사진은 공간(scene) 선택이 필요합니다."}
+                <div className="filterGroup__title">
+                  {sceneSelectMode === "space" ? "[공간 타입 선택]"
+                    : sceneSelectMode === "room_type" ? "[공간 유형 선택]"
+                    : "[공간(scene) 선택 필요]"}
                 </div>
 
-                {sceneOptions.length === 0 ? (
-                  <div style={{ color: "#c00" }}>
-                    scene 목록이 없습니다. 백엔드 <b>/api/chat/scenes</b> 라우트를 확인해주세요.
+                <div style={{ marginBottom: 8, opacity: 0.9 }}>
+                  {sceneErrorText || "이 사진은 선택이 필요합니다."}
+                </div>
+
+                {/* ✅ room_type_required는 버튼 4개 */}
+                {sceneSelectMode === "room_type" ? (
+                  <div className="optionBar__grid">
+                    {spaceOptions.map((opt) => (
+                      <Button
+                        key={opt.id}
+                        type="option"
+                        onClick={() => {
+                          console.log("[ROOM_TYPE CLICK]", opt.id);
+                          alert("clicked: " + opt.id);
+                          sendRoomTypeReanalyze(opt.id);
+                        }}
+                        text={opt.label}
+                      />
+                    ))}
                   </div>
                 ) : (
+                  /* 기존 select UI 유지 */
                   <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                     <select
-                      value={selectedScene}
-                      onChange={(e) => setSelectedScene(e.target.value)}
+                      value={sceneSelectMode === "space" ? selectedSpace : selectedScene}
+                      onChange={(e) =>
+                        sceneSelectMode === "space"
+                          ? setSelectedSpace(e.target.value)
+                          : setSelectedScene(e.target.value)
+                      }
                       style={{ padding: 6, minWidth: 260 }}
                     >
                       <option value="">선택하세요</option>
-                      {sceneOptions.map((s) => (
+                      {(sceneSelectMode === "space" ? spaceOptions : sceneOptions).map((s) => (
                         <option key={s.id} value={s.id}>
                           {s.label || s.id}
                         </option>
@@ -1146,6 +1294,7 @@ export default function Chat() {
               </div>
             </div>
           )}
+
           
           {showAltSpots && altSpotCount > 0 && (
             <div className="optionBar" style={{ marginTop: 10 }}>
