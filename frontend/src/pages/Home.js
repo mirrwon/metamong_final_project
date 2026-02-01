@@ -11,8 +11,8 @@ const Home = () => {
   // }
 
   return (
-    <div className="home">   
-     <section className="home-section">
+    <div className="home">
+      <section className="home-section">
         <ProcessCarousel />
       </section>
 

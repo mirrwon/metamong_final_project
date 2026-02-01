@@ -1,6 +1,4 @@
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import Button from "../common/Button";
 import api from "../../services/api";
 import "./DiaryList.css";
 import { getStoredUsername } from "../../services/user";
@@ -31,7 +29,7 @@ const getItemDateValue = (item) => {
 /* 이미지 URL 해결 (조원 수정 반영) */
 const resolveImageUrl = (item) => {
   const filename = item?.image_filename || item?.imageFilename;
-  if (filename) return `${BACKEND_ORIGIN}/uploads/${filename}`;
+  if (filename) return `${BACKEND_ORIGIN}/auth-uploads/${filename}`;
 
   return (
     item?.imageUrl ||
@@ -51,8 +49,7 @@ const formatDateLabel = (value) => {
   return date.toLocaleDateString("en-CA"); // YYYY-MM-DD
 };
 
-const DiaryList = () => {
-  const nav = useNavigate();
+const DiaryList = ({ onViewDetail, onNewPost }) => {
   const [items, setItems] = useState([]);
   const [status, setStatus] = useState("loading"); // loading | ready | error
   const [sortOrder, setSortOrder] = useState("desc"); // asc | desc
@@ -115,41 +112,34 @@ const DiaryList = () => {
 
   const handleOpenPost = (itemId) => {
     if (!itemId) return;
-    nav(`/diary/${itemId}`);
+    if (onViewDetail) onViewDetail(itemId);
   };
 
   return (
     <div className="diary-list">
       <div className="diary-list__head">
-        <h1 className="diary-list__title">My Plant Diary</h1>
-        <div className="ui-line diary-list__line" />
-      </div>
-
-      <div className="diary-list__controls">
-        <Button
-          text="날짜 정렬"
-          type="option"
-          className="ui-btn--compact diary-list__sort"
-          onClick={handleSortToggle}
-        />
-
-        <input
-          className="ui-input diary-list__search"
-          type="search"
-          placeholder="검색"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-        />
-
-        <Button
-          text="New Post"
-          type="primary"
-          className="ui-btn--compact diary-list__new"
-          onClick={() => nav("/diary/new")}
-        />
+        <h1 className="diary-list__title">PLANT DIARY</h1>
       </div>
 
       <div className="diary-list__body">
+        <div className="diary-list__controls">
+          <button
+            type="button"
+            className="diary-list__sort"
+            onClick={handleSortToggle}
+          >
+            {sortOrder === 'asc' ? '날짜 오래된순' : '날짜 최신순'}
+          </button>
+
+          <input
+            className="diary-list__search"
+            type="search"
+            placeholder="다이어리 검색..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </div>
+
         {status === "loading" && (
           <div className="diary-list__state">
             Loading diary entries...
@@ -215,6 +205,18 @@ const DiaryList = () => {
             })}
           </div>
         )}
+      </div>
+
+      <div className="diary-list__actions">
+        <div className="diary-list__actions-row">
+          <button
+            type="button"
+            className="diary-new-btn"
+            onClick={onNewPost}
+          >
+            <span>✍️</span> 새 일기 작성
+          </button>
+        </div>
       </div>
     </div>
   );

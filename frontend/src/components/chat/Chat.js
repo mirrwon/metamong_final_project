@@ -69,20 +69,20 @@ const normalizePayload = (data) => {
     raw.input ||
     (raw.input_type
       ? {
-          type: raw.input_type,
-          placeholder: raw.input?.placeholder,
-        }
+        type: raw.input_type,
+        placeholder: raw.input?.placeholder,
+      }
       : null);
 
   const photos = Array.isArray(raw.photos) ? raw.photos : [];
   const attributeSchema = Array.isArray(raw.attributeSchema)
     ? raw.attributeSchema
     : photos[0]?.attributes
-    ? Object.keys(photos[0].attributes).map((key) => ({
+      ? Object.keys(photos[0].attributes).map((key) => ({
         key,
         label: key,
       }))
-    : [];
+      : [];
 
   return {
     photos,
@@ -109,8 +109,6 @@ export default function Chat() {
   const [payload, setPayload] = useState(null);
   const [status, setStatus] = useState("idle");
 
-  // ✅ CV result 저장(필요하면 나중에 카드 UI로 확장 가능)
-  const [cvResult, setCvResult] = useState(null);
 
   const [input, setInput] = useState("");
   const [imageFiles, setImageFiles] = useState([]);
@@ -145,6 +143,7 @@ export default function Chat() {
   const [showAltSpots, setShowAltSpots] = useState(false);
   const [altSpotCount, setAltSpotCount] = useState(0);
   const [selectedSpotIndex, setSelectedSpotIndex] = useState(0);
+  const [cvResult, setCvResult] = useState(null);
 
   const statusText = useMemo(() => {
     if (status === "loading") return "서버 응답 대기중";
@@ -194,8 +193,8 @@ export default function Chat() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-        spot_index: spotIndex,
-        regen: regenSpotImage, // ✅ 체크박스 값
+          spot_index: spotIndex,
+          regen: regenSpotImage, // ✅ 체크박스 값
         }),
       });
 
@@ -216,7 +215,7 @@ export default function Chat() {
         data?.data?.result ??
         null;
 
-      if (cvRaw) setCvResult(normalizeCvResult(cvRaw));
+      // if (cvRaw) setCvResult(normalizeCvResult(cvRaw));
 
       setStatus("connected");
     } catch (e) {
@@ -266,23 +265,23 @@ export default function Chat() {
   };
 
   const normalizeSceneOptions = (arr) => {
-  if (!Array.isArray(arr)) return [];
-  return arr
-    .map((s) => {
-      if (!s) return null;
-      // ✅ 백엔드가 string 주는 경우도 커버
-      if (typeof s === "string") return { id: s, label: s };
-      // ✅ 백엔드가 {id,label} 주는 경우
-      if (typeof s === "object") {
-        const id = String(s.id ?? s.scene_id ?? s.value ?? "").trim();
-        const label = String(s.label ?? s.name ?? id).trim();
-        if (!id) return null;
-        return { id, label };
-      }
-      return null;
-    })
-    .filter(Boolean);
-};
+    if (!Array.isArray(arr)) return [];
+    return arr
+      .map((s) => {
+        if (!s) return null;
+        // ✅ 백엔드가 string 주는 경우도 커버
+        if (typeof s === "string") return { id: s, label: s };
+        // ✅ 백엔드가 {id,label} 주는 경우
+        if (typeof s === "object") {
+          const id = String(s.id ?? s.scene_id ?? s.value ?? "").trim();
+          const label = String(s.label ?? s.name ?? id).trim();
+          if (!id) return null;
+          return { id, label };
+        }
+        return null;
+      })
+      .filter(Boolean);
+  };
 
   // =========================================================
   // ✅ 서버 메시지에서 scene_required 감지
@@ -722,7 +721,7 @@ export default function Chat() {
       JSON.stringify({
         lat: 37.5665,
         lot: 126.9780,
-        label,           
+        label,
         // hhmm: "0900",  // 필요하면
       })
     );
@@ -930,36 +929,36 @@ export default function Chat() {
 
   // ✅ Scene 선택 후 재분석 (초기 업로드와 동일 경로로 재전송)
   const handleSceneResubmit = async (e) => {
-  if (e) {
-    e.preventDefault();
-    e.stopPropagation();
-  }
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
 
-  // ✅ “실제로 보낼 파일” 기준으로 체크
-  const fileToSend = imageFiles.length > 0 ? imageFiles[0] : pendingImageFile;
-  if (!fileToSend) return;
+    // ✅ “실제로 보낼 파일” 기준으로 체크
+    const fileToSend = imageFiles.length > 0 ? imageFiles[0] : pendingImageFile;
+    if (!fileToSend) return;
 
-  const sceneId = (selectedScene || "").trim();
-  if (!sceneId) return;
+    const sceneId = (selectedScene || "").trim();
+    if (!sceneId) return;
 
-  setMessages((prev) => [
-    ...prev,
-    {
-      id: `${Date.now()}-user-scene`,
-      role: "user",
-      text: `scene 선택: ${sceneId}`,
-      timestamp: Date.now(),
-    },
-  ]);
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: `${Date.now()}-user-scene`,
+        role: "user",
+        text: `scene 선택: ${sceneId}`,
+        timestamp: Date.now(),
+      },
+    ]);
 
-  // ✅ handleImageSubmit이 stopPropagation을 쓰면 여기서도 제공
-  const fakeEvent = {
-    preventDefault: () => {},
-    stopPropagation: () => {},
+    // ✅ handleImageSubmit이 stopPropagation을 쓰면 여기서도 제공
+    const fakeEvent = {
+      preventDefault: () => { },
+      stopPropagation: () => { },
+    };
+
+    await handleImageSubmit(fakeEvent, sceneId);
   };
-
-  await handleImageSubmit(fakeEvent, sceneId);
-};
 
 
   return (
@@ -1146,7 +1145,7 @@ export default function Chat() {
               </div>
             </div>
           )}
-          
+
           {showAltSpots && altSpotCount > 0 && (
             <div className="optionBar" style={{ marginTop: 10 }}>
               <div style={{ marginBottom: 6, opacity: 0.9 }}>

@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
 import DiaryForm from "./DiaryForm";
 import { diaryApi } from "../../services/diaryApi";
 import { getStoredUsername } from "../../services/user";
@@ -23,7 +22,7 @@ const normalizeDiaryItems = (payload) => {
 
 const resolveImageUrl = (item) => {
   const filename = item?.image_filename || item?.imageFilename;
-  if (filename) return `/uploads/${filename}`; // 상대경로로 반환
+  if (filename) return `/auth-uploads/${filename}`; // 상대경로로 반환
 
   return (
     item?.imageUrl ||
@@ -52,10 +51,7 @@ const toDateInputValue = (value) => {
   return String(value).slice(0, 10);
 };
 
-const DiaryEditContainer = () => {
-  const { id } = useParams();
-  const nav = useNavigate();
-
+const DiaryEditContainer = ({ id, onSuccess, onCancel }) => {
   const [loadStatus, setLoadStatus] = useState("loading"); // loading | ready | error | notfound
   const [saveStatus, setSaveStatus] = useState("idle"); // idle | saving | error
 
@@ -74,9 +70,7 @@ const DiaryEditContainer = () => {
         const res = await diaryApi.getList(username);
         const list = normalizeDiaryItems(res?.data);
 
-        const found = list.find(
-          (item) => String(item?.id || item?._id) === String(id)
-        );
+        const found = list.find((item) => String(item?.id || item?._id) === String(id));
 
         if (!found) {
           setLoadStatus("notfound");
@@ -126,14 +120,14 @@ const DiaryEditContainer = () => {
       if (date) formData.append("date", date);
 
       await diaryApi.update(id, formData);
-      nav(`/diary/${id}`);
+      if (onSuccess) onSuccess(id);
     } catch (error) {
       setSaveStatus("error");
     }
   };
 
   const goDiaryDetail = () => {
-    nav(`/diary/${id}`);
+    if (onCancel) onCancel();
   };
 
   if (loadStatus === "loading") return <div>Loading post...</div>;

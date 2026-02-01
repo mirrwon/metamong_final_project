@@ -35,7 +35,8 @@
   --h-cover-img: 1400px;
   --bw-line: 2px;
 
- /* background image */
-  --bg-overlay: rgba(234, 229, 222, 0.603); /* 배경 위에 얇게 덮을 색(가독성용) */
+  /* background image */
+  --bg-overlay: rgba(255, 250, 244, 0.774);
+  /* Whiter, stronger overlay */
 
 }

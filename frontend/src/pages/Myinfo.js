@@ -138,27 +138,7 @@ const Myinfo = ({ user }) => {
           </div>
         </section>
 
-        <section className="">
-          <h2 className="">Results</h2>
-          {resultError ? (
-            <p className="">{resultError}</p>
-          ) : null}
-          {!resultError && resultImages.length === 0 ? (
-            <p className="">No images yet.</p>
-          ) : (
-            <div className="">
-              {resultImages.map((item) => (
-                <img
-                  key={item.name}
-                  className=""
-                  src={withCacheBust(item.url, item.mtime)}
-                  alt={item.name}
-                  loading="lazy"
-                />
-              ))}
-            </div>
-          )}
-        </section>
+
       </div>
     </div>
   );

@@ -9,7 +9,7 @@ const TABS = [
   { key: "all", label: "전체" },
   { key: "water", label: "물주기" },
   { key: "fertilizer", label: "비료" },
-  { key: "move", label: "이동" },
+  { key: "repot", label: "분갈이" },
   { key: "note", label: "특이사항" },
   { key: "photo", label: "사진" },
   { key: "new", label: "새 식물" },

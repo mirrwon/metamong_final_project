@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
 import DiaryForm from "./DiaryForm";
 import { diaryApi } from "../../services/diaryApi";
 import { getStoredUsername } from "../../services/user";
@@ -9,9 +8,7 @@ const toDateInputValue = (value) => {
   return String(value).slice(0, 10);
 };
 
-const DiaryNewContainer = () => {
-  const nav = useNavigate();
-
+const DiaryNewContainer = ({ onSuccess, onCancel }) => {
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
 
@@ -60,14 +57,14 @@ const DiaryNewContainer = () => {
       const res = await diaryApi.create(formData);
       const newId = res?.data?.id;
 
-      nav(newId ? `/diary/${newId}` : "/diary");
+      if (onSuccess) onSuccess(newId);
     } catch (error) {
       setStatus("error");
     }
   };
 
   const goDiaryList = () => {
-    nav("/diary");
+    if (onCancel) onCancel();
   };
 
   return (
@@ -76,14 +73,14 @@ const DiaryNewContainer = () => {
       title={title}
       content={content}
       date={date}
-      showDate={true}          
-      disableDate={false}     
+      showDate={true}
+      disableDate={false}
       imagePreview={imagePreview}
       isSaving={status === "saving"}
       errorMessage={status === "error" ? "등록에 실패했습니다." : ""}
       onTitleChange={(e) => setTitle(e.target.value)}
       onContentChange={(e) => setContent(e.target.value)}
-      onDateChange={(e) => setDate(e.target.value)}   
+      onDateChange={(e) => setDate(e.target.value)}
       onImageChange={handleImageChange}
       onSubmit={handleSubmit}
       onCancel={goDiaryList}

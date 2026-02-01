@@ -1,164 +1,247 @@
-/* =========================
-   DiaryDetail (page UI)
-   - tokens.css + components.css 기반
-   - DiaryForm 규격(220/320/120)과 통일
-   ========================= */
+:root {
+  --dd-primary: #3E403B;
+  --dd-accent: #8C9388;
+  --dd-bg: #FAFAF8;
+  --dd-glass: rgba(255, 255, 255, 0.9);
+  --dd-glass-border: rgba(0, 0, 0, 0.05);
+  --dd-text: #3E403B;
+  --dd-text-muted: #8C9388;
+  --dd-shadow: 0 4px 20px 0 rgba(0, 0, 0, 0.03);
+}
 
 .diary-detail {
   width: 100%;
-  max-width: var(--w-cover);
-  margin: 0 auto;
-  padding: var(--s-5) var(--s-5);
-  text-align: center;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: linear-gradient(135deg, #FAFAF8 0%, #E8E8E6 100%);
+  animation: fadeIn 0.5s ease-out;
 }
 
-/* 상단 제목 */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 .diary-detail__head {
-  text-align: center;
-  margin-bottom: var(--s-4);
+  background: var(--dd-primary);
+  padding: 15px 25px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
 }
 
 .diary-detail__title {
-  font-family: var(--font-title);
-  font-size: var(--fs-3);
-  font-weight: 900;
-  letter-spacing: 0.2px;
-  margin-bottom: var(--s-2);
+  color: #fff;
+  font-weight: 800;
+  font-size: 20px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
 }
 
-.diary-detail__line {
-  width: 160px;
-  margin: 0 auto;
-}
-
-/* 본문 */
 .diary-detail__body {
+  padding: 25px;
+  flex-grow: 1;
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: var(--s-3);
-  margin-top: var(--s-4);
+  gap: 50px;
 }
 
-/* ✅ 이미지 영역(폼과 동일한 “박스 역할”) */
-.diary-detail__image {
-  width: 150px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--s-2);
+.diary-detail__photo-card {
+  background: var(--dd-glass);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid var(--dd-glass-border);
+  border-radius: 0px;
+  padding: 15px;
+  box-shadow: var(--dd-shadow);
+  transition: transform 0.3s ease;
 }
 
-/* 이미지 클릭 버튼 */
+.diary-detail__photo-card:hover {
+  transform: scale(1.02);
+}
+
 .diary-detail__photoBtn {
   border: none;
   background: transparent;
   padding: 0;
   cursor: pointer;
-  width: auto;
-  display: inline-block;
-}
-
-/* ✅ 사진 크기: 220x220 통일 */
-.diary-detail__photo,
-.diary-detail__empty {
-  width: 220px;
-  height: 220px;
+  border-radius: 0px;
+  overflow: hidden;
+  display: block;
 }
 
 .diary-detail__photo {
+  width: 100%;
+  max-width: 400px;
+  height: auto;
+  max-height: 500px;
   object-fit: cover;
   display: block;
-  background: transparent;
 }
 
 .diary-detail__empty {
+  width: 200px;
+  height: 200px;
   display: flex;
   align-items: center;
   justify-content: center;
-  text-align: center;
-  font-size: var(--fs-2);
-  color: var(--c-muted);
-  border: 1px solid var(--c-line);
-  background: transparent;
+  background: rgba(0, 0, 0, 0.05);
+  color: var(--dd-text-muted);
+  border-radius: 0px;
+  font-size: 14px;
+  font-weight: 500;
 }
 
-/* 날짜 */
-.diary-detail__date {
-  display: flex;
-  justify-content: center;
-  font-size: var(--fs-2);
-  color: var(--c-muted);
-}
-
-/* ✅ 텍스트 영역 폭: 320 통일 */
-.diary-detail__text {
+.diary-detail__text-card {
   width: 100%;
-  max-width: 320px;
+  max-width: 500px;
+  background: var(--dd-glass);
+  backdrop-filter: blur(10px);
+  border: 1px solid var(--dd-glass-border);
+  border-radius: 0px;
+  padding: 30px;
+  box-shadow: var(--dd-shadow);
   text-align: left;
-  display: flex;
-  flex-direction: column;
-  gap: var(--s-2);
+}
+
+.diary-detail__date {
+  font-size: 14px;
+  font-weight: 700;
+  color: #c9b0a7;
+  margin-bottom: 15px;
+  font-style: italic;
 }
 
 .diary-detail__postTitle {
-  font-size: var(--fs-3);
-  font-weight: 800;
+  font-size: 23px;
+  font-weight: 900;
+  color: var(--dd-primary);
+  margin-bottom: 20px;
+  line-height: 1.2;
 }
 
 .diary-detail__content {
-  font-size: var(--fs-2);
-  line-height: 1.6;
+  font-size: 16px;
+  color: var(--dd-text);
+  line-height: 1.8;
   white-space: pre-wrap;
 }
 
-/* ✅ 버튼 영역: 3개여도 폼 느낌 유지 */
+/* Actions Bar */
 .diary-detail__actions {
+  padding: 20px 30px;
+  background: var(--dd-glass);
+  backdrop-filter: blur(20px);
+  border-top: 1px solid var(--dd-glass-border);
+  box-shadow: 0 -10px 30px rgba(109, 76, 65, 0.05);
   display: flex;
   justify-content: center;
-  gap: var(--s-2);
-  margin-top: var(--s-3);
-  width: 100%;
-  flex-wrap: wrap;
 }
 
-/* Button 컴포넌트 width:100% 방지 + 폭 통일 */
-.diary-detail__actions .ui-btn,
-.diary-detail__actions .Button {
-  width: 120px;
-  margin-bottom: 0;
+.diary-detail__actions-row {
+  display: flex;
+  gap: 15px;
+  width: 100%;
+  max-width: 800px;
+  justify-content: center;
+}
+
+.diary-detail-btn {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  background: #fff;
+  border: 1px solid var(--dd-glass-border);
+  padding: 10px 5px;
+  border-radius: 7px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--dd-primary);
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(109, 76, 65, 0.1);
+  transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.diary-detail-btn span {
+  font-size: 18px;
+}
+
+.diary-detail-btn:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 8px 20px rgba(109, 76, 65, 0.2);
+  border-color: var(--dd-accent);
+}
+
+.diary-detail-btn--danger:hover {
+  border-color: #d32f2f;
+  color: #d32f2f;
 }
 
 /* Lightbox */
 .diary-lightbox {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.6);
+  background: rgba(0, 0, 0, 0.85);
+  backdrop-filter: blur(10px);
+  z-index: 1000;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: var(--s-4);
+  animation: modalIn 0.3s ease;
+}
+
+@keyframes modalIn {
+  from {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
 }
 
 .diary-lightbox__panel {
-  background: var(--c-surface);
-  padding: var(--s-3);
+  max-width: 90vw;
+  max-height: 90vh;
+  border-radius: 0px;
+  overflow: hidden;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
 }
 
 .diary-lightbox__img {
-  width: min(520px, 90vw);
-  height: auto;
   display: block;
+  width: auto;
+  height: auto;
+  max-width: 100%;
+  max-height: 90vh;
 }
 
 .diary-lightbox__close {
-  position: fixed;
-  top: var(--s-4);
-  right: var(--s-4);
-  height: 38px;
-  padding: 0 var(--s-3);
-  border: 1px solid var(--c-line);
-  background: var(--c-surface);
+  position: absolute;
+  top: 30px;
+  right: 30px;
+  background: #fff;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 6px;
+  font-weight: 800;
   cursor: pointer;
-  font-weight: 700;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
 }

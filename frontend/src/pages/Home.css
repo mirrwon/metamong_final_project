@@ -15,20 +15,22 @@
   margin-top: 0;
 }
 
-/* ✅ Carousel → PlantPreview 간격 더 크게 */
-.home-section + .home-plants {
-  margin-top: calc(var(--s-8) + var(--s-5));
+/* ✅ Carousel → PlantPreview 간격 살짝 줄임 (120px -> 80px) */
+.home-section+.home-plants {
+  margin-top: 80px;
 }
 
-/* ✅ PlantPreview → FAQ 간격 더 크게 */
-.home-plants + .home-section {
-  margin-top: calc(var(--s-8) + var(--s-6));
+/* ✅ PlantPreview → FAQ 간격 살짝 줄임 (120px -> 80px) */
+.home-plants+.home-section {
+  margin-top: 80px;
 }
 
 /* ✅ PlantPreview 섹션을 “덩어리”로 보이게 */
+/* ✅ PlantPreview 섹션을 “덩어리”로 보이게 */
 .home-plants {
   padding-top: var(--s-6);
-  border-top: 2px solid var(--c-line);
+  border-top: none;
+  /* Removed top border */
 }
 
 
@@ -100,6 +102,7 @@
   transition: all 0.25s ease;
   margin: 0 4px !important;
 }
+
 .swiper-pagination-bullet-active {
   width: 28px;
   background: #ffffff;
@@ -133,36 +136,34 @@
   overflow: hidden;
   padding: var(--s-3) 0;
   border-radius: 18px;
-  border: 1px solid rgba(43, 61, 26, 0.14);
-  background: rgba(247, 243, 237, 0.7);
-  box-shadow: 0 16px 28px rgba(43, 61, 26, 0.08);
+  /* Removed border and shadow for a cleaner, flatter look */
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  padding: var(--s-3) 0;
 }
 
-.plant-preview-track {
-  display: flex;
-  gap: var(--s-3);
-  padding: 0 var(--s-3);
-  width: max-content;
-  animation: plantMarquee 60s linear infinite;
-}
+/* Removed .plant-preview-track styles as we use Swiper now */
 
 .plant-preview-marquee:hover .plant-preview-track {
   animation-play-state: paused;
 }
 
 .plant-preview-card {
-  width: min(220px, 60vw);
-  background: rgba(255, 255, 255, 0.9);
-  border: 1px solid rgba(43, 61, 26, 0.18);
-  border-radius: 16px;
-  overflow: hidden;
-  box-shadow: 0 10px 18px rgba(43, 61, 26, 0.08);
-  transition: transform 180ms ease, box-shadow 180ms ease;
+  width: 100%;
+  /* Fill swiper slide */
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  /* Reduced radius */
+  overflow: visible;
+  box-shadow: none;
+  transition: transform 0.3s ease;
+  text-align: center;
 }
 
 .plant-preview-card:hover {
-  transform: translateY(-3px);
-  box-shadow: 0 14px 24px rgba(43, 61, 26, 0.12);
+  transform: translateY(-5px);
 }
 
 .plant-preview-image {
@@ -170,23 +171,53 @@
   aspect-ratio: 1 / 1;
   object-fit: cover;
   display: block;
+  border-radius: 12px;
+  /* Softer, rounder corners */
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  margin-bottom: 10px;
+  filter: saturate(0.9);
+  /* Slightly calmer colors */
+  transition: all 0.3s ease;
 }
 
-.plant-preview-image--placeholder {
-  background: linear-gradient(140deg, rgba(255, 255, 255, 0.6), rgba(43, 61, 26, 0.06));
+.plant-preview-card:hover .plant-preview-image {
+  transform: translateY(-5px) scale(1.02);
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.12);
+  filter: saturate(1.1);
+  /* Pop color on hover */
 }
 
 .plant-preview-name {
-  padding: var(--s-2) var(--s-3);
-  font-size: var(--fs-1);
+  display: inline-block;
+  margin-top: 8px;
+  padding: 6px 14px;
+  background: rgba(255, 255, 255, 0.363);
+  /* Glassy white */
+  border: 1px solid rgba(0, 0, 0, 0.08);
+
+  /* Pill shape */
+  font-size: 0.9rem;
   font-weight: 700;
-  color: var(--c-text);
+  color: #2F3E46;
+  /* Strong dark green/grey */
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+  /* Subtle lift */
+  transition: all 0.3s ease;
+}
+
+.plant-preview-card:hover .plant-preview-name {
+  background: #2F3E46;
+  color: #fff;
+  /* Invert on hover */
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(47, 62, 70, 0.2);
 }
 
 @keyframes plantMarquee {
   0% {
     transform: translateX(0);
   }
+
   100% {
     transform: translateX(-50%);
   }
@@ -205,7 +236,9 @@
 .faq {
   margin-top: var(--s-7);
   padding-top: var(--s-5);
-  border-top: 2px solid var(--c-line);
+  border: none;
+  /* Removed all borders */
+  padding-bottom: 0;
 
   max-width: var(--w-content, 760px);
   margin-left: auto;
@@ -213,14 +246,22 @@
 }
 
 /* ✅ 음수 이동 제거 (PlantPreview 들어오면 꼬이기 쉬움) */
+/* Unify Title Sizes */
+.home-plants .typo-title,
 .faq__title {
-  margin-bottom: var(--s-4);
-  font-size: var(--fs-4);
+  font-size: 2rem;
+  /* Unified large size */
   font-weight: 700;
-  letter-spacing: -0.01em;
-
-  text-align: left;
   color: var(--c-text);
+  text-align: center;
+  /* Center align both for consistency */
+  letter-spacing: -0.02em;
+  margin-bottom: 30px;
+}
+
+.faq__title {
+  /* text-align: left; <-- Removed to match center alignment request implicit in "unify" or just safe default */
+  text-align: center;
 }
 
 .faq__list {
@@ -228,6 +269,8 @@
   flex-direction: column;
   gap: var(--s-3);
   text-align: left;
+  margin-top: 40px;
+  /* Added breathing room below the line */
 }
 
 .faq__item {
