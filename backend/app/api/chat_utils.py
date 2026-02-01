@@ -398,13 +398,11 @@ def infer_room_label_from_assets(scene_id: str) -> Optional[str]:
     # 1) 강한 확정 규칙(우선)
     # -------------------------
 
-    # ✅ 침실: bed 있으면 침실 확정
-    if "bed" in sub:
-        return "침실"
-
-    # ✅ 주방: cooktop 있으면 주방 확정
+    # ✅ 주방 확정 조건 강화: cooktop 단독이면 확정하지 않음
+    # cooktop + (refrigerator/microwave/oven/diningtable) 중 1개 이상일 때만 확정
     if "cooktop" in sub:
-        return "주방"
+        if ("refrigerator" in sub) or ("microwave" in sub) or ("oven" in sub) or ("diningtable" in sub):
+            return "주방"
 
     # 욕실 강신호 카운트
     # - toilet이 있어야 욕실 가능성이 커짐
@@ -494,25 +492,56 @@ def infer_room_label_from_assets(scene_id: str) -> Optional[str]:
 
     return best_label
 
+def scene_id_to_meta_label(scene_id: str) -> Optional[str]:
+    obj = read_scene_json(scene_id)
+    if not isinstance(obj, dict):
+        return None
+
+    md = obj.get("metadata")
+    if not isinstance(md, dict):
+        return None
+
+    # 예: "주거시설 / 원룸 / 소형(~60m²)"
+    cls = md.get("space_class")
+    sub = md.get("space_subclass")
+    detail = md.get("space_detail")
+
+    parts = [p for p in [cls, sub, detail] if isinstance(p, str) and p.strip()]
+    if not parts:
+        return None
+    return " / ".join(parts)
+
 
 def scene_id_to_room_label(scene_id: str) -> str:
     """
-    UI에 보여줄 라벨:
-    1) assets 기반 room label(거실/욕실/침실/주방) 우선
-    2) 실패하면 metadata 기반 라벨(주거시설/원룸/면적) fallback
-    3) 그것도 실패하면 id 그대로
+    드롭다운은 '71765 3D scene 선택' 용도다.
+    residence_house_*는 원룸/투룸(주거 타입) 모델이므로,
+    assets로 '주방/침실' 같은 방 라벨을 억지로 뽑지 않는다.
+
+    label 정책:
+    - residence_house_1_*  -> "원룸"
+    - residence_house_2_*  -> "투룸"
+    - etc_*                -> metadata 기반 (기타시설/교육/...) or fallback
     """
-    sid = (scene_id or "").strip()
-    if not sid:
-        return ""
+    if not isinstance(scene_id, str) or not scene_id.strip():
+        return "선택"
 
-    r = infer_room_label_from_assets(sid)
-    if isinstance(r, str) and r.strip():
-        return r.strip()
+    sid = scene_id.strip()
 
-    # fallback: 기존 metadata 라벨
-    lbl = scene_to_label(sid)
-    return lbl if isinstance(lbl, str) and lbl.strip() else sid
+    # ✅ 주거시설(원룸/투룸) 라벨은 id prefix로 결정
+    if sid.startswith("residence_house_1_"):
+        return "원룸"
+    if sid.startswith("residence_house_2_"):
+        return "투룸"
+
+    # ✅ 기타 scene은 metadata 기반으로 사람이 읽게
+    md_label = scene_id_to_meta_label(sid)  # 너가 이미 metadata 읽는 함수가 있다면 그걸 사용
+    if isinstance(md_label, str) and md_label.strip():
+        return md_label.strip()
+
+    # fallback
+    return sid
+
 
 
 def scene_to_label(s: Any) -> str:

@@ -35,6 +35,10 @@ import DiaryEditPage from "./pages/plantboard/DiaryEditPage";
 
 import TimeLogPage from "./pages/plantboard/TimeLogPage";
 
+// 챗봇 2,3Page
+import UploadPage from "./components/chat/UploadPage";
+import Survey from "./components/chat/Survey";
+import AnalyzePage from "./components/chat/AnalyzePage";
 
 // layout (공통 레이아웃)
 import Layout from './components/layout/Layout';
@@ -150,9 +154,103 @@ function App() {
   }, []);
 
   return (
-    <BrowserRouter>
-      <AppContent user={user} setUser={setUser} handleLogout={handleLogout} />
-    </BrowserRouter>
+ 
+    <div className="App">
+      <BrowserRouter>
+        <SessionTracker user={user} onLogout={handleLogout} />
+        {/* Layout: Header/Footer 등 공통 UI (로그아웃 핸들러도 내려줌) */}
+        <Layout user={user} onLogout={handleLogout}>
+          <Routes>
+            {/* Splash (표지): 첫 진입 화면 */}
+            <Route path={ROUTES.SPLASH} element={<Splash />} />
+
+            {/* 메인(Home): 로그인한 사용자만 접근 */}
+             <Route path={ROUTES.HOME} element={<Home />} />
+
+            {/* 로그인: 비로그인 사용자 접근 */}
+            <Route
+              path={ROUTES.LOGIN}
+              element={<Login setUser={setUser} />}
+            />
+
+            {/* 회원가입: 비로그인 사용자 접근 */}
+            <Route
+              path={ROUTES.REGISTER}
+              element={<Register />}
+            />
+
+            {/* 내 정보: 로그인한 사용자만 접근 */}
+            <Route
+              path={ROUTES.MYINFO}
+              element={user ? <Myinfo /> : <Navigate to={ROUTES.LOGIN} />}
+            />
+
+            {/* 내 정보 수정: 로그인한 사용자만 접근 */}
+            <Route
+              path={ROUTES.MYINFO_EDIT}
+              element={user ? <MyinfoEdit /> : <Navigate to={ROUTES.LOGIN} />}
+            />
+
+            {/* Chat: 로그인한 사용자만 접근 */}
+            <Route
+              path={ROUTES.CHAT}
+              element={user ? <ChatPage /> : <Navigate to={ROUTES.LOGIN} />}
+            />
+
+            {/* PlantBoard: 로그인한 사용자만 접근 */}
+
+            < Route
+              path={ROUTES.PLANTBOARD}
+              element={user ? <PlantBoard/> : <Navigate to={ROUTES.LOGIN} />}
+            /> 
+
+
+            <Route
+              path={ROUTES.DIARY}
+              element={user ? <DiaryMainPage /> : <Navigate to={ROUTES.LOGIN} />}
+            />
+            <Route
+              path={ROUTES.DIARY_NEW}
+              element={user ? <DiaryNewPage /> : <Navigate to={ROUTES.LOGIN} />}
+            />
+            <Route
+              path={ROUTES.DIARY_DETAIL}
+              element={user ? <DiaryDetailPage /> : <Navigate to={ROUTES.LOGIN} />}
+            />
+            <Route
+              path={ROUTES.DIARY_EDIT}
+              element={user ? <DiaryEditPage /> : <Navigate to={ROUTES.LOGIN} />}
+            />
+
+            <Route
+              path={ROUTES.TIMELOG}  
+              element={user ? <TimeLogPage /> : <Navigate to={ROUTES.LOGIN} />}
+            />
+
+            <Route
+              path={ROUTES.PLANT_DATA}
+              element={<PlantData />}
+            />
+
+           <Route 
+              path={ROUTES.UPLOAD}
+              element={<UploadPage />}
+            />
+
+            <Route 
+              path={ROUTES.SURVEY}
+              element={<Survey />}
+            />
+
+            <Route 
+              path={ROUTES.ANALYZE}
+              element={<AnalyzePage />}
+            />
+
+          </Routes>
+        </Layout>
+      </BrowserRouter>
+    </div>
   );
 }
 

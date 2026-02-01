@@ -20,4 +20,9 @@ export const ROUTES = {
     DIARY_EDIT: '/diary/:id/edit',
 
     PLANT_DATA: '/plant-data',
+
+    UPLOAD: "/upload",
+    SURVEY: "/survey",
+    ANALYZE: "/analyze"
+
 };
