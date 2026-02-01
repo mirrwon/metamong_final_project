@@ -18,3 +18,4 @@
 {"id": 18, "answers": {"caution": ["beginner", "baby"], "size": ["large"], "style": ["minimal"], "Plant_style": ["leafy"]}}
 {"id": 19, "answers": {"caution": ["baby", "beginner"], "size": ["large"], "style": ["minimal"], "Plant_style": ["leafy"]}}
 {"id": 20, "answers": {"caution": ["baby", "beginner", "allergy"], "size": ["large"], "style": ["minimal"], "Plant_style": ["leafy"]}}
+{"id": 21, "answers": {"caution": ["beginner", "baby"], "size": ["large"], "style": ["natural"], "Plant_style": ["leafy"]}}

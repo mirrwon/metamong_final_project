@@ -1,121 +1,53 @@
 from __future__ import annotations
 
-import os
-import json
-from typing import Dict, List, Optional, Tuple
+import random
+from pathlib import Path
+from typing import Dict, List, Optional
 
-# 네 로컬 경로에 맞게 기본값 잡되, 환경변수로도 바꿀 수 있게
-DEFAULT_SCENE_ROOT = os.environ.get(
-    "SCENE_ROOT",
-    # r"C:\Users\나\Desktop\71765_json\71765_json\Training\02.labeling\3D 공간 모델"
-    r"C:\Users\201\Desktop\71765_json\71765_json\Training\02.labeling\3D 공간 모델"
-)
+from app.cv.pipeline import list_71765_scenes
+from app.cv.scene_room_infer import load_scene_json, infer_room_type_from_scene_json
 
-def load_scene_json(scene_root: str, sid: str) -> Optional[dict]:
+# 네 실제 경로로 고정
+# DEFAULT_SCENE_ROOT = Path(r"C:\Users\201\Desktop\71765_json\71765_json")
+DEFAULT_SCENE_ROOT = Path(r"C:\Users\나\Desktop\71765_json\71765_json")
+
+def build_room_groups(scene_root: Path = DEFAULT_SCENE_ROOT) -> Dict[str, List[str]]:
     """
-    sid.json을 찾아 로드.
-    네 데이터 구조가:
-      ...\3D 공간 모델\<sid>\<sid>.json
-    형태인 걸 기준으로 최대한 안전하게 탐색.
+    room_type(거실/침실/주방/욕실/기타) -> [scene_id...]
     """
-    # 1) 표준 케이스: <root>/<sid>/<sid>.json
-    p1 = os.path.join(scene_root, sid, f"{sid}.json")
-    if os.path.exists(p1):
-        try:
-            with open(p1, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except Exception:
-            return None
+    raw = list_71765_scenes()
+    scene_ids: List[str] = []
 
-    # 2) fallback: <root>/<sid>.json
-    p2 = os.path.join(scene_root, f"{sid}.json")
-    if os.path.exists(p2):
-        try:
-            with open(p2, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except Exception:
-            return None
+    if isinstance(raw, list):
+        scene_ids = [str(x) for x in raw]
+    elif isinstance(raw, dict):
+        scene_ids = [str(k) for k in raw.keys()]
 
-    return None
+    groups: Dict[str, List[str]] = {"거실": [], "침실": [], "주방": [], "욕실": [], "기타": []}
 
-
-def infer_room_type_from_scene_json(scene_json: dict) -> str:
-    """
-    assets 기반으로 공간 타입 추론.
-    (너가 준 예: toilet, washstand, showerhead, bed, cooktop 등)
-    """
-    assets = scene_json.get("assets") or []
-    subs = []
-    for a in assets:
-        if not isinstance(a, dict):
-            continue
-        s = a.get("subclass") or ""
-        if isinstance(s, str) and s:
-            subs.append(s.lower())
-
-    subs_set = set(subs)
-
-    # 욕실
-    bathroom_keys = {
-        "toilet", "washstand", "bathtap", "bathtub", "showerhead", "shower",
-        "bidet", "urinal"
-    }
-    # 주방
-    kitchen_keys = {
-        "cooktop", "stove", "sink", "kitchensink", "microwave", "refrigerator",
-        "diningtable", "oven", "rangehood"
-    }
-    # 침실
-    bedroom_keys = {
-        "bed", "wardrobe", "dresser", "nightstand", "desk", "bookshelf"
-    }
-    # 거실(=공용/생활공간)
-    living_keys = {
-        "sofa", "tv", "coffeetable", "sidetable", "armchair", "bookshelf"
-    }
-
-    bathroom_score = len(subs_set & bathroom_keys)
-    kitchen_score = len(subs_set & kitchen_keys)
-    bedroom_score = len(subs_set & bedroom_keys)
-    living_score  = len(subs_set & living_keys)
-
-    # 점수 제일 높은 걸로
-    scores = [
-        ("욕실", bathroom_score),
-        ("주방", kitchen_score),
-        ("침실", bedroom_score),
-        ("거실", living_score),
-    ]
-    scores.sort(key=lambda x: x[1], reverse=True)
-
-    best_label, best_score = scores[0]
-    if best_score <= 0:
-        # 아무 단서 없으면 "거실"로 기본(원룸 공용 공간이 많아서)
-        return "거실"
-    return best_label
-
-
-def list_scene_ids(scene_root: str = DEFAULT_SCENE_ROOT) -> List[str]:
-    """
-    scene_root 아래 폴더명을 scene id로 사용.
-    """
-    if not os.path.isdir(scene_root):
-        return []
-    out = []
-    for name in os.listdir(scene_root):
-        p = os.path.join(scene_root, name)
-        if os.path.isdir(p):
-            out.append(name)
-    out.sort()
-    return out
-
-
-def build_room_groups(scene_root: str = DEFAULT_SCENE_ROOT) -> Dict[str, List[Dict[str, str]]]:
-    """
-    room_type -> [{id, label}] 리스트
-    label은 UI에서 보여줄 텍스트. (우선은 id 그대로)
-    """
-    groups: Dict[str, List[Dict[str, str]]] = {"욕실": [], "주방": [], "침실": [], "거실": []}
-
-    for sid in list_scene_ids(scene_root):
+    for sid in scene_ids:
         sj = load_scene_json(scene_root, sid)
+        if not sj:
+            continue
+        room = infer_room_type_from_scene_json(sj)
+        if room not in groups:
+            room = "기타"
+        groups[room].append(sid)
+
+    return groups
+
+
+def pick_scene_for_room(groups: Dict[str, List[str]], room_type: str, seed: Optional[str] = None) -> Optional[str]:
+    """
+    room_type 하나를 받으면 그 그룹에서 scene_id 하나를 골라준다.
+    - seed를 주면 유저 세션마다 같은 선택을 유지할 수 있음
+    """
+    room_type = (room_type or "").strip()
+    candidates = groups.get(room_type) or []
+    if not candidates:
+        return None
+
+    if seed:
+        r = random.Random(seed)
+        return r.choice(candidates)
+    return random.choice(candidates)

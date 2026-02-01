@@ -1,12 +1,6 @@
 from __future__ import annotations
 
-import os
-import json
-import time
-import random
-import uuid, pathlib
-import glob
-import inspect
+import os, json, time, random, uuid, pathlib, glob , inspect
 
 from typing import Any, Dict, List, Optional
 from pydantic import BaseModel
@@ -16,8 +10,11 @@ from dotenv import load_dotenv
 from fastapi import UploadFile, File, Form, Request
 from fastapi.responses import JSONResponse
 
-from app.cv.pipeline import run_pipeline
+from app.cv.pipeline import run_pipeline, list_71765_scenes
 from app.cv.space_classifier import classify_space
+from app.cv.scene_room_infer import infer_room_type_from_scene_json, load_scene_json
+from app.cv.scene_catalog import build_room_groups, DEFAULT_SCENE_ROOT, pick_scene_for_room
+
 from app.config import BASE_DIR, RESULT_DIR, RESULT_JSON_LATEST, UPLOAD_DIR, ASSET_DIR
 
 from app.llm.image_edit import composite_plant_on_original
@@ -42,11 +39,8 @@ from .chat_utils import (
     get_lat_lot_from_meta,
     safe_float,
     parse_hh_from_any,
-    scene_to_label,
     scene_id_to_room_label,
 )
-
-from app.cv.scene_catalog import pick_scene_for_room
 
 load_dotenv()
 
@@ -54,6 +48,106 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 os.makedirs(RESULT_DIR, exist_ok=True)
 
 solar_client = KierSolarClient()
+
+class AnalyzeBody(BaseModel):
+    filters: Dict[str, Any] = {}
+
+def _pick_scene_for_room_compat(room_type: str):
+    """
+    room_type(거실/침실/주방/욕실 또는 영어 변형)를 받아서
+    DEFAULT_SCENE_ROOT 기준으로 scene_id를 무조건 하나 뽑아 반환한다.
+    (없으면 None)
+    """
+    # --- normalize to Korean keys ---
+    rt = (room_type or "").strip()
+    rt_key = rt.replace(" ", "").lower()
+
+    rt_map = {
+        # Korean
+        "거실": "거실",
+        "침실": "침실",
+        "주방": "주방",
+        "욕실": "욕실",
+
+        # English variants -> Korean
+        "livingroom": "거실",
+        "living_room": "거실",
+        "living": "거실",
+
+        "bedroom": "침실",
+        "bed_room": "침실",
+
+        "kitchen": "주방",
+
+        "bathroom": "욕실",
+        "bath_room": "욕실",
+        "restroom": "욕실",
+        "toilet": "욕실",
+    }
+
+    room_kor = rt_map.get(rt, rt_map.get(rt_key, rt))
+
+    # --- 1) groups에서 직접 뽑기 (가장 확실) ---
+    try:
+        groups = build_room_groups(DEFAULT_SCENE_ROOT)
+        arr = groups.get(room_kor) or []
+        if isinstance(arr, list) and len(arr) > 0:
+            # 항상 하나는 뽑아서 반환
+            return random.choice(arr)
+    except Exception as e:
+        print("[pick_scene_compat][WARN] build_room_groups failed:", e)
+
+    # --- 2) 기존 pick_scene_for_room 시도 (있으면 사용) ---
+    try:
+        return pick_scene_for_room(DEFAULT_SCENE_ROOT, room_kor)
+    except TypeError:
+        pass
+    except Exception as e:
+        print("[pick_scene_compat][WARN] pick_scene_for_room(root, room) failed:", e)
+
+    try:
+        return pick_scene_for_room(room_kor)
+    except Exception as e:
+        print("[pick_scene_compat][WARN] pick_scene_for_room(room) failed:", e)
+
+    return None
+
+
+# ✅ room groups(options)만
+def get_scenes():
+    groups = build_room_groups(DEFAULT_SCENE_ROOT)
+
+    options = []
+    for k in ["거실", "침실", "주방", "욕실"]:
+        cnt = len(groups.get(k) or [])
+        options.append({"key": k, "label": f"{k} ({cnt})"})
+
+    return {"ok": True, "type": "room_groups", "options": options}
+
+# ✅ 전체 scene 리스트(라벨 포함) 반환
+def get_scenes_all():
+    root = pathlib.Path(DEFAULT_SCENE_ROOT)
+    scenes = list_71765_scenes()
+
+    out = []
+    for sid in scenes:
+        scene_json = load_scene_json(root, sid)
+        if not scene_json:
+            continue
+
+        room_type = infer_room_type_from_scene_json(scene_json)
+
+        meta = scene_json.get("metadata", {}) if isinstance(scene_json, dict) else {}
+        space_subclass = meta.get("space_subclass") or ""
+        space_detail = meta.get("space_detail") or ""
+
+        label = f"{space_subclass} / {room_type}".strip(" /")
+        if space_detail:
+            label += f" ({space_detail})"
+
+        out.append({"id": sid, "label": label})
+
+    return {"ok": True, "scenes": out}
 
 def get_results():
     """
@@ -592,7 +686,7 @@ def _run_pipeline_compat(save_path: str, user_opts: Optional[Dict[str, Any]] = N
     return run_pipeline(save_path)
 
 # =========================
-# /api/chat/image handler
+# /api/chat/image handler (UPLOAD + ROOM ONLY)
 # =========================
 async def handle_chat_image(
     request: Request,
@@ -604,8 +698,7 @@ async def handle_chat_image(
 ) -> JSONResponse:
     sid, sid_is_new = _get_or_create_sid(request)
     key = sid
-
-    print("[DEBUG] handle_chat_image FILE =", __file__)
+    cid = _get_client_id(request) or sid
 
     upload: Optional[UploadFile] = None
     if files and len(files) > 0:
@@ -613,16 +706,17 @@ async def handle_chat_image(
     elif image is not None:
         upload = image
 
-    cid = _get_client_id(request)
-
     if upload is None:
-        progress(cid, "error", "업로드 파일을 찾지 못했습니다. (FormData key: files 또는 image 필요)")
         return _json_with_sid(
-            {"messages": [{"type": "text", "text": "업로드 파일을 찾지 못했습니다. (FormData key: files 또는 image 필요)", "payload": {"input": {"type": "image"}}}]},
+            {
+                "ok": False,
+                "messages": [{"type": "text", "text": "업로드 파일이 없습니다."}],
+            },
             sid,
             sid_is_new,
         )
 
+    # 1) 저장
     orig_name = upload.filename or "upload.jpg"
     ext = pathlib.Path(orig_name).suffix or ".jpg"
     filename = f"{uuid.uuid4().hex}{ext}"
@@ -632,335 +726,189 @@ async def handle_chat_image(
     with open(save_path, "wb") as f:
         f.write(content)
 
+    # ctx에 무조건 저장 (2번에서 analyze가 이걸 씀)
     set_user_ctx(key, {"last_image_path": save_path}, ttl_sec=60 * 60 * 6)
 
-    progress(cid, "upload")
-    progress(cid, "cv_start")
-    progress(cid, "cv_floor")
-    progress(cid, "cv_window")
-    progress(cid, "cv_light")
-
-    print("[CHAT_IMAGE] scene_id =", scene_id)
-    print("[CHAT_IMAGE] filename =", filename, "save_path =", save_path)
-
-    old_ai = os.path.join(RESULT_DIR, "result_latest_ai_edit.png")
-    if os.path.exists(old_ai):
-        try:
-            os.remove(old_ai)
-            print("[CHAT_IMAGE] cleared old ai_edit:", old_ai)
-        except Exception as e:
-            print("[CHAT_IMAGE][WARN] failed to remove old ai_edit:", e)
-
+    # 2) room_type/scene_id 확정 로직
     user_opts: Dict[str, Any] = {}
 
-    # 1) 사용자가 scene_id를 직접 고른 경우가 최우선
+    # (A) 사용자가 scene_id를 직접 보내면 최우선
     if scene_id:
         user_opts["scene_id"] = scene_id
-
-    # 2) scene_id 없고 room_type만 있으면 -> 내부에서 scene_id 하나 픽
-    elif room_type:
-        try:
-            picked = pick_scene_for_room(room_type)  # "거실"|"침실"|"주방"|"욕실"
-            if picked:
-                user_opts["scene_id"] = picked
-        except Exception as e:
-            print("[WARN] pick_scene_for_room failed:", e)
-
-    try:
-        out = _run_pipeline_compat(save_path, user_opts=user_opts)
-    except Exception as e:
-        progress(cid, "error", f"분석 중 오류가 발생했습니다: {str(e)}")
+        set_user_ctx(key, {"scene_id": scene_id}, ttl_sec=60 * 60 * 6)
         return _json_with_sid(
-            {"messages": [
-                {"type": "text", "text": f"분석 중 오류가 발생했습니다: {str(e)}", "payload": {"input": {"type": "image"}}}]},
+            {
+                "ok": True,
+                "need_room_type": False,
+                "next": "preferences",
+                "saved_image": filename,
+            },
             sid,
             sid_is_new,
         )
 
-    # =========================
-    # SPACE 분류 + scene 자동추론
-    # =========================
-
-    space = None
-    if isinstance(out, dict):
-        space = classify_space(out)
-        out["space"] = space
-
-    auto_scene_id = None
-
-    scene_info = out.get("scene") if isinstance(out, dict) else None
-    scenes_raw = scene_info.get("scenes") if isinstance(scene_info, dict) else None
-
-    # 자동추론 조건
-    if (
-            (not scene_id)  # ✅ 사용자가 선택해서 보낸 scene_id가 있으면 자동추론 금지
-            and isinstance(scene_info, dict)
-            and scene_info.get("reason") == "scene_required"
-            and isinstance(space, dict)
-            and space.get("confidence", 0) >= 0.7
-            and isinstance(scenes_raw, list)
-    ):
-        space_type = space.get("type")  # "욕실" | "거실" | "방"
-
-        for s0 in scenes_raw:
-            # scenes_raw는 str 또는 dict 섞여올 수 있음 → id 문자열로 정규화
-            sid0 = None
-            if isinstance(s0, str):
-                sid0 = s0
-            elif isinstance(s0, dict):
-                sid0 = s0.get("id") or s0.get("scene_id")
-
-            if not isinstance(sid0, str) or not sid0.strip():
-                continue
-
-            lbl = scene_to_label(sid0)
-            if isinstance(lbl, str) and space_type and (space_type in lbl):
-                auto_scene_id = sid0.strip()
-                break
-
-    # 자동 scene 성공 → pipeline 재실행
-    if auto_scene_id:
-        user_opts2 = dict(user_opts or {})
-        user_opts2["scene_id"] = auto_scene_id
-
+    # (B) room_type이 왔다면 -> scene_id 픽해서 확정
+    if room_type:
         try:
-            out = _run_pipeline_compat(save_path, user_opts=user_opts2)
+            picked = _pick_scene_for_room_compat(room_type)
         except Exception as e:
-            progress(cid, "error", f"재분석 중 오류: {str(e)}")
             return _json_with_sid(
-                {"messages": [{"type": "text", "text": f"재분석 중 오류: {str(e)}"}]},
+                {"ok": False, "messages": [{"type": "text", "text": f"room_type 처리 오류: {e}"}]},
                 sid,
                 sid_is_new,
             )
 
-        # 재분석 후 space 다시 계산
-        out["space"] = classify_space(out)
+        if not picked:
+            # ✅ 강제 진행: room_type은 저장하고 scene_id 없이도 survey/analyze로 넘긴다
+            set_user_ctx(key, {"room_type": str(room_type).strip()}, ttl_sec=60 * 60 * 6)
 
-    progress(cid, "cv_done")
+            return _json_with_sid(
+                {
+                    "ok": True,
+                    "need_room_type": False,
+                    "next": "preferences",
+                    "room_type": str(room_type).strip(),
+                    "scene_id": None,
+                    "saved_image": filename,
+                    "note": "scene_id_pick_failed_but_forced_next",
+                },
+                sid,
+                sid_is_new,
+            )
 
-    scene_info = out.get("scene")
+        # room_type -> scene_id 확정 저장
+        set_user_ctx(key, {"room_type": str(room_type).strip(), "scene_id": picked}, ttl_sec=60 * 60 * 6)
+
+        return _json_with_sid(
+            {
+                "ok": True,
+                "need_room_type": False,
+                "next": "preferences",
+                "room_type": str(room_type).strip(),
+                "scene_id": picked,
+                "saved_image": filename,
+            },
+            sid,
+            sid_is_new,
+        )
+
+    # (C) 아무것도 안 왔으면 -> 일단 pipeline 1회 돌려보고
+    # scene_required 뜨면 room_type 선택 요구, 아니면 자동으로 preferences로
+    try:
+        out = _run_pipeline_compat(save_path, user_opts={})  # scene_id 없이 1회
+    except Exception as e:
+        return _json_with_sid(
+            {"ok": False, "messages": [{"type": "text", "text": f"분석(1차) 중 오류: {e}"}]},
+            sid,
+            sid_is_new,
+        )
+
+    scene_info = out.get("scene") if isinstance(out, dict) else None
     if isinstance(scene_info, dict) and scene_info.get("reason") == "scene_required":
-        # ✅ 2번 방식: scene_id 리스트를 유저에게 안 보여주고, room_type만 고르게 함
         return _json_with_sid(
             {
-                "messages": [
-                    {
-                        "type": "text",
-                        "text": "이 사진의 공간 유형을 선택해주세요. (선택하면 그 공간에 맞춰 다시 분석합니다)",
-                        "payload": {
-                            "type": "room_type_required",
-                            "options": ["거실", "침실", "주방", "욕실"],
-                        },
-                    }
-                ]
+                "ok": True,
+                "need_room_type": True,
+                "payload": {"type": "room_type_required", "options": ["거실", "침실", "주방", "욕실"]},
+                "saved_image": filename,
             },
             sid,
             sid_is_new,
         )
 
-        scenes_raw = scene_info.get("scenes") or []
+    # ✅ scene_required가 아니더라도 pipeline이 scene을 자동 확정했으면 ctx에 저장
+    # (out 구조가 달라도 안전하게 key 여러 개 시도)
+    if isinstance(out, dict):
+        sc = out.get("scene")
+        chosen = None
+        if isinstance(sc, dict):
+            chosen = sc.get("chosen") or sc.get("scene_id") or sc.get("id")
+        if isinstance(chosen, str) and chosen.strip():
+            set_user_ctx(key, {"scene_id": chosen.strip()}, ttl_sec=60 * 60 * 6)
 
-        # ✅ space_classifier 결과로 후보 필터링 (UX 개선 + 과대판정 완화)
-        space_type = None
-        sp = out.get("space") if isinstance(out, dict) else None
-        if isinstance(sp, dict):
-            space_type = sp.get("type")  # 예: "욕실" | "거실" | "방"
+    # scene_required가 아니면 그냥 다음 단계로
+    return _json_with_sid(
+        {
+            "ok": True,
+            "need_room_type": False,
+            "next": "preferences",
+            "saved_image": filename,
+        },
+        sid,
+        sid_is_new,
+    )
 
-        if isinstance(space_type, str) and space_type.strip():
-            filtered = []
-            for x in scenes_raw:
-                _id = None
-                if isinstance(x, str):
-                    _id = x
-                elif isinstance(x, dict):
-                    _id = x.get("id") or x.get("scene_id") or x.get("sceneId")
+# =========================
+# /api/chat/analyze handler (CV + RECO + IMAGES)
+# =========================
+async def handle_chat_analyze(request: Request, body: AnalyzeBody) -> JSONResponse:
+    sid, sid_is_new = _get_or_create_sid(request)
+    key = sid
+    cid = _get_client_id(request) or sid
 
-                if not isinstance(_id, str) or not _id.strip():
-                    continue
+    ctx = get_user_ctx(key) or {}
+    save_path = ctx.get("last_image_path")
+    scene_id = ctx.get("scene_id")
+    room_type = ctx.get("room_type")
 
-                room = scene_id_to_room_label(_id.strip())
-                if room == space_type:
-                    filtered.append(x)
-
-            # 필터 결과가 너무 적으면(예: 0~2개) 원본 유지
-            if len(filtered) >= 5:
-                scenes_raw = filtered
-
-        scenes_for_ui = []
-        for x in scenes_raw:
-            # scene_id 추출 (str / dict 둘 다 처리)
-            _id = None
-            if isinstance(x, str):
-                _id = x
-            elif isinstance(x, dict):
-                _id = x.get("id") or x.get("scene_id") or x.get("sceneId")
-
-            if not isinstance(_id, str) or not _id.strip():
-                continue
-
-            _id = _id.strip()
-
-            # ✅ 라벨(거실/욕실/침실/주방 등)
-            room = scene_id_to_room_label(_id)
-
-            scenes_for_ui.append({
-                "id": _id,
-                "label": room if room else _id,
-            })
-
+    if not save_path or not os.path.exists(str(save_path)):
         return _json_with_sid(
-            {
-                "messages": [
-                    {
-                        "type": "text",
-                        "text": "이 사진은 어떤 공간(scene)인지 선택이 필요합니다.",
-                        "payload": {"type": "scene_required", "scenes": scenes_for_ui},
-                    }
-                ]
-            },
+            {"ok": False, "messages": [{"type": "text", "text": "업로드된 이미지가 없습니다. 먼저 1번에서 이미지를 업로드하세요."}]},
             sid,
             sid_is_new,
         )
 
-    print("[META RAW]", meta, type(meta))
-    print("[META PARSED]", get_lat_lot_from_meta(meta))
+    # filters 저장
+    user_filters = body.filters if isinstance(body.filters, dict) else {}
+    set_user_ctx(key, {"filters": user_filters}, ttl_sec=60 * 60 * 6)
 
-    # =========================
-    # 결과 로드
-    # =========================
-    progress(cid, "result_load")
+    # scene_id 없으면 room_type로 픽 시도
+    if not scene_id and room_type:
+        try:
+            scene_id = _pick_scene_for_room_compat(room_type)
+            if scene_id:
+                set_user_ctx(key, {"scene_id": scene_id}, ttl_sec=60 * 60 * 6)
+        except Exception:
+            pass
 
+    user_opts: Dict[str, Any] = {}
+    if scene_id:
+        user_opts["scene_id"] = scene_id
+
+    # 1) CV 실행
+    try:
+        out = _run_pipeline_compat(str(save_path), user_opts=user_opts)
+    except Exception as e:
+        return _json_with_sid(
+            {"ok": False, "messages": [{"type": "text", "text": f"공간 분석 중 오류: {e}"}]},
+            sid,
+            sid_is_new,
+        )
+
+    # 2) 추천
+    data = out if isinstance(out, dict) else {}
+    data["space"] = classify_space(data) if isinstance(data, dict) else None
+    data = recommend_for_analysis(data, user_filters=user_filters)
+    data["image_path"] = str(save_path)
+
+    # 3) 결과 저장
     latest_json = os.path.join(RESULT_DIR, "result_latest.json")
     marker_path = os.path.join(RESULT_DIR, "result_latest_marker.png")
     composite_path = os.path.join(RESULT_DIR, "result_latest_composite.png")
-
-    data: Dict[str, Any] = {}
-    if os.path.exists(latest_json):
-        try:
-            with open(latest_json, "r", encoding="utf-8") as f:
-                data = json.load(f)
-        except Exception:
-            data = {}
-
-    # ✅ fallback: 파일이 없거나 비었으면 out 사용
-    if (not isinstance(data, dict) or not data) and isinstance(out, dict) and out:
-        data = out
-
-    if not isinstance(data, dict) or not data:
-        progress(cid, "error", "분석 결과 파일을 불러오지 못했어요. 다시 시도해 주세요.")
-        return _json_with_sid(
-            {
-                "messages": [
-                    {
-                        "type": "text",
-                        "text": "분석 결과(result_latest.json)를 불러오지 못했습니다. 다시 사진을 업로드해 주세요.",
-                        "payload": {"input": {"type": "image"}},
-                    }
-                ]
-            },
-            sid,
-            sid_is_new,
-        )
-
-    # ✅ SOLAR 디버그 기본값(항상 찍히게)
-    data["solar_apply"] = False
-    data["solar_reason"] = "not_run"
-    data["solar_summary"] = None
-
-    loc2 = get_lat_lot_from_meta(meta)
-    if not isinstance(loc2, dict):
-        loc2 = None
-
-    # ✅ meta에 없으면 기본좌표 fallback (A에서 하던 걸 여기로 옮김)
-    if not loc2:
-        dlat = os.getenv("SOLAR_DEFAULT_LAT")
-        dlon = os.getenv("SOLAR_DEFAULT_LON")
-        if dlat and dlon:
-            try:
-                loc2 = {"lat": float(dlat), "lot": float(dlon)}
-            except Exception:
-                loc2 = None
-
-    if not loc2 or loc2.get("lat") is None or loc2.get("lot") is None:
-        data["solar_reason"] = "no_latlon"
-        data["solar_profile"] = {"ok": False, "reason": "no_latlon"}
-        data["solar_summary"] = {"ok": False, "reason": "no_latlon"}
-        data["solar_apply"] = False
-
-    else:
-        try:
-            date, hhmm = now_kst_yyyymmdd_hhmm()
-            hhmm = _sanitize_kier_time(hhmm)
-
-            solar_res = solar_client.fetch_predc(
-                lat=loc2["lat"],
-                lot=loc2["lot"],
-                date=date,
-                time_hhmm=hhmm,
-                num_rows=200,
-            )
-
-            if solar_res:
-                solar_payload2 = {
-                    "ok": True,
-                    "date": solar_res.date,
-                    "time": solar_res.time,
-                    "lat": solar_res.lat,
-                    "lot": solar_res.lot,
-                    "items": solar_res.items,
-                }
-            else:
-                solar_payload2 = {"ok": False, "reason": "fetch_failed_or_invalid_or_not_configured"}
-
-            data["solar_profile"] = solar_payload2
-
-            items = solar_payload2.get("items") if solar_payload2.get("ok") else None
-            summary = _solar_summary_from_items(items)
-            data["solar_summary"] = summary
-
-            if isinstance(summary, dict) and summary.get("ok"):
-                _apply_solar_to_spots(data, summary)
-                data["solar_reason"] = "applied"
-            else:
-                data["solar_reason"] = "no_summary"
-
-        except Exception as e:
-            data["solar_reason"] = f"exception:{type(e).__name__}"
-            data["solar_profile"] = {"ok": False, "reason": "exception"}
-            data["solar_summary"] = {"ok": False, "reason": "exception"}
-            data["solar_apply"] = False
-
-    # =========================
-    # 추천(recommend)
-    # =========================
-    progress(cid, "recommend")
-
-    ctx = get_user_ctx(key)
-    user_filters = ctx.get("filters", {}) if isinstance(ctx, dict) else {}
-    data = recommend_for_analysis(data, user_filters=user_filters)
-
-    # 최신 결과 저장(수정된 data 반영)
-
-    data["image_path"] = save_path  # ✅ pick_spot이 원본이미지 찾는 fallback용
+    ai_edit_path = os.path.join(RESULT_DIR, "result_latest_ai_edit.png")
 
     try:
         with open(latest_json, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
     except Exception as e:
-        print("[CHAT_IMAGE][WARN] failed to write result_latest.json:", e)
+        print("[WARN] write result_latest.json failed:", e)
 
-    # =========================
-    # 결과 이미지 생성(합성/마커)
-    # =========================
+    # 4) 결과 이미지 생성
     best_point = extract_best_point(data)
-
-    progress(cid, "compose")
-
     plant_asset = os.path.join(BASE_DIR, "assets", "plants", "default.png")
 
-    # 합성(식물 + 점)
     composite_plant_on_original(
-        original_image_path=save_path,
+        original_image_path=str(save_path),
         best_point_obj=best_point,
         out_path=composite_path,
         plant_png_path=plant_asset if os.path.exists(plant_asset) else None,
@@ -969,9 +917,8 @@ async def handle_chat_image(
         add_green_dot=True,
     )
 
-    # 마커(점만)
     composite_plant_on_original(
-        original_image_path=save_path,
+        original_image_path=str(save_path),
         best_point_obj=best_point,
         out_path=marker_path,
         plant_png_path=None,
@@ -980,75 +927,43 @@ async def handle_chat_image(
         add_green_dot=True,
     )
 
-    # =========================
-    # AI 편집(Gemini)
-    # =========================
-    ai_edit_path = os.path.join(RESULT_DIR, "result_latest_ai_edit.png")
-    pt = best_point.get("pt") if isinstance(best_point, dict) else None
-    prompt = (
-        "Add a realistic potted plant at the marked spot on the floor. "
-        "Match lighting and perspective naturally. Do not change the room layout. "
-        "Remove any green dot marker in the final image."
-    )
-    if pt:
-        prompt += f" The spot coordinates are {pt}."
-
-
+    # (옵션) gemini 편집은 실패해도 전체 플로우는 진행되게
     try:
-        gemini_edit_image(
-            input_image_path=marker_path,
-            prompt=prompt,
-            out_path=ai_edit_path,
+        pt = best_point.get("pt") if isinstance(best_point, dict) else None
+        prompt = (
+            "Add a realistic potted plant at the marked spot on the floor. "
+            "Match lighting and perspective naturally. Do not change the room layout. "
+            "Remove any green dot marker in the final image."
         )
+        if pt:
+            prompt += f" The spot coordinates are {pt}."
+        gemini_edit_image(input_image_path=marker_path, prompt=prompt, out_path=ai_edit_path)
     except Exception as e:
-        print("[CHAT_IMAGE][WARN] gemini_edit_image exception:", e)
+        print("[WARN] gemini_edit_image failed:", e)
 
-    # =========================
-    # 응답
-    # =========================
-    progress(cid, "respond")
-
-    messages: List[Dict[str, Any]] = [{"type": "text", "text": "분석이 완료되었습니다."}]
-
-    space_type = None
-    if isinstance(data, dict):
-        sp = data.get("space")
-        if isinstance(sp, dict):
-            space_type = sp.get("type")
-
-    if space_type:
-        messages.append({"type": "text", "text": f"공간 분석 결과: {space_type}"})
-
+    # 5) 응답 (프론트에서 바로 이미지 띄우기)
     ts_ms = int(time.time() * 1000)
     images_payload: List[Dict[str, Any]] = []
 
-    def add_img(label: str, file_path: Optional[str]) -> None:
+    def add_img(label: str, file_path: str):
         if file_path and os.path.exists(file_path):
-            images_payload.append(
-                {
-                    "name": label,
-                    "url": cache_bust_url(request, to_results_url(file_path), ts_ms),
-                }
-            )
+            images_payload.append({"name": label, "url": cache_bust_url(request, to_results_url(file_path), ts_ms)})
 
     add_img("marker", marker_path)
     add_img("composite", composite_path)
-    add_img("ai_edit", ai_edit_path)
+    if os.path.exists(ai_edit_path):
+        add_img("ai_edit", ai_edit_path)
 
-    if images_payload:
-        messages.append(
-            {
-                "type": "images",
-                "text": "분석 결과 이미지입니다.",
-                "images": images_payload,
-            }
-        )
-
-    messages.append(
-        {"type": "text", "text": "다음 중 선택해주세요.", "payload": {"options": ["마음에 들어요", "상세 입력"]}}
+    return _json_with_sid(
+        {
+            "ok": True,
+            "images": images_payload,
+            "cv_result": data,
+        },
+        sid,
+        sid_is_new,
     )
 
-    return _json_with_sid({"messages": messages, "cv_result": data}, sid, sid_is_new)
 
 # =========================
 # Router-facing aliases
@@ -1092,33 +1007,6 @@ def get_filters():
         {"key": "pet", "label": "반려동물 여부", "options": ["예", "아니오"]},
     ]
     return {"groups": groups, "payload": {"type": "filters", "groups": groups}}
-
-
-def get_scenes():
-    print("[SCENES_ROUTE] HIT get_scenes()")
-    print("[SCENES_ROUTE] FILE =", __file__)
-    from app.cv.pipeline import list_71765_scenes
-
-    raw = list_71765_scenes()
-
-    scenes: List[Dict[str, str]] = []
-
-    if isinstance(raw, list):
-        for x in raw:
-            if isinstance(x, str):
-                scenes.append({"id": x, "label": scene_to_label(x)})
-            elif isinstance(x, dict):
-                _id = x.get("id") or x.get("scene_id")
-                if _id:
-                    scenes.append({"id": _id, "label": scene_to_label(_id)})
-    elif isinstance(raw, dict):
-        for k in raw.keys():
-            _id = str(k)
-            scenes.append({"id": _id, "label": scene_to_label(_id)})
-
-    print("[SCENES_ROUTE] raw type =", type(raw), "raw =", raw)
-    return {"ok": True, "scenes": scenes, "raw": raw}
-
 
 def _pick_plant_for_spot(top_plants: Any, spot_index: int) -> str:
     """

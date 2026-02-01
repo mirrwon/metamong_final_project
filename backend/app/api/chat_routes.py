@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Request, UploadFile, File, Form
+from fastapi.responses import JSONResponse
 from typing import Optional, List
-from pathlib import Path
 
 from .chat_progress import stream_route
 from .chat_handlers import (
@@ -13,15 +13,13 @@ from .chat_handlers import (
     get_filters,
     PickSpotBody,
     get_results,
+    get_scenes,
+    get_scenes_all,
+    handle_chat_analyze,
+    AnalyzeBody,
 )
 
 from .chat_survey import survey_router
-
-from app.cv.pipeline import list_71765_scenes
-from app.cv.scene_room_infer import infer_room_type_from_scene_json, load_scene_json
-from app.cv.scene_catalog import build_room_groups, DEFAULT_SCENE_ROOT, pick_scene_for_room
-
-SCENE_ROOT = Path(r"C:\Users\201\Desktop\71765_json\71765_json")
 
 router = APIRouter()
 
@@ -35,64 +33,15 @@ router.include_router(survey_router)
 def route_filters():
     return get_filters()
 
+# ✅ room group options만 반환
 @router.get("/api/chat/scenes")
 def route_scenes():
-    groups = build_room_groups(DEFAULT_SCENE_ROOT)
+    return get_scenes()
 
-    # UI는 options만 필요하니까 간단히
-    options = []
-    for k in ["거실", "침실", "주방", "욕실"]:
-        cnt = len(groups.get(k) or [])
-        options.append({"key": k, "label": f"{k} ({cnt})"})
-
-    return {"ok": True, "type": "room_groups", "options": options}
-
-def get_scenes():
-    scenes = list_71765_scenes()
-    out = []
-
-    for sid in scenes:
-        scene_json = load_scene_json(SCENE_ROOT, sid)
-        if not scene_json:
-            continue
-
-        room_type = infer_room_type_from_scene_json(scene_json)
-
-        meta = scene_json.get("metadata", {}) if isinstance(scene_json, dict) else {}
-        space_subclass = meta.get("space_subclass") or ""
-        space_detail = meta.get("space_detail") or ""
-
-        label = f"{space_subclass} / {room_type}".strip(" /")
-        if space_detail:
-            label += f" ({space_detail})"
-
-        out.append({"id": sid, "label": label})
-
-    return {"ok": True, "scenes": out}
-
+# ✅ 전체 scene 리스트(라벨 포함) 반환
 @router.get("/api/chat/scenes/all")
 def route_scenes_all():
-    scenes = list_71765_scenes()
-    out = []
-
-    for sid in scenes:
-        scene_json = load_scene_json(SCENE_ROOT, sid)
-        if not scene_json:
-            continue
-
-        room_type = infer_room_type_from_scene_json(scene_json)
-
-        meta = scene_json.get("metadata", {}) if isinstance(scene_json, dict) else {}
-        space_subclass = meta.get("space_subclass") or ""
-        space_detail = meta.get("space_detail") or ""
-
-        label = f"{space_subclass} / {room_type}".strip(" /")
-        if space_detail:
-            label += f" ({space_detail})"
-
-        out.append({"id": sid, "label": label})
-
-    return {"ok": True, "scenes": out}
+    return get_scenes_all()
 
 # -------------------------
 # v3 Contract: /api/chat/stream (SSE heartbeat) - 절대 제거 금지
@@ -135,3 +84,6 @@ async def route_chat_spot(request: Request, body: PickSpotBody):
 def route_results():
     return get_results()
 
+@router.post("/api/chat/analyze")
+async def chat_analyze(request: Request, body: AnalyzeBody) -> JSONResponse:
+    return await handle_chat_analyze(request, body)

@@ -35,6 +35,10 @@ import DiaryEditPage from "./pages/plantboard/DiaryEditPage";
 
 import TimeLogPage from "./pages/plantboard/TimeLogPage";
 
+// 챗봇 2,3Page
+import UploadPage from "./components/chat/UploadPage";
+import Survey from "./components/chat/Survey";
+import AnalyzePage from "./components/chat/AnalyzePage";
 
 // layout (공통 레이아웃)
 import Layout from './components/layout/Layout';
@@ -165,6 +169,21 @@ function App() {
             <Route
               path={ROUTES.PLANT_DATA}
               element={<PlantData />}
+            />
+
+           <Route 
+              path={ROUTES.UPLOAD}
+              element={<UploadPage />}
+            />
+
+            <Route 
+              path={ROUTES.SURVEY}
+              element={<Survey />}
+            />
+
+            <Route 
+              path={ROUTES.ANALYZE}
+              element={<AnalyzePage />}
             />
 
           </Routes>
