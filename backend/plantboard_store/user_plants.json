@@ -1,0 +1,19 @@
+{
+  "test_user_storage_test": [
+    {
+      "name": "Test Plant",
+      "coverUrl": "/plants/plant_6846b6b013ba4b2dbe7018dcdf0e9fb4.png",
+      "id": "plant_1769970739_0",
+      "created_at": "2026-02-02 03:32:19"
+    }
+  ],
+  "test_user": [
+    {
+      "name": "장미",
+      "coverUrl": "/plants/plant_1defa6a7d4f6466491e42536e8b914eb.png",
+      "createdBy": "manual",
+      "id": "plant_1769970784_0",
+      "created_at": "2026-02-02 03:33:04"
+    }
+  ]
+}

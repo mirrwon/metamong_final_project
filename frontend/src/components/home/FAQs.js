@@ -22,6 +22,7 @@ const FAQs = () => {
   return (
     <section className="faq">
       <h2 className="faq__title">🌱FAQ. 이런 점이 궁금했어요</h2>
+      <div className="ui-line" />
 
       <ul className="faq__list">
         {FAQ_list.map((item) => (

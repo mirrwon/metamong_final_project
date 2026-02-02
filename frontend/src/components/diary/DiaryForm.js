@@ -1,4 +1,3 @@
-import Button from "../common/Button";
 import "./DiaryForm.css";
 
 const DiaryForm = ({
@@ -24,20 +23,19 @@ const DiaryForm = ({
     <div className="diary-form">
       <div className="diary-form__head">
         <h1 className="diary-form__title">{formTitle}</h1>
-        <div className="ui-line diary-form__line" />
       </div>
 
       <form className="diary-form__body" onSubmit={onSubmit}>
         {showDate && (
-          <label className="diary-form__date">
+          <div className="diary-form__date">
             <input
-              className="ui-input diary-form__date-input"
+              className="diary-form__date-input"
               type="date"
               value={date}
               onChange={onDateChange}
               disabled={disableDate}
             />
-          </label>
+          </div>
         )}
 
         <div className="diary-form__content">
@@ -50,12 +48,12 @@ const DiaryForm = ({
               />
             ) : (
               <div className="diary-form__image-empty">
-                이미지<br />업로드
+                🖼️<br />사진을 선택해주세요
               </div>
             )}
 
-            <label className="diary-form__file-btn ui-btn ui-btn-primary">
-              파일 선택
+            <label className="diary-form__file-btn">
+              이미지 업로드
               <input
                 className="diary-form__file-input"
                 type="file"
@@ -66,40 +64,38 @@ const DiaryForm = ({
           </div>
 
           <input
-            className="ui-input diary-form__input"
+            className="diary-form__input"
             value={title}
             onChange={onTitleChange}
-            placeholder="제목을 입력하세요..."
+            placeholder="멋진 제목을 지어주세요..."
           />
 
           <textarea
             className="diary-form__textarea"
             value={content}
             onChange={onContentChange}
-            placeholder="내용을 입력하세요..."
-            rows={5}
+            placeholder="오늘의 식물 이야기를 들려주세요..."
+            rows={8}
           />
-        </div>
 
-        <div className="diary-form__actions">
-          <Button
-            text={isSaving ? "저장 중..." : "저장"}
-            type="primary"
-            onClick={onSubmit}
-          />
-          <Button
-            text="취소"
-            type="option"
-            onClick={onCancel}
-          />
+          {errorMessage && (
+            <div className="diary-form__error">
+              ⚠️ {errorMessage}
+            </div>
+          )}
         </div>
-
-        {errorMessage && (
-          <div className="diary-form__error">
-            {errorMessage}
-          </div>
-        )}
       </form>
+
+      <div className="diary-form__actions">
+        <div className="diary-form__actions-row">
+          <button type="submit" className="diary-form-btn diary-form-btn--primary" onClick={onSubmit}>
+            <span>💾</span> {isSaving ? "저장중..." : "저장"}
+          </button>
+          <button type="button" className="diary-form-btn" onClick={onCancel}>
+            <span>✖️</span> 취소
+          </button>
+        </div>
+      </div>
     </div>
   );
 };

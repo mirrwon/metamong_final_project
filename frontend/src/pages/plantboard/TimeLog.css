@@ -1,444 +1,568 @@
-.timelog {
-  width: 600px;
-  max-width: 100%;
-  margin: 0 auto;
-
-  padding: var(--s-4) var(--s-4) calc(var(--s-7) + 72px);
-
-  font-size: 15px;
-  line-height: 1.35;
-  text-align: left;
+:root {
+  --p-primary: #3E403B;
+  --p-accent: #8C9388;
+  --p-bg: #FAFAF8;
+  --p-glass: rgba(255, 255, 255, 0.9);
+  --p-glass-border: rgba(0, 0, 0, 0.05);
+  --p-text: #3E403B;
+  --p-text-muted: #8C9388;
+  --p-shadow: 0 4px 20px 0 rgba(0, 0, 0, 0.03);
 }
 
-/* 상단 헤더 */
-.timelog__header {
+.timelog {
+  width: 100%;
+  height: 100%;
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  background: linear-gradient(135deg, #FAFAF8 0%, #E8E8E6 100%);
+  animation: fadeIn 0.5s ease-out;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.timelog__header {
+  background: var(--p-primary);
+  padding: 15px 25px;
+  display: flex;
   justify-content: space-between;
-  margin-bottom: var(--s-3);
+  align-items: center;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
 }
 
 .timelog__title {
-  font-size: var(--fs-3);
+  color: #fff;
   font-weight: 800;
-  margin: 0;
+  font-size: 20px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
 }
 
-/* 타임라인 섹션 타이틀 */
-.timelog__sectionTitle {
-  font-size: var(--fs-1);
-  font-weight: 800;
-  margin: var(--s-4) 0 var(--s-2);
+.timelog-inner {
+  padding: 25px;
+  flex-grow: 1;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--p-accent) transparent;
 }
 
-/* 날짜 라벨 */
-.timelog__dateLabel {
-  font-size: var(--fs-0);
-  color: var(--c-muted);
-  margin: var(--s-2) 0;
+/* Glassmorphism Plant Select */
+/* Glassmorphism Plant Select */
+.timelog-plant {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  margin-bottom: 25px;
+  padding: 15px;
+  background: var(--p-glass);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid var(--p-glass-border);
+  border-radius: 8px;
+  box-shadow: var(--p-shadow);
 }
 
-/* =========================
-   TimeLog Components
-   ========================= */
+.timelog-plant__label {
+  font-weight: 700;
+  color: var(--p-primary);
+  font-size: 14px;
+}
 
-/* ---- Summary (상단 배지 4개) ---- */
+.timelog-plant__select {
+  flex-grow: 1;
+  padding: 10px 15px;
+  border: none;
+  border-radius: 4px;
+  background-color: rgba(255, 255, 255, 0.8);
+  color: var(--p-text);
+  font-size: 14px;
+  outline: none;
+  transition: all 0.3s ease;
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+.timelog-plant__select:focus {
+  background-color: #fff;
+  box-shadow: 0 0 0 3px rgba(109, 76, 65, 0.2);
+}
+
+.timelog-summaryRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  margin-bottom: 30px;
+}
+
+.timelog-addPlantBtn {
+  background: linear-gradient(135deg, #efebe9 0%, #d7ccc8 100%);
+  border: none;
+  padding: 8px 16px;
+  border-radius: 4px;
+  font-size: 13px;
+  cursor: pointer;
+  font-weight: 700;
+  color: var(--p-primary);
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 10px rgba(109, 76, 65, 0.1);
+}
+
+.timelog-addPlantBtn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 15px rgba(109, 76, 65, 0.2);
+}
+
+/* Premium Summary Cards */
 .timelog-summary {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: var(--s-2);
-  margin-bottom: var(--s-3);
+  display: flex;
+  gap: 15px;
 }
 
 .timelog-summary__item {
-  border: 1px solid var(--c-line);
-  background: #fff;
-  border-radius: 5px;
-  padding: 10px 8px;
-  text-align: center;
+  background: var(--p-glass);
+  backdrop-filter: blur(10px);
+  border: 1px solid var(--p-glass-border);
+  border-radius: 6px;
+  padding: 15px 20px;
+  min-width: 110px;
+  box-shadow: var(--p-shadow);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  transition: transform 0.3s ease;
+}
+
+.timelog-summary__item:hover {
+  transform: scale(1.05);
 }
 
 .timelog-summary__label {
-  font-size: var(--fs-2);
-  color: var(--c-muted);
-  margin-bottom: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--p-text-muted);
+  margin-bottom: 8px;
+  text-transform: uppercase;
 }
 
 .timelog-summary__value {
-  font-size: 12px;
+  font-size: 20px;
   font-weight: 800;
-  color: var(--c-text);
+  color: var(--p-primary);
 }
 
-.timelog-summaryRow{
-  display: flex;
-  align-items: stretch;   /* 카드 높이 맞추기 */
-  justify-content: space-between;
-  gap: 16px;
-}
-
-.timelog-addPlantBtn{
-  color: var(--c-text);
-  font-weight: 400px;
-  font-size: var(--fs-2);
-}
-
-.timelog-modal{
-  position: fixed;
-  inset: 0;
-  z-index: 999;
-
-  display: flex;
-  align-items: center;
-  justify-content: center;
-
-  padding: 18px;
-  background: rgba(0,0,0,0.35);
-  backdrop-filter: blur(6px);
-}
-
-/* ✅ 모달 패널: 카드처럼 */
-.timelog-modal__panel{
-  width: min(520px, 100%);
-  background: rgba(255,255,255,0.92);
-  border: 1px solid rgba(0,0,0,0.10);
-  padding: 16px 16px 14px;
-  box-shadow: 0 18px 50px rgba(0,0,0,0.18);
-}
-
-/* 제목 */
-.timelog-modal__title{
-  font-size: 14px;
-  font-weight: 900;
-  margin-bottom: 12px;
-}
-
-/* 라벨 */
-.timelog-modal__label{
-  display: block;
-  font-size: 12px;
-  color: var(--c-muted);
-  font-weight: 800;
-  margin: 10px 0 6px;
-}
-
-/* ✅ 입력창 */
-.timelog-modal__input{
-  width: 100%;
-  height: 40px;
-
-  border-radius: 12px;
-  border: 1px solid rgba(0,0,0,0.12);
-  background: #fff;
-
-  padding: 0 12px;
-  font-size: 13px;
-  outline: none;
-}
-
-.timelog-modal__input:focus{
-  border-color: rgba(47, 107, 75, 0.35);
-  box-shadow: 0 0 0 4px rgba(59,127,90,0.10);
-}
-
-/* ✅ 파일 인풋: 버튼처럼 보이지 않게 "필드" 느낌 */
-.timelog-modal__file{
-  width: 100%;
-  border-radius: 12px;
-  border: 1px solid rgba(0,0,0,0.12);
-  background: #fff;
-
-  padding: 10px 12px;
-  font-size: 12px;
-  color: #444;
-}
-
-/* 버튼 영역 */
-.timelog-modal__actions{
-  display: flex;
-  gap: 10px;
-  justify-content: flex-end;
-  margin-top: 14px;
-}
-
-/* ✅ 모달 버튼: 아래 하단 액션버튼/탭과 다른 느낌 */
-.timelog-modal__btn{
-  height: 38px;
-  padding: 0 14px;
-  
-  border: 1px solid rgba(0,0,0,0.12);
-  background: rgba(255,255,255,0.95);
-
-  font-size: 12px;
-  font-weight: 800;
-
-  cursor: pointer;
-  transition: transform .12s ease, box-shadow .12s ease, background .12s ease;
-}
-
-.timelog-modal__btn:hover{
-  transform: translateY(-1px);
-  box-shadow: 0 8px 18px rgba(0,0,0,0.10);
-}
-
-.timelog-modal__btn:active{
-  transform: translateY(0);
-  box-shadow: none;
-}
-
-/* ✅ 등록 버튼만 포인트 */
-.timelog-modal__btn--primary{
-  border-color: rgba(47, 107, 75, 0.30);
-  background: rgba(59,127,90,0.14);
-  color: #2f6b4b;
-}
-
-/* ---- Tabs (상단 필터 탭) ---- */
+/* Tabs Styling */
 .timelog-tabs {
   display: flex;
-  gap: 8px;
-  align-items: center;
-  padding: 6px 0 10px;
-  border-bottom: 1px solid var(--c-line);
-  overflow-x: auto;
+  gap: 10px;
+  margin-bottom: 35px;
+  padding: 5px;
+  background: rgba(109, 76, 65, 0.05);
+  border-radius: 4px;
+  width: fit-content;
 }
 
 .timelog-tab {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 10px;
-  border-radius: 999px;
-  border: 1px solid var(--c-line);
-  background: #fff;
-  font-size: 12px;
+  padding: 8px 20px;
+  border: none;
+  border-radius: 2px;
+  background: transparent;
+  font-size: 13px;
+  color: var(--p-text-muted);
   cursor: pointer;
-  white-space: nowrap;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  font-weight: 600;
 }
 
 .timelog-tab.is-active {
-  border-color: #3b7f5a;
-  color: #2f6b4b;
+  background-color: #fff;
+  color: var(--p-primary);
   font-weight: 800;
+  box-shadow: 0 4px 12px rgba(109, 76, 65, 0.15);
 }
 
-.timelog-tab__badge {
-  font-size: 11px;
-  padding: 2px 7px;
-  border-radius: 999px;
-  border: 1px solid var(--c-line);
-  background: #fafafa;
-  color: var(--c-muted);
+/* Timeline Aesthetics */
+.timelog-timeline-section {
+  margin-top: 25px;
 }
 
-/* ---- Timeline ---- */
+.timelog__sectionTitle {
+  font-size: 22px;
+  font-weight: 900;
+  color: var(--p-primary);
+  margin-bottom: 12px;
+  position: relative;
+  display: inline-block;
+}
+
+.timelog__sectionTitle::after {
+  content: '';
+  position: absolute;
+  bottom: -4px;
+  left: 0;
+  width: 100%;
+  height: 2px;
+  background: var(--p-accent);
+  border-radius: 1px;
+}
+
+/* 상단 고정 날짜 라벨 (필요한 경우) */
+.timelog__dateLabel {
+  display: none;
+  /* 그룹별 날짜가 있으므로 숨김 처리하거나 중복 제거 */
+}
+
+/* 그룹별 타임라인 스타일 */
 .timelog-timeline {
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  margin-top: var(--s-3);
+  gap: 10px;
+}
+
+.timelog-day {
+  margin-bottom: 45px;
+  /* 날짜 그룹 간의 간격 */
 }
 
 .timelog-day__title {
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--c-muted);
-  margin-bottom: 8px;
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--p-primary);
+  text-align: center;
+  margin-bottom: 30px;
+  /* 고쳐줘 하신 부분: 날짜와 카드 사이 간격 */
+  padding: 8px 16px;
+  background: rgba(109, 76, 65, 0.05);
+  border-radius: 4px;
+  width: fit-content;
+  margin-left: auto;
+  margin-right: auto;
+  letter-spacing: 0.5px;
 }
 
-.timelog-day__list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-/* ---- Item row ---- */
+/* Premium Item Cards */
 .timelog-item {
-  display: grid;
-  grid-template-columns: 54px 1fr;
-  gap: 10px;
-  align-items: start;
+  display: flex;
+  gap: 20px;
+  margin-bottom: 20px;
 }
 
 .timelog-item__time {
   font-size: 12px;
-  color: #555;
-  padding-top: 10px;
-}
-
-/* 카드 */
-.timelog-item__card {
-  border: 1px solid var(--c-line);
-  background: #fff;
-  border-radius: 10px;
-  padding: 10px 12px;
-}
-
-.timelog-item__top {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.timelog-item__icon {
-  font-size: 14px;
-  line-height: 1;
-}
-
-.timelog-item__title {
-  font-size: 13px;
-  font-weight: 800;
-  color: var(--c-text);
-}
-
-.timelog-item__detail {
-  margin-top: 6px;
-  font-size: 13px;
-  color: #333;
-  line-height: 1.35;
-}
-
-.timelog-item__image {
-  margin-top: 12px;
-  border-radius: 14px;
-  overflow: hidden;
-  border: 1px solid var(--c-line);
-  background: #fff;
-}
-
-.timelog-item__img {
-  display: block;
-  width: 100%;
-  height: auto;
-}
-
-/* ---- Plant Select ---- */
-.timelog-plant {
-  display: flex;
-  gap: 10px;
-  align-items: center;
-  margin-bottom: var(--s-3);
-}
-
-.timelog-plant__label {
-  font-size: 12px;
-  color: var(--c-muted);
   font-weight: 700;
-  white-space: nowrap;
+  color: #c9b0a7;
+  width: 50px;
+  text-align: right;
+  padding-top: 15px;
 }
 
-.timelog-plant__select {
-  flex: 1;
-  height: 38px;
-  border: 1px solid var(--c-line);
-  border-radius: 10px;
-  padding: 0 10px;
+.timelog-item__card {
+  flex-grow: 1;
+  min-width: 0;
+  background: var(--p-glass);
+  backdrop-filter: blur(10px);
+  border: 1px solid var(--p-glass-border);
+  border-radius: 8px;
+  padding: 18px 22px;
+  box-shadow: var(--p-shadow);
+  transition: all 0.3s ease;
+}
+
+.timelog-item__card:hover {
+  transform: translateX(5px);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.05);
   background: #fff;
-  font-size: 13px;
 }
 
-/* ---- TimeLog Item Top Action ---- */
 .timelog-item__top {
   display: flex;
-  align-items: center;
   justify-content: space-between;
-  gap: var(--s-2);
+  align-items: center;
+  margin-bottom: 12px;
 }
 
 .timelog-item__topLeft {
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  gap: var(--s-2);
-  min-width: 0;
 }
 
-.timelog-item__more {
-  border: 1px solid var(--c-line);
-  background: #fff;
-  border-radius: 8px;
-  padding: 4px 8px;
+.timelog-item__topRight {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  /* Spacing between Decorate and Trash buttons */
+}
+
+.timelog-item__title {
+  font-weight: 800;
+  color: var(--p-primary);
+  font-size: 16px;
+}
+
+.timelog-item__plantTag {
+  font-size: 11px;
+  font-weight: 700;
+  color: #fff;
+  background-color: var(--p-accent);
+  padding: 2px 10px;
+  border-radius: 2px;
+  margin-left: 12px;
+  /* Space from title */
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  box-shadow: 0 2px 4px rgba(109, 76, 65, 0.1);
+  display: inline-flex;
+  align-items: center;
+}
+
+.timelog-item__decorBtn {
+  background: var(--p-accent);
+  color: #fff;
+  border: none;
+  padding: 6px 14px;
+  border-radius: 4px;
+  /* Slightly softer */
+  font-size: 12px;
+  cursor: pointer;
+  font-weight: 700;
+  box-shadow: none;
+  /* Remove shadow */
+  transition: all 0.2s ease;
+}
+
+.timelog-item__decorBtn:hover {
+  background-color: var(--p-primary);
+  /* Darker on hover */
+  transform: translateY(-1px);
+}
+
+.timelog-item__detail {
+  font-size: 15px;
+  color: var(--p-text);
+  line-height: 1.6;
+  margin-bottom: 15px;
+}
+
+.timelog-item__deleteBtn {
+  background: transparent;
+  border: none;
   cursor: pointer;
   font-size: 14px;
-  line-height: 1;
+  opacity: 0.4;
+  transition: all 0.2s ease;
+  padding: 4px;
 }
 
-.timelog-item__more:active {
-  transform: translateY(1px);
+.timelog-item__deleteBtn:hover {
+  opacity: 1;
+  transform: scale(1.1);
 }
 
-/* ---- Plant Tag Chip ---- */
-.timelog-item__plantTag {
-  display: inline-flex;
-  align-items: center;
-  height: 20px;
-  padding: 0 8px;
-  font-size: 11px;
-  margin-left: 6px;
+.timelog-item__image {
+  border-radius: 0;
+  overflow: hidden;
+  border: 1px solid #efebe9;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+  width: fit-content;
+  max-width: 450px;
+  margin-top: 10px;
 }
 
-/* ---- Bottom Action Bar (하단 버튼바) ---- */
+.timelog-item__img {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+/* Floating Action Bar */
 .timelog-actions {
-  position: fixed;
-  left: 50%;
-  transform: translateX(-65%);
-  bottom: 0;
-  z-index: 50;
-  width: 400px;
-  padding: 12px 12px 14px;
+  padding: 15px 25px;
+  background: var(--p-glass);
+  backdrop-filter: blur(20px);
+  border-top: 1px solid var(--p-glass-border);
+  box-shadow: 0 -10px 30px rgba(109, 76, 65, 0.05);
+  display: flex;
+  justify-content: center;
+  flex-shrink: 0;
+  position: relative;
+  z-index: 10;
 }
 
 .timelog-actions__row {
   display: flex;
-  gap: 10px;
-  justify-content: space-between;
-  align-items: center;
+  gap: 12px;
+  width: 100%;
+  max-width: 800px;
+  justify-content: center;
+  flex-wrap: nowrap;
+  /* Force horizontal alignment */
 }
 
 .timelog-actionBtn {
-  /* 🔥 기본 버튼 스타일 초기화 */
-  border: none;
-  outline: none;
-  box-shadow: none;
-  appearance: none;
-  -webkit-appearance: none;
-  box-shadow: 0 2px 6px rgba(0,0,0,0.08);
-  min-width: 110px;
-  height: 40px;
-
-  display: inline-flex;
+  flex: 1;
+  /* Allow buttons to share space equally */
+  display: flex;
+  flex-direction: column;
+  /* Stack icon and text vertically inside horizontal buttons for a cleaner look */
   align-items: center;
   justify-content: center;
-
-  padding: 0 14px;
-
-  border-radius: 12px;
-  background: #ffffff;
-
-  font-size: 13px;
-  font-weight: 500;
-
+  gap: 4px;
+  background: #fff;
+  border: 1px solid var(--p-glass-border);
+  padding: 10px 5px;
+  border-radius: 2px;
+  font-size: 11px;
+  /* Smaller text for better fit */
+  font-weight: 700;
+  color: var(--p-primary);
   cursor: pointer;
+  box-shadow: 0 4px 12px rgba(109, 76, 65, 0.1);
+  transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  min-width: 0;
   white-space: nowrap;
 }
 
+.timelog-actionBtn span {
+  font-size: 16px;
+}
+
+.timelog-actionBtn:hover:not(:disabled) {
+  transform: translateY(-5px);
+  box-shadow: 0 8px 20px rgba(109, 76, 65, 0.2);
+  border-color: var(--p-accent);
+}
+
+.timelog-actionBtn:active:not(:disabled) {
+  transform: scale(0.95);
+}
+
 .timelog-actionBtn:disabled {
-  opacity: 0.8;
-  cursor: not-allowed;
-}
-
-.timelog-actionBtn--file {
-  position: relative;
-  overflow: hidden;
-}
-
-.timelog-fileInput {
-  position: absolute;
-  inset: 0;
-  opacity: 0;
-  cursor: pointer;
-}
-
-.timelog-actionBtn--file[aria-disabled="true"] {
   opacity: 0.5;
-  pointer-events: none;
+  cursor: not-allowed;
+  filter: grayscale(1);
+}
+
+.timelog-actionBtn:hover:not(:disabled) {
+  transform: translateY(-5px);
+  box-shadow: 0 8px 20px rgba(109, 76, 65, 0.2);
+  border-color: var(--p-accent);
+}
+
+/* Premium Modal */
+.timelog-modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(5px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.timelog-modal__panel {
+  background: #fff;
+  width: 90%;
+  max-width: 400px;
+  padding: 30px;
+  border-radius: 12px;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15);
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+  animation: modalIn 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes modalIn {
+  from {
+    opacity: 0;
+    transform: scale(0.9) translateY(20px);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.timelog-modal__title {
+  font-size: 20px;
+  font-weight: 800;
+  color: var(--p-primary);
+  margin-bottom: 10px;
+  text-align: center;
+}
+
+.timelog-modal__label {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--p-text-muted);
+  margin-bottom: -5px;
+}
+
+.timelog-modal__input {
+  background: #f8f8f6;
+  border: 1px solid var(--p-glass-border);
+  border-radius: 6px;
+  padding: 12px 15px;
+  font-size: 14px;
+  color: var(--p-text);
+  outline: none;
+  transition: all 0.3s ease;
+}
+
+.timelog-modal__input:focus {
+  border-color: var(--p-accent);
+  background: #fff;
+  box-shadow: 0 0 0 3px rgba(140, 147, 136, 0.1);
+}
+
+.timelog-modal__file {
+  font-size: 13px;
+  color: var(--p-text-muted);
+}
+
+.timelog-modal__actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 20px;
+}
+
+.timelog-modal__btn {
+  flex: 1;
+  padding: 12px;
+  border-radius: 6px;
+  border: 1px solid var(--p-glass-border);
+  background: #fff;
+  color: var(--p-text);
+  font-weight: 700;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.timelog-modal__btn:hover {
+  background: #f0f0f0;
+}
+
+.timelog-modal__btn--primary {
+  background: var(--p-primary) !important;
+  color: #fff !important;
+  border: none !important;
+}
+
+.timelog-modal__btn--primary:hover {
+  background: #2a2c28 !important;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
 }

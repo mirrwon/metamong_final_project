@@ -7,7 +7,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
 
-from app.config import RESULT_DIR, UPLOAD_DIR, PLANTS_DIR, ASSET_DIR  # ✅ config 단일 소스 사용
+from app.config import RESULT_DIR, UPLOAD_DIR, PLANTS_DIR, ASSET_DIR
+
+load_dotenv()
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 from app.db.redis_client import get_redis, get_redis_error
 from app.db.mysql_client import get_mysql, get_mysql_error
@@ -16,9 +20,9 @@ from app.db.s3_client import ping_s3, get_s3_error, get_presigned_url
 from app.api.chat_routes import router as chat_router
 from app.api.diary_routes import router as diary_router
 from app.api.login_routes import router as login_router
+from app.api.plantboard_routes import router as plantboard_router
 
-# (선택) backend 루트 경로가 필요하면 유지
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+# ...
 AUTH_UPLOAD_DIR = os.path.normpath(os.path.join(BASE_DIR, "app", "api", "uploads"))
 AUTH_UPLOAD_MOUNT = "/auth-uploads"
 
@@ -26,9 +30,8 @@ AUTH_UPLOAD_MOUNT = "/auth-uploads"
 os.makedirs(RESULT_DIR, exist_ok=True)
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 os.makedirs(PLANTS_DIR, exist_ok=True)
-os.makedirs(ASSET_DIR, exist_ok=True)
 
-load_dotenv()
+os.makedirs(ASSET_DIR, exist_ok=True)
 
 app = FastAPI()
 
@@ -51,10 +54,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 라우터 등록
+# 라우터 등록 (All)
 app.include_router(chat_router)
 app.include_router(diary_router)
 app.include_router(login_router)
+app.include_router(plantboard_router)
 
 _plants_cache = {}
 _plants_key_cache = {}

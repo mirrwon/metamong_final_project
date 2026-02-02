@@ -1,4 +1,4 @@
-export default function TimeLogItemCard({ item, onDelete, showPlantTag = false }) {
+export default function TimeLogItemCard({ item, onDelete, showPlantTag = false, onDecorate }) {
   const icon = getTypeIcon(item?.type);
   const plantLabel = item?.plantName || item?.plant?.name || "";
 
@@ -30,15 +30,26 @@ export default function TimeLogItemCard({ item, onDelete, showPlantTag = false }
             ) : null}
           </div>
 
-          <button
-            type="button"
-            className="timelog-item__more"
-            onClick={handleDelete}
-            aria-label="기록 삭제"
-            title="삭제"
-          >
-            ⋯
-          </button>
+          <div className="timelog-item__topRight">
+            {(item?.type === "photo" || item?.type === "new") && hasImage && (
+              <button
+                type="button"
+                className="timelog-item__decorBtn"
+                onClick={() => typeof onDecorate === 'function' && onDecorate(item)}
+              >
+                사진 꾸미기
+              </button>
+            )}
+            <button
+              type="button"
+              className="timelog-item__deleteBtn"
+              onClick={handleDelete}
+              aria-label="기록 삭제"
+              title="삭제"
+            >
+              🗑️
+            </button>
+          </div>
         </div>
 
         {item?.detail ? (
@@ -65,7 +76,7 @@ function getTypeIcon(type) {
       return "💧";
     case "fertilizer":
       return "🧪";
-    case "move":
+    case "repot":
       return "🪴";
     case "note":
       return "📝";

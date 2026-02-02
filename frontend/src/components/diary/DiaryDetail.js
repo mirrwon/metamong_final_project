@@ -1,6 +1,4 @@
 import { useEffect, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
-import Button from "../common/Button";
 import api from "../../services/api";
 import './DiaryDetail.css'
 
@@ -29,7 +27,7 @@ const normalizeDiaryItems = (payload) => {
 /* 이미지 URL 해결 (조원 수정 반영) */
 const resolveImageUrl = (item) => {
   const filename = item?.image_filename || item?.imageFilename;
-  if (filename) return `${BACKEND_ORIGIN}/uploads/${filename}`;
+  if (filename) return `${BACKEND_ORIGIN}/auth-uploads/${filename}`;
 
   return (
     item?.imageUrl ||
@@ -61,10 +59,7 @@ const formatDateLabel = (value) => {
   return date.toLocaleDateString("en-CA"); // YYYY-MM-DD
 };
 
-const DiaryDetail = () => {
-  const { id } = useParams();
-  const nav = useNavigate();
-
+const DiaryDetail = ({ id, onGoList, onEdit, onDeleteSuccess }) => {
   const [status, setStatus] = useState("loading"); // loading | ready | error
   const [post, setPost] = useState(null);
   const [isLightboxOpen, setIsLightboxOpen] = useState(false);
@@ -77,9 +72,7 @@ const DiaryDetail = () => {
         const response = await api.get(API_BASE);
         const list = normalizeDiaryItems(response.data);
 
-        const found = list.find(
-          (item) => String(item?.id || item?._id) === String(id)
-        );
+        const found = list.find((item) => String(item?.id || item?._id) === String(id));
 
         setPost(found || null);
         setStatus("ready");
@@ -92,11 +85,11 @@ const DiaryDetail = () => {
   }, [id]);
 
   const handleEdit = () => {
-    nav(`/diary/${id}/edit`);
+    if (onEdit) onEdit(id);
   };
 
   const handleGoList = () => {
-    nav("/diary");
+    if (onGoList) onGoList();
   };
 
   const handleDelete = async () => {
@@ -107,7 +100,7 @@ const DiaryDetail = () => {
     setIsDeleting(true);
     try {
       await api.delete(`${API_BASE}/${id}`);
-      nav("/diary");
+      if (onDeleteSuccess) onDeleteSuccess();
     } catch (error) {
       setIsDeleting(false);
       window.alert("Failed to delete post.");
@@ -137,34 +130,34 @@ const DiaryDetail = () => {
   return (
     <div className="diary-detail">
       <div className="diary-detail__head">
-        <h1 className="diary-detail__title">Post View</h1>
-        <div className="ui-line diary-detail__line" />
+        <h1 className="diary-detail__title">DIARY VIEW</h1>
       </div>
 
       <div className="diary-detail__body">
-        <button
-          type="button"
-          className="diary-detail__photoBtn"
-          onClick={() => handleOpenLightbox(Boolean(imageUrl))}
-        >
-          {imageUrl ? (
-            <img
-              className="diary-detail__photo"
-              src={cacheBustedImageUrl}
-              alt={title}
-            />
-          ) : (
-            <div className="diary-detail__empty">
-              No photo available
-            </div>
-          )}
-        </button>
-
-        <div className="diary-detail__date">
-          {dateLabel || "No date"}
+        <div className="diary-detail__photo-card">
+          <button
+            type="button"
+            className="diary-detail__photoBtn"
+            onClick={() => handleOpenLightbox(Boolean(imageUrl))}
+          >
+            {imageUrl ? (
+              <img
+                className="diary-detail__photo"
+                src={cacheBustedImageUrl}
+                alt={title}
+              />
+            ) : (
+              <div className="diary-detail__empty">
+                No photo available
+              </div>
+            )}
+          </button>
         </div>
 
-        <div className="diary-detail__text">
+        <div className="diary-detail__text-card">
+          <div className="diary-detail__date">
+            {dateLabel || "No date"}
+          </div>
           <h2 className="diary-detail__postTitle">{title}</h2>
           <p className="diary-detail__content">
             {content || "No content provided."}
@@ -173,13 +166,21 @@ const DiaryDetail = () => {
       </div>
 
       <div className="diary-detail__actions">
-        <Button text="목록" type="option" onClick={handleGoList} />
-        <Button text="수정" type="primary" onClick={handleEdit} />
-        <Button
-          text={isDeleting ? "Deleting..." : "삭제"}
-          type="option"
-          onClick={handleDelete}
-        />
+        <div className="diary-detail__actions-row">
+          <button className="diary-detail-btn" onClick={handleGoList}>
+            <span>📋</span> 목록
+          </button>
+          <button className="diary-detail-btn" onClick={handleEdit}>
+            <span>✏️</span> 수정
+          </button>
+          <button
+            className="diary-detail-btn diary-detail-btn--danger"
+            onClick={handleDelete}
+            disabled={isDeleting}
+          >
+            <span>🗑️</span> {isDeleting ? "삭제중..." : "삭제"}
+          </button>
+        </div>
       </div>
 
       {isLightboxOpen && (
@@ -200,10 +201,10 @@ const DiaryDetail = () => {
             onClick={(e) => e.stopPropagation()}
           >
             <img
-            className="diary-lightbox__img"
-            src={cacheBustedImageUrl}
-            alt={title}
-          />
+              className="diary-lightbox__img"
+              src={cacheBustedImageUrl}
+              alt={title}
+            />
           </div>
         </div>
       )}

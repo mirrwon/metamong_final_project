@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import api from "../../services/api";
-
+import { Swiper, SwiperSlide } from "swiper/react";
+import { Autoplay, Pagination } from "swiper/modules";
+import "swiper/css";
+import "swiper/css/pagination";
 
 const buildImageUrl = (baseUrl, url) => {
   if (!url) return "";
@@ -65,8 +68,6 @@ const PlantPreview = () => {
 
   if (error) return <p className="catalog-status">{error}</p>;
 
-  const loopItems = items.length > 0 ? [...items, ...items] : [];
-
   const getImageCandidates = (url) => {
     if (!url) return [];
     const [basePart, queryPart] = url.split("?");
@@ -87,8 +88,24 @@ const PlantPreview = () => {
 
   return (
     <div className="plant-preview-marquee">
-      <div className="plant-preview-track">
-        {loopItems.map((plant, index) => {
+      <Swiper
+        modules={[Autoplay]}
+        spaceBetween={12} /* Tighter spacing for more items */
+        slidesPerView={3}
+        breakpoints={{
+          600: { slidesPerView: 4 },
+          900: { slidesPerView: 5 },
+          1200: { slidesPerView: 6 },
+          1600: { slidesPerView: 7 },
+        }}
+        loop={true}
+        autoplay={{
+          delay: 2500,
+          disableOnInteraction: false,
+        }}
+        className="plant-preview-swiper"
+      >
+        {items.map((plant, index) => {
           const key = `${plant.id || plant.name}-${index}`;
           const baseImage = plant.image ? buildImageUrl(baseUrl, plant.image) : "";
           const candidates = getImageCandidates(baseImage);
@@ -105,26 +122,25 @@ const PlantPreview = () => {
           };
 
           return (
-          <article
-            key={key}
-            className="plant-preview-card"
-          >
-            {imageUrl ? (
-              <img
-                src={imageUrl}
-                alt={plant.name}
-                className="plant-preview-image"
-                loading="lazy"
-                onError={handleImageError}
-              />
-            ) : (
-              <div className="plant-preview-image plant-preview-image--placeholder" />
-            )}
-            <p className="plant-preview-name">{plant.name}</p>
-          </article>
+            <SwiperSlide key={key}>
+              <article className="plant-preview-card">
+                {imageUrl ? (
+                  <img
+                    src={imageUrl}
+                    alt={plant.name}
+                    className="plant-preview-image"
+                    loading="lazy"
+                    onError={handleImageError}
+                  />
+                ) : (
+                  <div className="plant-preview-image plant-preview-image--placeholder" />
+                )}
+                <p className="plant-preview-name">{plant.name}</p>
+              </article>
+            </SwiperSlide>
           );
         })}
-      </div>
+      </Swiper>
     </div>
   );
 };

@@ -1,0 +1,153 @@
+:root {
+  --p-primary: #3E403B;
+  /* Dark Olive Grey */
+  --p-accent: #8C9388;
+  /* Muted Sage Grey */
+  --p-bg: #FAFAF8;
+  /* Warm Paper White */
+  --p-glass: rgba(255, 255, 255, 0.9);
+  --p-glass-border: rgba(0, 0, 0, 0.05);
+  --p-text: #3E403B;
+  --p-text-muted: #8C9388;
+  --p-shadow: 0 4px 20px 0 rgba(0, 0, 0, 0.03);
+
+  --sidebar-active: #E8E8E6;
+  --sidebar-bg: #8C9388;
+}
+
+.plantboard-container {
+  display: flex;
+  gap: 20px;
+  background-color: var(--p-bg);
+  padding: 20px;
+  height: 1000px;
+  max-width: 1200px;
+  /* 적용 위치 수정 */
+  margin: 0 auto;
+  min-height: 1000px;
+  box-sizing: border-box;
+  font-family: 'Inter', sans-serif;
+  overflow: hidden;
+  border: 1px solid #E0E0E0;
+  border-radius: 8px;
+}
+
+.plantboard-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+  width: 320px;
+  flex-shrink: 0;
+}
+
+.sidebar-compact-tab {
+  background-color: var(--p-primary);
+  color: white;
+  padding: 12px;
+  font-size: 14px;
+  font-weight: bold;
+  border-radius: 4px;
+  cursor: pointer;
+  text-align: center;
+  transition: all 0.3s ease;
+  border: 1px solid var(--p-primary);
+}
+
+.sidebar-compact-tab:hover {
+  background-color: var(--p-accent);
+}
+
+.sidebar-compact-tab.active {
+  background-color: var(--sidebar-active);
+  color: var(--p-primary);
+  border-color: var(--p-primary);
+}
+
+.sidebar-section {
+  flex: 1;
+  display: flex;
+  background: rgba(255, 255, 255, 0.795);
+  border: 1px solid var(--p-primary);
+  /* Brown border */
+  border-radius: 4px;
+  overflow: hidden;
+  position: relative;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  min-height: 0;
+}
+
+.sidebar-section:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+}
+
+.sidebar-section.active {
+  border-color: var(--p-accent);
+  /* Same as header brown */
+  background-color: var(--sidebar-active);
+}
+
+.sidebar-label {
+  background-color: var(--p-primary);
+  color: #fff;
+  width: 30px;
+  padding: 10px 5px;
+  writing-mode: vertical-lr;
+  text-orientation: upright;
+  font-weight: bold;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  letter-spacing: 2px;
+}
+
+.sidebar-content {
+  flex-grow: 1;
+  background-color: #fff;
+  padding: 10px;
+  min-height: 250px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.placeholder-box,
+.mini-box {
+  border: 2px dashed #ccc;
+  color: #ccc;
+  padding: 10px;
+  text-align: center;
+  font-size: 12px;
+}
+
+.plantboard-main {
+  flex-grow: 1;
+  background: white;
+  border: 1px solid var(--p-primary);
+  border-radius: 4px;
+  padding: 0;
+  /* Let TimeLogPage handle padding */
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.tamagotchi-view-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: #8d6e63;
+}
+
+.tamagotchi-placeholder {
+  height: 100%;
+}
+
+.diary-placeholder {
+  height: 400px;
+}

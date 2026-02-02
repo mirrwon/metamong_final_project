@@ -43,6 +43,8 @@ import AnalyzePage from "./components/chat/AnalyzePage";
 // layout (공통 레이아웃)
 import Layout from './components/layout/Layout';
 
+import "./styles/PageTransition.css";
+
 const SessionTracker = ({ user, onLogout }) => {
   const location = useLocation();
 
@@ -58,23 +60,84 @@ const SessionTracker = ({ user, onLogout }) => {
   return null;
 };
 
+const PageLoader = ({ isLoading }) => {
+  if (!isLoading) return null;
+
+  return (
+    <div className="page-loading-overlay">
+      <div className="page-loading-content">
+        <div className="page-loading-logo">Ditto</div>
+        <div className="page-loading-bar-wrap">
+          <div className="page-loading-bar" />
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const AppContent = ({ user, setUser, handleLogout }) => {
+  const location = useLocation();
+  const [isPageLoading, setIsPageLoading] = useState(false);
+  const [prevKey, setPrevKey] = useState(location.key);
+
+  // 라우트 변경 감지시 즉시 로딩 상태 활성화 (렌더링 단계에서 처리하여 깜빡임 방지)
+  if (location.key !== prevKey) {
+    setIsPageLoading(true);
+    setPrevKey(location.key);
+  }
+
+  useEffect(() => {
+    if (isPageLoading) {
+      const timer = setTimeout(() => {
+        setIsPageLoading(false);
+      }, 1000); // 1초로 약간 단축하여 체감 속도 개선
+      return () => clearTimeout(timer);
+    }
+  }, [isPageLoading]);
+
+  return (
+    <div className="App">
+      <SessionTracker user={user} onLogout={handleLogout} />
+      <PageLoader isLoading={isPageLoading} />
+
+      {/* 로딩 중에는 내부 컨텐츠를 보이지 않게 처리 */}
+      <div style={{ visibility: isPageLoading ? "hidden" : "visible", height: "100%" }}>
+        <Layout user={user} onLogout={handleLogout}>
+          <Routes>
+            <Route path={ROUTES.SPLASH} element={<Splash />} />
+            <Route path={ROUTES.HOME} element={<Home />} />
+            <Route path={ROUTES.LOGIN} element={<Login setUser={setUser} />} />
+            <Route path={ROUTES.REGISTER} element={<Register />} />
+            <Route path={ROUTES.MYINFO} element={user ? <Myinfo /> : <Navigate to={ROUTES.LOGIN} />} />
+            <Route path={ROUTES.MYINFO_EDIT} element={user ? <MyinfoEdit /> : <Navigate to={ROUTES.LOGIN} />} />
+            <Route path={ROUTES.CHAT} element={user ? <ChatPage /> : <Navigate to={ROUTES.LOGIN} />} />
+            <Route path={ROUTES.PLANTBOARD} element={user ? <PlantBoard /> : <Navigate to={ROUTES.LOGIN} />} />
+            <Route path={ROUTES.DIARY} element={user ? <DiaryMainPage /> : <Navigate to={ROUTES.LOGIN} />} />
+            <Route path={ROUTES.DIARY_NEW} element={user ? <DiaryNewPage /> : <Navigate to={ROUTES.LOGIN} />} />
+            <Route path={ROUTES.DIARY_DETAIL} element={user ? <DiaryDetailPage /> : <Navigate to={ROUTES.LOGIN} />} />
+            <Route path={ROUTES.DIARY_EDIT} element={user ? <DiaryEditPage /> : <Navigate to={ROUTES.LOGIN} />} />
+            <Route path={ROUTES.TIMELOG} element={user ? <TimeLogPage /> : <Navigate to={ROUTES.LOGIN} />} />
+            <Route path={ROUTES.PLANT_DATA} element={<PlantData />} />
+          </Routes>
+        </Layout>
+      </div>
+    </div>
+  );
+};
+
 function App() {
-  // localStorage에서 user 정보 불러와 초기 상태 설정
   const [user, setUser] = useState(readStoredUser());
 
-  // 로그아웃: localStorage 비우고 user 상태도 null로
   const handleLogout = () => {
     clearSession();
     setUser(null);
   };
 
-  //이미지 배경으로 설정
   useEffect(() => {
     document.documentElement.style.setProperty(
       "--bg-image",
       `url(${process.env.PUBLIC_URL}/images/cover.jpg)`
     );
-
     return () => {
       document.documentElement.style.removeProperty("--bg-image");
     };
@@ -84,16 +147,14 @@ function App() {
     const handleSessionExpired = () => {
       setUser(null);
     };
-
     window.addEventListener(SESSION_EXPIRED_EVENT, handleSessionExpired);
     return () => {
       window.removeEventListener(SESSION_EXPIRED_EVENT, handleSessionExpired);
     };
   }, []);
 
-
-
   return (
+ 
     <div className="App">
       <BrowserRouter>
         <SessionTracker user={user} onLogout={handleLogout} />

@@ -1,6 +1,6 @@
 import TimeLogItemCard from "./TimeLogItemCard";
 
-export default function TimeLogLine({ groups, onDelete, showPlantTag }) {
+export default function TimeLogLine({ groups, onDelete, showPlantTag, onEnterDecorate }) {
 
   if (!groups || groups.length === 0) {
     return <div className="timelog-empty">해당 기록이 없어요.</div>;
@@ -21,6 +21,7 @@ export default function TimeLogLine({ groups, onDelete, showPlantTag }) {
                 item={item}
                 onDelete={onDelete}
                 showPlantTag={showPlantTag}
+                onDecorate={onEnterDecorate}
               />
             ))}
           </div>
