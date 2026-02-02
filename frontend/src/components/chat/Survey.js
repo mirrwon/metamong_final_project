@@ -211,7 +211,17 @@ export default function Survey({ onComplete, allowSkip = true }) {
       if (typeof onComplete === "function") onComplete(saved);
 
       // ✅ 3페이지로 이동
+<<<<<<< HEAD
       nav(ROUTES.ANALYZE);
+=======
+      try {
+        sessionStorage.setItem("survey_answers", JSON.stringify(selected));
+      } catch (e) {
+        // ignore storage errors
+      }
+
+      nav(ROUTES.PLANT_PICK);
+>>>>>>> f0a1531 (chat plant 2026-02-02)
     } catch (e) {
       setStatus("ready");
       setSubmitError("Failed to submit survey.");
@@ -346,4 +356,8 @@ export default function Survey({ onComplete, allowSkip = true }) {
       </div>
     </div>
   );
+<<<<<<< HEAD
 }
+=======
+}
+>>>>>>> f0a1531 (chat plant 2026-02-02)

@@ -10,6 +10,10 @@
     "@testing-library/user-event": "^13.5.0",
     "axios": "^1.13.2",
     "framer-motion": "^12.25.0",
+<<<<<<< HEAD
+=======
+    "html2canvas": "^1.4.1",
+>>>>>>> f0a1531 (chat plant 2026-02-02)
     "react": "^19.2.3",
     "react-dom": "^19.2.3",
     "react-router-dom": "^7.11.0",

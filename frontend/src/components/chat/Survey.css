@@ -363,3 +363,51 @@
 .chatBtn:active {
   transform: translateY(0.5px);
 }
+<<<<<<< HEAD
+=======
+
+.plantSelectGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--s-3);
+}
+
+.plantCard {
+  border: 1px solid var(--c-line);
+  background: rgba(255, 255, 255, 0.72);
+  padding: var(--s-3);
+  display: grid;
+  gap: var(--s-2);
+  align-content: start;
+}
+
+.plantCard__name {
+  font-size: var(--fs-2);
+  font-weight: 600;
+  text-align: center;
+  color: var(--c-text);
+}
+
+.plantCard__imageWrap {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  border: 1px solid var(--c-line);
+  background: rgba(255, 255, 255, 0.6);
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+}
+
+.plantCard__img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.plantSelectFooter {
+  margin-top: var(--s-4);
+  display: flex;
+  justify-content: center;
+}
+>>>>>>> f0a1531 (chat plant 2026-02-02)
