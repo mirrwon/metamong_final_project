@@ -9,6 +9,8 @@ from dotenv import load_dotenv
 
 from app.config import RESULT_DIR, UPLOAD_DIR, PLANTS_DIR, ASSET_DIR
 
+from app.solar.kier_client import KierSolarClient
+
 load_dotenv()
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -554,3 +556,13 @@ def s3_debug():
     if not ok:
         return {"ok": False, "error": get_s3_error()}
     return {"ok": True}
+
+
+@app.on_event("startup")
+def test_kier():
+    client = KierSolarClient()
+    client.fetch_predc_simple(
+        lat=37.5665,
+        lot=126.978,
+        date="20260202"
+    )

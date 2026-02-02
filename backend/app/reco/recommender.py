@@ -70,6 +70,117 @@ def _light_score_from_times(times: dict) -> dict:
         "bias": bias,
     }
 
+def solar_items_to_times(items: list) -> dict:
+    """
+    KIER solar items -> {morning, noon, evening} 집계
+    """
+    if not items:
+        return {}
+
+    buckets = {
+        "morning": [],
+        "noon": [],
+        "evening": [],
+    }
+
+    for it in items:
+        try:
+            # 시간 파싱 (HHMM or HH)
+            t = str(it.get("time") or "")
+            hh = int(t[:2])
+
+            # 👉 KIER 일사량 필드 (이거 하나로 고정)
+            val = float(
+                it.get("srQty")
+                or it.get("srQtyWh")
+                or it.get("insolation")
+                or 0.0
+            )
+
+            if 6 <= hh < 10:
+                buckets["morning"].append(val)
+            elif 10 <= hh < 14:
+                buckets["noon"].append(val)
+            elif 14 <= hh < 18:
+                buckets["evening"].append(val)
+
+        except Exception:
+            continue
+
+    def avg(xs):
+        return sum(xs) / len(xs) if xs else 0.0
+
+    return {
+        "morning": avg(buckets["morning"]),
+        "noon": avg(buckets["noon"]),
+        "evening": avg(buckets["evening"]),
+    }
+
+def _infer_window_dir(data: Dict[str, Any]) -> Optional[str]:
+    """
+    data에서 창 방향(동/서/남/북)을 최대한 안전하게 추출.
+    반환: "E"|"W"|"S"|"N" 또는 None
+    """
+    if not isinstance(data, dict):
+        return None
+
+    # 1) 명시 라벨 우선 (문자열)
+    candidates = [
+        _safe_get(data, ["window", "direction"]),
+        _safe_get(data, ["window_info", "direction"]),
+        _safe_get(data, ["windows", 0, "direction"]) if isinstance(data.get("windows"), list) else None,
+        data.get("window_direction"),
+        data.get("dir"),
+    ]
+    for v in candidates:
+        if isinstance(v, str) and v.strip():
+            s = v.strip().upper()
+            # 한국어 대응
+            if s in ("동", "동향", "E", "EAST"): return "E"
+            if s in ("서", "서향", "W", "WEST"): return "W"
+            if s in ("남", "남향", "S", "SOUTH"): return "S"
+            if s in ("북", "북향", "N", "NORTH"): return "N"
+
+    # 2) 방위각(azimuth) 있으면 각도로 추정 (0=N, 90=E, 180=S, 270=W 가정)
+    az = (
+        _safe_get(data, ["window", "azimuth"])
+        or _safe_get(data, ["window_info", "azimuth"])
+        or data.get("azimuth")
+    )
+    try:
+        if az is not None:
+            a = float(az) % 360.0
+            # 8방위 중 4방위로 축약
+            if 45 <= a < 135: return "E"
+            if 135 <= a < 225: return "S"
+            if 225 <= a < 315: return "W"
+            return "N"
+    except Exception:
+        pass
+
+    return None
+
+def _window_dir_scale(dir_code: Optional[str]) -> Dict[str, float]:
+    """
+    창 방향에 따른 시간대 보정 스케일(상대 가중).
+    - 남향: 정오 강함
+    - 동향: 오전 강함
+    - 서향: 오후 강함
+    - 북향: 전체 약함(균등 낮게)
+    """
+    d = (dir_code or "").upper()
+
+    if d == "S":
+        return {"morning": 0.85, "noon": 1.20, "evening": 0.90}
+    if d == "E":
+        return {"morning": 1.20, "noon": 1.00, "evening": 0.75}
+    if d == "W":
+        return {"morning": 0.75, "noon": 1.00, "evening": 1.20}
+    if d == "N":
+        return {"morning": 0.80, "noon": 0.80, "evening": 0.80}
+
+    # 방향 모르면 중립
+    return {"morning": 1.0, "noon": 1.0, "evening": 1.0}
 
 def _compute_spot_score(spot: dict) -> dict:
     """
@@ -189,13 +300,69 @@ def recommend_for_analysis(data: Dict[str, Any], user_filters: Dict[str, Any] | 
 
     # ---- spots scoring / sorting (너 코드 그대로) ----
     spots = data.get("spots") or []
+
+    # 1) KIER solar -> times (morning/noon/evening)
+    solar_items = data.get("solar", {}).get("items") if isinstance(data.get("solar"), dict) else None
+    solar_times = solar_items_to_times(solar_items) if solar_items else None  # {m,n,e} or {}
+
+    # 2) 창 방향 -> times scale
+    win_dir = _infer_window_dir(data)  # "E"/"W"/"S"/"N"/None
+    dir_scale = _window_dir_scale(win_dir)
+
+    # 3) solar_times를 0~1 normalize해서 "일별 강도" 스케일로 쓰고,
+    #    dir_scale(방향 보정)까지 곱해서 최종 scale 생성
+    def _normalize_times(t: Dict[str, float]) -> Dict[str, float]:
+        m = float(t.get("morning") or 0.0)
+        n = float(t.get("noon") or 0.0)
+        e = float(t.get("evening") or 0.0)
+        mx = max(m, n, e, 1e-9)
+        return {"morning": m / mx, "noon": n / mx, "evening": e / mx}
+
+    solar_scale = _normalize_times(solar_times) if isinstance(solar_times, dict) and solar_times else None
+
+    # 최종 스케일: (solar_scale or 1) * dir_scale
+    final_scale = {
+        "morning": (solar_scale["morning"] if solar_scale else 1.0) * dir_scale["morning"],
+        "noon": (solar_scale["noon"] if solar_scale else 1.0) * dir_scale["noon"],
+        "evening": (solar_scale["evening"] if solar_scale else 1.0) * dir_scale["evening"],
+    }
+
+    # 디버깅/프론트 확인용
+    data["solar_apply"] = {
+        "ok": True if solar_times else False,
+        "window_dir": win_dir,
+        "solar_times": solar_times,
+        "dir_scale": dir_scale,
+        "solar_scale": solar_scale,
+        "final_scale": final_scale,
+    }
+
     for s in spots:
         if not isinstance(s, dict):
             continue
-        res = _compute_spot_score(s)
+
         s.setdefault("features", {})
-        s["features"]["score"] = res["score"]
-        s["features"]["score_breakdown"] = res["breakdown"]
+        feats = s["features"]
+
+        # 원본 CV times 보존
+        cv_times = feats.get("times_cv") or feats.get("times")
+        if isinstance(cv_times, dict) and "times_cv" not in feats:
+            feats["times_cv"] = dict(cv_times)
+
+        # final_scale 적용: cv_times가 있으면 그걸 스케일링, 없으면 solar_times를 기본으로 사용
+        base_times = cv_times if isinstance(cv_times, dict) else (
+            solar_times if isinstance(solar_times, dict) else None)
+        if isinstance(base_times, dict):
+            feats["times"] = {
+                "morning": _clamp01(float(base_times.get("morning") or 0.0) * float(final_scale["morning"])),
+                "noon": _clamp01(float(base_times.get("noon") or 0.0) * float(final_scale["noon"])),
+                "evening": _clamp01(float(base_times.get("evening") or 0.0) * float(final_scale["evening"])),
+            }
+
+        # 기존 CV 점수 계산
+        res = _compute_spot_score(s)
+        feats["score"] = res["score"]
+        feats["score_breakdown"] = res["breakdown"]
 
     spots_sorted = sorted(
         [s for s in spots if isinstance(s, dict)],

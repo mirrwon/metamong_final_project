@@ -41,6 +41,33 @@ class KierSolarClient:
     def is_configured(self) -> bool:
         return bool(self.base_url) and bool(self.service_key)
 
+    def fetch_predc_simple(self, *, lat: float, lot: float, date: str) -> None:
+        params = {
+            "serviceKey": self.service_key,
+            "dataType": "JSON",
+            "pageNo": 1,
+            "numOfRows": 10,
+            "date": date,
+            "time": "1200",
+            "lat": lat,
+            "lot": lot,
+        }
+
+        service_key = self.service_key
+        url = f"{self.base_url}?serviceKey={service_key}"
+
+        r = requests.get(url, params=params, timeout=self.timeout_sec)
+        print("[KIER][SIMPLE] status =", r.status_code)
+
+        try:
+            data = r.json()
+            header = data.get("response", {}).get("header", {})
+            print("[KIER][SIMPLE] resultCode =", header.get("resultCode"),
+                  "msg =", header.get("resultMsg"))
+            print("[KIER][SIMPLE] body keys =", data.get("response", {}).get("body", {}).keys())
+        except Exception as e:
+            print("[KIER][SIMPLE] json parse error:", e)
+
     def fetch_predc(
         self,
         *,

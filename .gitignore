@@ -8,4 +8,8 @@ __pycache__/
 backend/app/models/sam_vit_b.pth
 backend/results/
 backend/results/*.json
+backend/results/*.jpg
+backend/results/*.png
 backend/results/result_latest.json
+backend/uploads/*.jpg
+backend/uploads/*.png

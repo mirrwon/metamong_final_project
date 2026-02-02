@@ -729,6 +729,10 @@ async def handle_chat_image(
     # ctx에 무조건 저장 (2번에서 analyze가 이걸 씀)
     set_user_ctx(key, {"last_image_path": save_path}, ttl_sec=60 * 60 * 6)
 
+    # meta도 ctx에 저장 (태양광/좌표용)
+    if meta:
+        set_user_ctx(key, {"meta": meta}, ttl_sec=60 * 60 * 6)
+
     # 2) room_type/scene_id 확정 로직
     user_opts: Dict[str, Any] = {}
 
@@ -885,6 +889,47 @@ async def handle_chat_analyze(request: Request, body: AnalyzeBody) -> JSONRespon
             sid_is_new,
         )
 
+    data = out if isinstance(out, dict) else {}
+
+    # =========================
+    # 🔆 KIER 태양광 예측 삽입 구간
+    # =========================
+    try:
+        # 1) meta는 body가 아니라 ctx(업로드 단계에서 저장됨)에서 꺼낸다
+        #    ctx 안에 meta가 string(json)일 수도 dict일 수도 있어서 util로 처리
+        meta_ctx = None
+        if isinstance(ctx, dict):
+            meta_ctx = ctx.get("meta") or ctx.get("last_meta") or ctx.get("upload_meta")
+
+        lat, lot = get_lat_lot_from_meta(meta_ctx)
+
+        # 2) 시간/날짜: KST 기준으로 만드는 게 안전
+        ymd, hhmm = now_kst_yyyymmdd_hhmm()
+        hhmm = _sanitize_kier_time(hhmm)
+
+        if lat is not None and lot is not None:
+            # 전역 solar_client 써도 되고 새로 만들어도 됨. 여기선 전역 사용.
+            solar_res = solar_client.fetch_predc(
+                lat=float(lat),
+                lot=float(lot),
+                date=str(ymd),
+                time_hhmm=str(hhmm),
+            )
+
+            if solar_res:
+                data["solar"] = {
+                    "source": "KIER",
+                    "fetched_at": solar_res.fetched_at,
+                    "date": solar_res.date,
+                    "time": solar_res.time,
+                    "lat": solar_res.lat,
+                    "lot": solar_res.lot,
+                    "items": solar_res.items,
+                }
+    except Exception as e:
+        print("[WARN] KIER solar fetch failed:", e)
+
+    # =========================
     # 2) 추천
     data = out if isinstance(out, dict) else {}
     data["space"] = classify_space(data) if isinstance(data, dict) else None
