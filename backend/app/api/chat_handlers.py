@@ -51,6 +51,7 @@ solar_client = KierSolarClient()
 
 class AnalyzeBody(BaseModel):
     filters: Dict[str, Any] = {}
+    meta: Optional[Dict[str, Any]] = None
 
 def _pick_scene_for_room_compat(room_type: str):
     """
@@ -731,7 +732,14 @@ async def handle_chat_image(
 
     # meta도 ctx에 저장 (태양광/좌표용)
     if meta:
-        set_user_ctx(key, {"meta": meta}, ttl_sec=60 * 60 * 6)
+        m = meta
+        try:
+            # meta가 JSON 문자열이면 dict로 저장
+            if isinstance(m, str) and m.strip().startswith("{"):
+                m = json.loads(m)
+        except Exception:
+            m = meta  # 파싱 실패 시 원문 유지
+        set_user_ctx(key, {"meta": m}, ttl_sec=60 * 60 * 6)
 
     # 2) room_type/scene_id 확정 로직
     user_opts: Dict[str, Any] = {}
@@ -866,6 +874,26 @@ async def handle_chat_analyze(request: Request, body: AnalyzeBody) -> JSONRespon
     user_filters = body.filters if isinstance(body.filters, dict) else {}
     set_user_ctx(key, {"filters": user_filters}, ttl_sec=60 * 60 * 6)
 
+    # meta: body.meta 우선, 없으면 ctx.meta 사용
+    meta = getattr(body, "meta", None)
+    if not isinstance(meta, dict) or len(meta) == 0:
+        meta = ctx.get("meta")
+
+    # meta가 JSON string이면 dict로 변환
+    if isinstance(meta, str):
+        try:
+            meta = json.loads(meta)
+        except Exception:
+            meta = None
+
+    # dict 아니면 None 처리
+    if not isinstance(meta, dict):
+        meta = None
+
+    lat_v = safe_float((meta or {}).get("lat"))
+    lot_v = safe_float((meta or {}).get("lot"))
+    print("[DEBUG] lat/lot =", lat_v, lot_v)
+
     # scene_id 없으면 room_type로 픽 시도
     if not scene_id and room_type:
         try:
@@ -892,42 +920,57 @@ async def handle_chat_analyze(request: Request, body: AnalyzeBody) -> JSONRespon
     data = out if isinstance(out, dict) else {}
 
     # =========================
-    # 🔆 KIER 태양광 예측 삽입 구간
+    # 🔆 KIER 태양광 예측 삽입 (FIXED)
     # =========================
     try:
-        # 1) meta는 body가 아니라 ctx(업로드 단계에서 저장됨)에서 꺼낸다
-        #    ctx 안에 meta가 string(json)일 수도 dict일 수도 있어서 util로 처리
-        meta_ctx = None
-        if isinstance(ctx, dict):
-            meta_ctx = ctx.get("meta") or ctx.get("last_meta") or ctx.get("upload_meta")
+        # meta는 위에서 이미 dict or None으로 정규화했음
+        m = meta if isinstance(meta, dict) else {}
 
-        lat, lot = get_lat_lot_from_meta(meta_ctx)
+        lat_v = safe_float(m.get("lat"))
+        lot_v = safe_float(m.get("lot"))
 
-        # 2) 시간/날짜: KST 기준으로 만드는 게 안전
-        ymd, hhmm = now_kst_yyyymmdd_hhmm()
-        hhmm = _sanitize_kier_time(hhmm)
+        # hhmm: meta 우선 -> 없으면 현재시간, 그리고 KIER용으로 HH00 보정
+        hhmm_raw = str(m.get("hhmm") or m.get("time") or time.strftime("%H%M"))
+        hhmm_kier = _sanitize_kier_time(hhmm_raw)  # "1200" 같은 형태 보장
 
-        if lat is not None and lot is not None:
-            # 전역 solar_client 써도 되고 새로 만들어도 됨. 여기선 전역 사용.
+        print("[DEBUG] kier.meta lat/lot/hhmm =", lat_v, lot_v, hhmm_kier)
+
+        import inspect
+        print("[KIER][CALLSITE]", inspect.getfile(KierSolarClient))
+
+        if lat_v is not None and lot_v is not None:
             solar_res = solar_client.fetch_predc(
-                lat=float(lat),
-                lot=float(lot),
-                date=str(ymd),
-                time_hhmm=str(hhmm),
+                lat=lat_v,
+                lot=lot_v,
+                date=time.strftime("%Y%m%d"),
+                time_hhmm=hhmm_kier,
             )
 
-            if solar_res:
-                data["solar"] = {
+            print("[DEBUG] solar_res is None?", solar_res is None)
+            if solar_res is not None:
+                print("[DEBUG] solar_res.items.len =", len(solar_res.items))
+
+            if solar_res and isinstance(out, dict):
+                out["solar"] = {
                     "source": "KIER",
                     "fetched_at": solar_res.fetched_at,
-                    "date": solar_res.date,
-                    "time": solar_res.time,
-                    "lat": solar_res.lat,
-                    "lot": solar_res.lot,
                     "items": solar_res.items,
                 }
+
+            if isinstance(out, dict) and isinstance(out.get("solar"), dict):
+                items = (out.get("solar") or {}).get("items")
+                solar_summary = _solar_summary_from_items(items)
+                if isinstance(solar_summary, dict) and solar_summary.get("ok") is True:
+                    out["solar_summary"] = solar_summary
+                    out = _apply_solar_to_spots(out, solar_summary)
+
     except Exception as e:
         print("[WARN] KIER solar fetch failed:", e)
+
+    print("[DEBUG] solar in out:", isinstance(out, dict) and "solar" in out)
+    if isinstance(out, dict):
+        print("[DEBUG] solar.items.len:", len((out.get("solar") or {}).get("items") or []))
+        print("[DEBUG] keys:", list(out.keys())[:30])
 
     # =========================
     # 2) 추천

@@ -558,11 +558,11 @@ def s3_debug():
     return {"ok": True}
 
 
-@app.on_event("startup")
-def test_kier():
-    client = KierSolarClient()
-    client.fetch_predc_simple(
-        lat=37.5665,
-        lot=126.978,
-        date="20260202"
-    )
+# @app.on_event("startup")
+# def test_kier():
+#     client = KierSolarClient()
+#     client.fetch_predc_simple(
+#         lat=37.5665,
+#         lot=126.978,
+#         date="20260202"
+#     )

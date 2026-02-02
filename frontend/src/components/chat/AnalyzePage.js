@@ -28,11 +28,21 @@ export default function AnalyzePage() {
 
       try {
         // ✅ 지금은 목데이터(filters 비워도 백엔드가 동작하도록 설계돼있음)
+        const meta = {
+          lat: 37.5665,          // 임시 고정값 (나중에 GPS/EXIF)
+          lot: 126.9780,
+          hhmm: new Date().toTimeString().slice(0, 5).replace(":", ""),
+        };
+
         const res = await fetchWithSession(ANALYZE_API, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ filters: {} }),
+          body: JSON.stringify({
+            filters: {},
+            meta: { lat: 37.5665, lot: 126.9780, hhmm: "1200" }
+          }),
         });
+
 
         if (!res.ok) throw new Error("analyze_failed");
         const data = await res.json();
