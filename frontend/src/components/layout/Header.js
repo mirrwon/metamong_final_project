@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { ROUTES } from "../../constants/routes";
 import "./Header.css";
@@ -42,7 +42,20 @@ const Header = ({ user, onLogout }) => {
   const goChat = () => navigateOrReload(ROUTES.UPLOAD);
   const goPlantBoard = () => navigateOrReload(ROUTES.PLANTBOARD);
   const goPlantData = () => navigateOrReload(ROUTES.PLANT_DATA);
+  const goMap = () => navigateOrReload(ROUTES.MAP);
   const goLogin = () => navigateOrReload(ROUTES.LOGIN);
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const menuRef = useRef(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (menuRef.current && !menuRef.current.contains(e.target)) {
+        setIsMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   const handleLogout = () => {
     closeMenu();
@@ -58,23 +71,23 @@ const Header = ({ user, onLogout }) => {
         </div>
       )}
 
-      <header className="header">
-        <div className="header-top">
-          <div className="header-logo typo-title" onClick={goHome} role="button" tabIndex={0}>
-            Ditto
-          </div>
+    <header className="header">
+    <div className="header-top">
+      <div className="header-logo typo-title" onClick={goHome} role="button" tabIndex={0}>
+        Ditto
+      </div>
 
-          <button
-            className="header-auth"
-            type="button"
-            onClick={user ? handleLogout : goLogin}
-          >
-            {user ? "logout" : "login"}
-          </button>
-        </div>
+      <button
+        className="header-auth"
+        type="button"
+        onClick={user ? handleLogout : goLogin}
+      >
+        {user ? "logout" : "login"}
+      </button>
+    </div>
 
-        <nav className="header-nav">
-          <button className="header-link" type="button" onClick={goHome}>
+    <nav className="header-nav">
+      <button className="header-link" type="button" onClick={goHome}>
             Home
           </button>
 
@@ -107,6 +120,10 @@ const Header = ({ user, onLogout }) => {
 
           <button className="header-link" type="button" onClick={goPlantData}>
             Data
+          </button>
+
+          <button className="header-link" type="button" onClick={goMap}>
+            Map
           </button>
         </nav>
       </header>

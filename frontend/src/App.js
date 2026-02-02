@@ -24,6 +24,7 @@ import Myinfo from './pages/Myinfo';
 import MyinfoEdit from './pages/MyinfoEdit';
 import ChatPage from "./pages/ChatPage";
 import PlantData from './pages/PlantData';
+import Map from './pages/Map';
 
 //게시판
 import PlantBoard from "./pages/plantboard/PlantBoard";
@@ -126,18 +127,22 @@ const AppContent = ({ user, setUser, handleLogout }) => {
 };
 
 function App() {
+  // localStorage에서 user 정보 불러와 초기 상태 설정
   const [user, setUser] = useState(readStoredUser());
 
+  // 로그아웃: localStorage 비우고 user 상태도 null로
   const handleLogout = () => {
     clearSession();
     setUser(null);
   };
 
+  //이미지 배경으로 설정
   useEffect(() => {
     document.documentElement.style.setProperty(
       "--bg-image",
       `url(${process.env.PUBLIC_URL}/images/cover.jpg)`
     );
+
     return () => {
       document.documentElement.style.removeProperty("--bg-image");
     };
@@ -147,14 +152,17 @@ function App() {
     const handleSessionExpired = () => {
       setUser(null);
     };
+
     window.addEventListener(SESSION_EXPIRED_EVENT, handleSessionExpired);
     return () => {
       window.removeEventListener(SESSION_EXPIRED_EVENT, handleSessionExpired);
     };
   }, []);
 
+
+
   return (
- 
+
     <div className="App">
       <BrowserRouter>
         <SessionTracker user={user} onLogout={handleLogout} />
@@ -204,6 +212,12 @@ function App() {
               element={user ? <PlantBoard/> : <Navigate to={ROUTES.LOGIN} />}
             /> 
 
+            {/* Map: 로그인한 사용자만 접근 */}
+            <Route
+              path={ROUTES.MAP}
+              element={user ? <Map /> : <Navigate to={ROUTES.LOGIN} />}
+            />
+
 
             <Route
               path={ROUTES.DIARY}
@@ -232,7 +246,7 @@ function App() {
               element={<PlantData />}
             />
 
-           <Route 
+            <Route 
               path={ROUTES.UPLOAD}
               element={<UploadPage />}
             />
