@@ -34,7 +34,7 @@ export default function TimeLogItemCard({ item, onDelete, showPlantTag = false, 
             {(item?.type === "photo" || item?.type === "new") && hasImage && (
               <button
                 type="button"
-                className="timelog-item__decorBtn"
+                className="timelog-item__decorBtn ui-btn ui-btn-primary ui-btn--compact"
                 onClick={() => typeof onDecorate === 'function' && onDecorate(item)}
               >
                 사진 꾸미기
@@ -76,6 +76,12 @@ function getTypeIcon(type) {
       return "💧";
     case "fertilizer":
       return "🧪";
+    case "move":
+      return "📦";
+    case "mist":
+      return "💦";
+    case "clean":
+      return "🧽";
     case "repot":
       return "🪴";
     case "note":
