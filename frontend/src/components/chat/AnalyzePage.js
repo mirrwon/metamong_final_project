@@ -5,10 +5,7 @@ import "./Survey.css";
 const API_BASE = "http://localhost:8000/api/chat";
 const ANALYZE_API = `${API_BASE}/analyze`;
 const API_ORIGIN = "http://localhost:8000";
-<<<<<<< HEAD
-=======
 const SELECTED_PLANT_KEY = "selected_plant";
->>>>>>> f0a1531 (chat plant 2026-02-02)
 
 const resolveImageUrl = (url) => {
   if (!url) return null;
@@ -21,21 +18,14 @@ export default function AnalyzePage() {
   const [status, setStatus] = useState("idle"); // idle|loading|done|error
   const [error, setError] = useState("");
   const [images, setImages] = useState([]);
-<<<<<<< HEAD
-=======
-  const [selectedPlant, setSelectedPlant] = useState(null);
-
-  useEffect(() => {
-    const raw = sessionStorage.getItem(SELECTED_PLANT_KEY);
-    if (!raw) return;
+  const [selectedPlant] = useState(() => {
     try {
-      const parsed = JSON.parse(raw);
-      setSelectedPlant(parsed);
+      const raw = sessionStorage.getItem(SELECTED_PLANT_KEY);
+      return raw ? JSON.parse(raw) : null;
     } catch (e) {
-      // ignore parse errors
+      return null;
     }
-  }, []);
->>>>>>> f0a1531 (chat plant 2026-02-02)
+  });
 
   useEffect(() => {
     let alive = true;
@@ -47,18 +37,11 @@ export default function AnalyzePage() {
 
       try {
         // ✅ 지금은 목데이터(filters 비워도 백엔드가 동작하도록 설계돼있음)
-<<<<<<< HEAD
-        const res = await fetchWithSession(ANALYZE_API, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ filters: {} }),
-=======
         const filters = selectedPlant ? { selectedPlant } : {};
         const res = await fetchWithSession(ANALYZE_API, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ filters }),
->>>>>>> f0a1531 (chat plant 2026-02-02)
         });
 
         if (!res.ok) throw new Error("analyze_failed");
@@ -86,7 +69,7 @@ export default function AnalyzePage() {
     return () => {
       alive = false;
     };
-  }, []);
+  }, [selectedPlant]);
 
   return (
     <div className="surveyPage">
@@ -97,12 +80,9 @@ export default function AnalyzePage() {
             <p className="surveyDesc">분석 결과 및 Gemini 이미지 생성 결과를 표시합니다.</p>
           </header>
 
-<<<<<<< HEAD
-=======
           {selectedPlant?.name && (
             <p className="surveyStatus">선택한 식물: {selectedPlant.name}</p>
           )}
->>>>>>> f0a1531 (chat plant 2026-02-02)
           {status === "loading" && <p className="surveyStatus">공간 분석 중...</p>}
           {error && <p className="surveyStatus surveyStatus--error">{error}</p>}
 
@@ -129,8 +109,4 @@ export default function AnalyzePage() {
       </div>
     </div>
   );
-<<<<<<< HEAD
 }
-=======
-}
->>>>>>> f0a1531 (chat plant 2026-02-02)

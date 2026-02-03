@@ -39,10 +39,7 @@ import TimeLogPage from "./pages/plantboard/TimeLogPage";
 // 챗봇 2,3Page
 import UploadPage from "./components/chat/UploadPage";
 import Survey from "./components/chat/Survey";
-<<<<<<< HEAD
-=======
 import PlantSelectPage from "./components/chat/PlantSelectPage";
->>>>>>> f0a1531 (chat plant 2026-02-02)
 import AnalyzePage from "./components/chat/AnalyzePage";
 
 // layout (공통 레이아웃)
@@ -261,14 +258,11 @@ function App() {
             />
 
             <Route 
-<<<<<<< HEAD
-=======
               path={ROUTES.PLANT_PICK}
               element={<PlantSelectPage />}
             />
 
             <Route 
->>>>>>> f0a1531 (chat plant 2026-02-02)
               path={ROUTES.ANALYZE}
               element={<AnalyzePage />}
             />

@@ -363,8 +363,6 @@
 .chatBtn:active {
   transform: translateY(0.5px);
 }
-<<<<<<< HEAD
-=======
 
 .plantSelectGrid {
   display: grid;
@@ -410,4 +408,3 @@
   display: flex;
   justify-content: center;
 }
->>>>>>> f0a1531 (chat plant 2026-02-02)

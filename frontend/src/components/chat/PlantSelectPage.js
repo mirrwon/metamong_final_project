@@ -171,6 +171,8 @@ const shuffle = (arr) => {
   return out;
 };
 
+const DISPLAY_COUNT = 8;
+
 const fetchAllPlants = async () => {
   const items = [];
   let offset = 0;
@@ -257,8 +259,8 @@ export default function PlantSelectPage() {
 
     const shuffled = shuffle(normalized);
     setFilteredPlants(shuffled);
-    setVisiblePlants(shuffled.slice(0, 5));
-    setRemainingPlants(shuffled.slice(5));
+    setVisiblePlants(shuffled.slice(0, DISPLAY_COUNT));
+    setRemainingPlants(shuffled.slice(DISPLAY_COUNT));
   }, [status, allPlants, survey]);
 
   const remainingCount = remainingPlants.length;
@@ -266,8 +268,8 @@ export default function PlantSelectPage() {
   const handleShowMore = () => {
     if (remainingPlants.length === 0) return;
     const shuffled = shuffle(remainingPlants);
-    setVisiblePlants(shuffled.slice(0, 5));
-    setRemainingPlants(shuffled.slice(5));
+    setVisiblePlants(shuffled.slice(0, DISPLAY_COUNT));
+    setRemainingPlants(shuffled.slice(DISPLAY_COUNT));
   };
 
   const handlePick = (plant) => {

@@ -25,10 +25,7 @@ export const ROUTES = {
 
     UPLOAD: "/upload",
     SURVEY: "/survey",
-<<<<<<< HEAD
-=======
     PLANT_PICK: "/plant-pick",
->>>>>>> f0a1531 (chat plant 2026-02-02)
     ANALYZE: "/analyze"
 
 };
