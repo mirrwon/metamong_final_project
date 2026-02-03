@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 
 from app.config import RESULT_DIR, UPLOAD_DIR, PLANTS_DIR, ASSET_DIR
 
-from app.solar.kier_client import KierSolarClient
+from app.solar.weather_client import AsosWeatherClient
 
 load_dotenv()
 
@@ -557,12 +557,3 @@ def s3_debug():
         return {"ok": False, "error": get_s3_error()}
     return {"ok": True}
 
-
-# @app.on_event("startup")
-# def test_kier():
-#     client = KierSolarClient()
-#     client.fetch_predc_simple(
-#         lat=37.5665,
-#         lot=126.978,
-#         date="20260202"
-#     )

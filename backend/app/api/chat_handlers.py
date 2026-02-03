@@ -20,7 +20,7 @@ from app.config import BASE_DIR, RESULT_DIR, RESULT_JSON_LATEST, UPLOAD_DIR, ASS
 from app.llm.image_edit import composite_plant_on_original
 from app.llm.gemini.gemini_image_edit import gemini_edit_image
 
-from app.solar.kier_client import KierSolarClient
+from app.solar.weather_client import AsosWeatherClient
 from app.reco.recommender import recommend_for_analysis
 
 from .chat_session import _get_or_create_sid, _json_with_sid, _get_client_id
@@ -47,7 +47,7 @@ load_dotenv()
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 os.makedirs(RESULT_DIR, exist_ok=True)
 
-solar_client = KierSolarClient()
+weather_client = AsosWeatherClient()
 
 class AnalyzeBody(BaseModel):
     filters: Dict[str, Any] = {}
@@ -224,68 +224,52 @@ def _prompt_for_edit(best_point: Any, spot_usage: str, plant_name: Optional[str]
 # =========================
 # SOLAR helpers (원본 유지)
 # =========================
-def _solar_summary_from_items(items: Any) -> Dict[str, Any]:
+def _solar_summary_from_asos(weather_res: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    AsosWeatherClient에서 받은 단일 실측 데이터를
+    기존 시스템이 이해하는 morning/noon/evening 구조로 변환합니다.
+    """
     out = {
         "ok": False,
-        "times": {"morning": None, "noon": None, "evening": None},
-        "ranges": {"morning": [6, 10], "noon": [11, 15], "evening": [16, 19]},
-        "source": "kier_predc_items",
+        "times": {"morning": 0.0, "noon": 0.0, "evening": 0.0},
+        "source": "kma_asos",
         "reason": "",
     }
 
-    if not isinstance(items, list) or len(items) == 0:
-        out["reason"] = "items_empty"
+    if not weather_res:
+        out["reason"] = "weather_data_empty"
         return out
 
-    time_keys = ("time", "hhmm", "tm", "t", "baseTime", "fcstTime", "hour")
-    value_keys = (
-        "value", "solar", "insolation", "radiation", "ghi", "dni", "dhi",
-        "predc", "pred", "y", "val"
-    )
+    # ASOS 실측값 가져오기
+    try:
+        val = float(weather_res.get("solar_radiation") or 0.0)
+    except (ValueError, TypeError):
+        val = 0.0
 
-    buckets = {"morning": [], "noon": [], "evening": []}
+    # 시간 파싱 보강 (observed_at 대응)
+    obs_time = str(weather_res.get("observed_at") or "")
+    hh = 12 # 기본값
 
-    for row in items:
-        if not isinstance(row, dict):
-            continue
+    try:
+        if " " in obs_time:
+            # "2026-02-03 12" 형식 대응
+            hh = int(obs_time.split()[-1].split(":")[0])
+        elif len(obs_time) >= 10:
+            # "202602031200" 형식 대응 (뒤에서 4~2번째 자리)
+            hh = int(obs_time[-4:-2])
+    except Exception:
+        hh = 12 # 에러 시 정오로 간주
 
-        hh = None
-        for k in time_keys:
-            if k in row:
-                hh = parse_hh_from_any(row.get(k))
-                if hh is not None:
-                    break
-        if hh is None:
-            continue
-
-        vv = None
-        for k in value_keys:
-            if k in row:
-                vv = safe_float(row.get(k))
-                if vv is not None:
-                    break
-        if vv is None:
-            continue
-
-        if 6 <= hh <= 10:
-            buckets["morning"].append(vv)
-        elif 11 <= hh <= 15:
-            buckets["noon"].append(vv)
-        elif 16 <= hh <= 19:
-            buckets["evening"].append(vv)
-
-    def avg(xs: list) -> Optional[float]:
-        if not xs:
-            return None
-        return float(sum(xs) / len(xs))
-
-    out["times"]["morning"] = avg(buckets["morning"])
-    out["times"]["noon"] = avg(buckets["noon"])
-    out["times"]["evening"] = avg(buckets["evening"])
-
-    if out["times"]["morning"] is None and out["times"]["noon"] is None and out["times"]["evening"] is None:
-        out["reason"] = "no_parsable_rows"
-        return out
+    # 현재 실측된 값을 해당 시간대에 할당
+    if 6 <= hh <= 10:
+        out["times"]["morning"] = val
+    elif 11 <= hh <= 15:
+        out["times"]["noon"] = val
+    elif 16 <= hh <= 19:
+        out["times"]["evening"] = val
+    else:
+        # 야간(0.0)이거나 범위를 벗어나면 noon에 할당하여 가중치 0으로 처리
+        out["times"]["noon"] = val
 
     out["ok"] = True
     return out
@@ -361,259 +345,21 @@ def _apply_solar_to_spots(data: Dict[str, Any], solar_summary: Dict[str, Any]) -
 # /api/chat (POST) handler
 # =========================
 async def handle_chat_post(request: Request) -> JSONResponse:
-    body = await request.json()
-    text = (body.get("text") or "").strip()
-
+    # 1/2/3 페이지 분리 이후, chat 텍스트 플로우는 사용하지 않음.
+    # (프론트가 실수로 호출해도 깨지지 않도록 최소 응답만 반환)
     sid, sid_is_new = _get_or_create_sid(request)
-    key = sid
-
-    if text == "마음에 들어요":
-        return _json_with_sid(
-            {
-                "messages": [
-                    {
-                        "type": "text",
-                        "text": "저장할까요? 다음 중 선택해주세요.",
-                        "payload": {"options": ["저장", "저장 목록 보기", "이미지 생성 프롬프트 만들기", "다른 사진으로 다시 추천"]},
-                    }
-                ]
-            },
-            sid,
-            sid_is_new,
-        )
-
-    is_filter_summary = ("식물 경험" in text) or ("반려동물 여부" in text)
-    if is_filter_summary and isinstance(body.get("filters"), dict) and len(body["filters"]) > 0:
-        set_user_ctx(key, {"filters": body["filters"]}, ttl_sec=60 * 60 * 6)
-        return _json_with_sid(
-            {
-                "messages": [
-                    {"type": "text", "text": f"수신: {text}"},
-                    {"type": "text", "text": "사진 업로드를 진행해주세요.", "payload": {"input": {"type": "image"}}},
-                ]
-            },
-            sid,
-            sid_is_new,
-        )
-
-    if text == "저장":
-        latest = load_latest_result()
-        if not latest:
-            return _json_with_sid(
-                {
-                    "messages": [
-                        {
-                            "type": "text",
-                            "text": "저장할 분석 결과가 없습니다. 먼저 사진 업로드 후 분석을 진행해주세요.",
-                            "payload": {"input": {"type": "image"}},
-                        }
-                    ]
-                },
-                sid,
-                sid_is_new,
-            )
-
-        ctx = get_user_ctx(key)
-        last_image = ctx.get("last_image_path") if isinstance(ctx, dict) else None
-
-        snapshot = dict(latest) if isinstance(latest, dict) else {}
-        if isinstance(ctx, dict):
-            for k2 in ("filters", "constraints", "last_detail_text"):
-                if k2 in ctx:
-                    snapshot[f"_user_{k2}"] = ctx.get(k2)
-
-        try:
-            saved_id = db_save_reco(client_key=key, image_path=str(last_image or ""), result=snapshot)
-            return _json_with_sid(
-                {
-                    "messages": [
-                        {"type": "text", "text": f"저장 완료! (id={saved_id})"},
-                        {
-                            "type": "text",
-                            "text": "다음 중 선택해주세요.",
-                            "payload": {"options": ["저장 목록 보기", "이미지 생성 프롬프트 만들기", "다른 사진으로 다시 추천"]},
-                        },
-                    ]
-                },
-                sid,
-                sid_is_new,
-            )
-        except Exception as e:
-            return _json_with_sid({"messages": [{"type": "text", "text": f"저장 실패: {str(e)}"}]}, sid, sid_is_new)
-
-    if text == "저장 목록 보기":
-        try:
-            rows = db_list_recos(client_key=key, limit=20)
-        except Exception as e:
-            return _json_with_sid({"messages": [{"type": "text", "text": f"저장 목록 조회 실패: {str(e)}"}]}, sid, sid_is_new)
-
-        if not rows:
-            return _json_with_sid({"messages": [{"type": "text", "text": "저장된 항목이 없습니다."}]}, sid, sid_is_new)
-
-        lines: List[str] = []
-        for r in rows:
-            rid = r.get("id")
-            created = r.get("created_at")
-            imgp = r.get("image_path") or ""
-            top1 = ""
-            rj = r.get("result_json") or {}
-            if isinstance(rj, dict):
-                bs = rj.get("best_spot") or {}
-                if isinstance(bs, dict):
-                    tp = bs.get("top_plants") or []
-                    if isinstance(tp, list) and tp and isinstance(tp[0], dict):
-                        top1 = tp[0].get("name") or ""
-            lines.append(f"- id={rid} / at={created} / top1={top1} / image={imgp}")
-
-        return _json_with_sid(
-            {
-                "messages": [
-                    {"type": "text", "text": "저장 목록\n" + "\n".join(lines)},
-                    {"type": "text", "text": "다음 중 선택해주세요.", "payload": {"options": ["다른 사진으로 다시 추천", "이미지 생성 프롬프트 만들기"]}},
-                ]
-            },
-            sid,
-            sid_is_new,
-        )
-
-    if text == "이미지 생성 프롬프트 만들기":
-        data = load_latest_result()
-        best_point = extract_best_point(data)
-
-        marker_path = os.path.join(RESULT_DIR, "result_latest_marker.png")
-        if not os.path.exists(marker_path):
-            return _json_with_sid(
-                {
-                    "messages": [
-                        {
-                            "type": "text",
-                            "text": "result_latest_marker.png 가 없습니다. 먼저 사진 업로드 후 분석을 진행해주세요.",
-                            "payload": {"input": {"type": "image"}},
-                        }
-                    ]
-                },
-                sid,
-                sid_is_new,
-            )
-
-        best_spot = data.get("best_spot", {}) if isinstance(data, dict) else {}
-        spot_usage = best_spot.get("spot_usage", "floor_large")
-
-        plant_name = None
-        top_plants = best_spot.get("top_plants", [])
-        if isinstance(top_plants, list) and len(top_plants) > 0 and isinstance(top_plants[0], dict):
-            plant_name = top_plants[0].get("name")
-
-        prompt_txt = _prompt_for_edit(best_point=best_point, spot_usage=spot_usage, plant_name=plant_name)
-
-        out_path = os.path.join(RESULT_DIR, "result_latest_ai_edit.png")
-        edit_result = gemini_edit_image(input_image_path=marker_path, prompt=prompt_txt, out_path=out_path)
-
-        messages: List[Dict[str, Any]] = []
-        if edit_result.get("ok") and os.path.exists(out_path):
-            messages.append({"type": "text", "text": "Gemini 이미지 편집 결과입니다."})
-            messages.append(
-                {
-                    "type": "images",
-                    "text": "result_latest_ai_edit",
-                    "images": [{"name": "result_latest_ai_edit", "url": abs_url(request, "/results/result_latest_ai_edit.png")}],
-                }
-            )
-        else:
-            messages.append({"type": "text", "text": f"Gemini 편집 실패: {edit_result.get('reason', 'unknown')}"})
-
-        messages.append({"type": "text", "text": "다음 중 선택해주세요.", "payload": {"options": ["마음에 들어요", "상세 입력", "다른 사진으로 다시 추천"]}})
-        return _json_with_sid({"messages": messages}, sid, sid_is_new)
-
-    if text == "상세 입력":
-        set_user_state(key, {"mode": "awaiting_detail"}, ttl_sec=60 * 60 * 6)
-        return _json_with_sid({"messages": [{"type": "text", "text": "상세 내용을 입력해주세요.", "payload": {"input": {"type": "text"}}}]}, sid, sid_is_new)
-
-    if text == "다른 사진으로 다시 추천":
-        return _json_with_sid(
-            {
-                "messages": [
-                    {"type": "text", "text": "다른 사진을 업로드해주세요."},
-                    {"type": "text", "text": "사진 업로드를 진행해주세요.", "payload": {"input": {"type": "image"}}},
-                ]
-            },
-            sid,
-            sid_is_new,
-        )
-
-    state = get_user_state(key)
-    mode = state.get("mode")
-    is_option = text in ["마음에 들어요", "상세 입력", "저장", "저장 목록 보기", "이미지 생성 프롬프트 만들기", "다른 사진으로 다시 추천"]
-
-    if mode == "awaiting_detail" and text and (not is_option):
-        set_user_state(key, {"mode": None}, ttl_sec=60 * 60 * 6)
-        constraints = parse_detail_text_to_constraints(text)
-
-        # kg_answer = handle_chat(
-        #     question=text,
-        #     user_num=key,
-        #     session_id=None,
-        #     rules=KG_RULES,
-        #     loader=KG_LOADER,
-        #     llm=KG_LLM,
-        # )
-
-        # set_user_ctx(key, {"last_detail_text": text, "constraints": constraints, "kg_answer": kg_answer}, ttl_sec=60 * 60 * 6)
-
-        # messages: List[Dict[str, Any]] = [{"type": "text", "text": f"상세 입력 수신: {text}"}]
-        # ans_list = kg_answer.get("answer") or []
-        # messages.append({"type": "text", "text": "\n".join(ans_list) if isinstance(ans_list, list) and ans_list else "현재 정보로는 답하기 어려워요."})
-
-        # fq = kg_answer.get("followup_question") or ""
-        # if isinstance(fq, str) and fq.strip():
-        #     messages.append({"type": "text", "text": fq.strip()})
-
-        # messages.append({"type": "text", "text": "다음 중 선택해주세요.", "payload": {"options": ["이미지 생성 프롬프트 만들기", "다른 사진으로 다시 추천", "마음에 들어요"]}})
-        # return _json_with_sid({"messages": messages}, sid, sid_is_new)
-
     return _json_with_sid(
-        {"messages": [{"type": "text", "text": f"수신: {text}"}, {"type": "text", "text": "사진 업로드를 진행해주세요.", "payload": {"input": {"type": "image"}}}]},
+        {
+            "ok": True,
+            "deprecated": True,
+            "messages": [
+                {"type": "text", "text": "이 엔드포인트(/api/chat POST)는 더 이상 사용하지 않습니다. /api/chat/image 및 /api/chat/analyze를 사용하세요."}
+            ],
+        },
         sid,
         sid_is_new,
     )
 
-def _hhmm_from_meta_or_now(meta) -> str:
-    # meta가 JSON string일 수도 있음
-    if isinstance(meta, str):
-        try:
-            import json
-            meta = json.loads(meta)
-        except Exception:
-            meta = {}
-
-    if isinstance(meta, dict):
-        t = meta.get("hhmm") or meta.get("time") or meta.get("capture_time")
-        if isinstance(t, str):
-            s = t.strip().replace(":", "")
-            if len(s) == 4 and s.isdigit():
-                return s
-
-    # 기본값: 서버 현재시간 (HHMM)
-    return datetime.now().strftime("%H%M")
-
-def _sanitize_kier_time(hhmm: str) -> str:
-    """
-    KIER API가 분(min)이 있는 값(0002 같은 것)을 싫어해서
-    'HH00' 형태로 내리고, 너무 이른/늦은 시간은 정오로 보정한다.
-    """
-    s = (hhmm or "").strip().replace(":", "")
-    if len(s) < 2 or not s[:2].isdigit():
-        return "1200"
-
-    hh = int(s[:2])
-    # 분은 무조건 00으로
-    out = f"{hh:02d}00"
-
-    # 새벽/밤 시간은 예측값이 없거나 invalid 뜨는 경우가 많아서 안전하게 정오로 보정
-    if hh < 6 or hh > 19:
-        return "1200"
-
-    return out
 
 def _run_pipeline_compat(save_path: str, user_opts: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
@@ -827,7 +573,6 @@ async def handle_chat_image(
 async def handle_chat_analyze(request: Request, body: AnalyzeBody) -> JSONResponse:
     sid, sid_is_new = _get_or_create_sid(request)
     key = sid
-    cid = _get_client_id(request) or sid
 
     ctx = get_user_ctx(key) or {}
     save_path = ctx.get("last_image_path")
@@ -836,119 +581,55 @@ async def handle_chat_analyze(request: Request, body: AnalyzeBody) -> JSONRespon
 
     if not save_path or not os.path.exists(str(save_path)):
         return _json_with_sid(
-            {"ok": False, "messages": [{"type": "text", "text": "업로드된 이미지가 없습니다. 먼저 1번에서 이미지를 업로드하세요."}]},
-            sid,
-            sid_is_new,
+            {"ok": False, "messages": [{"type": "text", "text": "업로드된 이미지가 없습니다."}]},
+            sid, sid_is_new,
         )
 
-    # filters 저장
     user_filters = body.filters if isinstance(body.filters, dict) else {}
     set_user_ctx(key, {"filters": user_filters}, ttl_sec=60 * 60 * 6)
 
-    # meta: body.meta 우선, 없으면 ctx.meta 사용
-    meta = getattr(body, "meta", None)
-    if not isinstance(meta, dict) or len(meta) == 0:
-        meta = ctx.get("meta")
-
-    # meta가 JSON string이면 dict로 변환
-    if isinstance(meta, str):
-        try:
-            meta = json.loads(meta)
-        except Exception:
-            meta = None
-
-    # dict 아니면 None 처리
-    if not isinstance(meta, dict):
-        meta = None
-
-    lat_v = safe_float((meta or {}).get("lat"))
-    lot_v = safe_float((meta or {}).get("lot"))
-    print("[DEBUG] lat/lot =", lat_v, lot_v)
-
-    # scene_id 없으면 room_type로 픽 시도
-    if not scene_id and room_type:
-        try:
-            scene_id = _pick_scene_for_room_compat(room_type)
-            if scene_id:
-                set_user_ctx(key, {"scene_id": scene_id}, ttl_sec=60 * 60 * 6)
-        except Exception:
-            pass
-
-    user_opts: Dict[str, Any] = {}
-    if scene_id:
-        user_opts["scene_id"] = scene_id
-
     # 1) CV 실행
+    user_opts = {"scene_id": scene_id} if scene_id else {}
     try:
         out = _run_pipeline_compat(str(save_path), user_opts=user_opts)
     except Exception as e:
-        return _json_with_sid(
-            {"ok": False, "messages": [{"type": "text", "text": f"공간 분석 중 오류: {e}"}]},
-            sid,
-            sid_is_new,
-        )
+        return _json_with_sid({"ok": False, "messages": [{"type": "text", "text": f"분석 중 오류: {e}"}]}, sid, sid_is_new)
 
     data = out if isinstance(out, dict) else {}
 
-    # =========================
-    # 🔆 KIER 태양광 예측 삽입 (FIXED)
-    # =========================
+    # ========================================================
+    # 🚀 [기상청 ASOS 데이터 주입 및 보정] - 수정 포인트
+    # ========================================================
+    weather_res = None
+
+    ## 원래 코드 ##
     try:
-        # meta는 위에서 이미 dict or None으로 정규화했음
-        m = meta if isinstance(meta, dict) else {}
+        weather_res = weather_client.fetch_growth_profile("108")
 
-        lat_v = safe_float(m.get("lat"))
-        lot_v = safe_float(m.get("lot"))
+        # --- 낮시간 테스트를 위한 코드 (확인 후 삭제) ---
+        weather_res["solar_radiation"] = "2.5"
+        weather_res["ok"] = True
+        # -----------------------------------------------
 
-        # hhmm: meta 우선 -> 없으면 현재시간, 그리고 KIER용으로 HH00 보정
-        hhmm_raw = str(m.get("hhmm") or m.get("time") or time.strftime("%H%M"))
-        hhmm_kier = _sanitize_kier_time(hhmm_raw)  # "1200" 같은 형태 보장
 
-        print("[DEBUG] kier.meta lat/lot/hhmm =", lat_v, lot_v, hhmm_kier)
 
-        import inspect
-        print("[KIER][CALLSITE]", inspect.getfile(KierSolarClient))
+        data["solar"] = weather_res
 
-        if lat_v is not None and lot_v is not None:
-            solar_res = solar_client.fetch_predc(
-                lat=lat_v,
-                lon=lot_v,
-                date=time.strftime("%Y%m%d"),
-                time_hhmm=hhmm_kier,
-            )
-
-            print("[DEBUG] solar_res is None?", solar_res is None)
-            if solar_res is not None:
-                print("[DEBUG] solar_res.items.len =", len(solar_res.items))
-
-            if solar_res and isinstance(out, dict):
-                out["solar"] = {
-                    "source": "KIER",
-                    "fetched_at": solar_res.fetched_at,
-                    "items": solar_res.items,
-                }
-
-            if isinstance(out, dict) and isinstance(out.get("solar"), dict):
-                items = (out.get("solar") or {}).get("items")
-                solar_summary = _solar_summary_from_items(items)
-                if isinstance(solar_summary, dict) and solar_summary.get("ok") is True:
-                    out["solar_summary"] = solar_summary
-                    out = _apply_solar_to_spots(out, solar_summary)
-
-    except Exception as e:
-        print("[WARN] KIER solar fetch failed:", e)
-
-    print("[DEBUG] solar in out:", isinstance(out, dict) and "solar" in out)
-    if isinstance(out, dict):
-        print("[DEBUG] solar.items.len:", len((out.get("solar") or {}).get("items") or []))
-        print("[DEBUG] keys:", list(out.keys())[:30])
+        solar_summary = _solar_summary_from_asos(weather_res)
+        if solar_summary.get("ok"):
+            data = _apply_solar_to_spots(data, solar_summary)
+            print(f"☀️ 기상청 데이터 적용 성공: {weather_res.get('solar_radiation')} MJ/m2")
+    except Exception as solar_err:
+        print(f"☀️ 기상청 데이터 처리 중 최종 오류: {solar_err}")
 
     # =========================
-    # 2) 추천
-    data = out if isinstance(out, dict) else {}
+    # 2) 추천 (보정된 data 전달)
+    # =========================
     data["space"] = classify_space(data) if isinstance(data, dict) else None
+
     data = recommend_for_analysis(data, user_filters=user_filters)
     data["image_path"] = str(save_path)
+
 
     # 3) 결과 저장
     latest_json = os.path.join(RESULT_DIR, "result_latest.json")
