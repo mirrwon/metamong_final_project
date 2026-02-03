@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-import os
-import time
-import requests
+import os, time, requests, json
 from dataclasses import dataclass
 from typing import Any, Dict, Optional, List, Tuple
 from urllib.parse import unquote
@@ -22,13 +20,10 @@ class KierSolarResult:
 
 class KierSolarClient:
     """
-    KIER(공공데이터포털) 일사량 API 호출기.
+    KIER(공공데이터포털) 일사량 예측 API 호출기.
 
-    핵심:
-    - resultCode=11(필수 파라미터 없음)이 '값' 문제가 아니라 '키 이름' 불일치인 경우가 많음.
-    - 그래서 baseDate/baseTime/latitude/longitude 뿐 아니라 base_date/base_time, lat/lon 별칭을
-      "제한된 조합"으로만 시도한다. (무한 루프/로그 폭발 방지)
-    - _type=json 같은건 HTML/XML 내려주는 케이스 많아서 제거.
+    swagger 기준 파라미터(중요):
+      - serviceKey, pageNo, numOfRows, type, date, time, lat, lot
     """
 
     def __init__(
@@ -38,13 +33,21 @@ class KierSolarClient:
         timeout_sec: int = 8,
     ) -> None:
         self.base_url = (base_url or os.getenv("KIER_SOLAR_BASE_URL", "")).strip()
+
+        # ✅ 이미 붙어있는 query (? 뒤) 제거 — endpoint만 남긴다
+        if "?" in self.base_url:
+            self.base_url = self.base_url.split("?", 1)[0]
+
         self.service_key = (service_key or os.getenv("KIER_SOLAR_SERVICE_KEY", "")).strip()
         self.timeout_sec = int(timeout_sec)
 
-
         # serviceKey 더블 인코딩 방지
-        if "%" in self.service_key:
-            self.service_key = unquote(self.service_key)
+        # if "%" in self.service_key:
+        #     self.service_key = unquote(self.service_key)
+
+        # base_url 보정: scheme 없으면 https 붙임
+        if self.base_url and not self.base_url.startswith(("http://", "https://")):
+            self.base_url = "https://" + self.base_url.lstrip("/")
 
         print("[KIER][CONF] base_url =", self.base_url)
         print("[KIER][CONF] key_len  =", len(self.service_key))
@@ -55,79 +58,86 @@ class KierSolarClient:
     # -------------------------
     # Public
     # -------------------------
-    def fetch_predc_simple(self, *, lat: float, lon: float, date: str, hhmm: str = "1200") -> Optional[KierSolarResult]:
+    def fetch_predc_simple(
+        self,
+        *,
+        lat: float,
+        lon: float,
+        date: str,
+        hhmm: str = "1200",
+    ) -> Optional[KierSolarResult]:
         return self.fetch_predc(lat=lat, lon=lon, date=date, time_hhmm=hhmm)
 
     def fetch_predc(
-            self,
-            *,
+            self, *,
             lat: float,
-            lot: float,
             date: str,
             time_hhmm: str,
+            lon: Optional[float] = None,
+            lot: Optional[float] = None,
             page_no: int = 1,
             num_rows: int = 200,
     ) -> Optional[KierSolarResult]:
+
         if not self.is_configured():
             print("[KIER][ERR] not configured")
             return None
 
-        endpoint = "/getSrQtyPredcInfo"
-        url = self.base_url.rstrip("/") + endpoint
+        lon_v = lon if lon is not None else lot
+        if lon_v is None:
+            print("[KIER][ERR] missing longitude")
+            return None
 
-        print("LOCAL_DATE=", time.strftime("%Y%m%d"))
+        # 1. 날짜 및 시간 포맷 정밀 보정
+        d_try = str(date).strip().replace("-", "")  # YYYYMMDD
 
-        # ---- normalize date ----
-        d = (date or "").strip().replace("-", "")
-        if not (len(d) == 8 and d.isdigit()):
-            d = time.strftime("%Y%m%d")
-        yr, mm, day = d[:4], d[4:6], d[6:8]
+        # [중요] 에러 10번 해결책: "1200" 대신 "12"만 요구하는 경우가 많음
+        t_raw = (time_hhmm or "").strip().replace(":", "")
+        t_val = t_raw[:2] if len(t_raw) >= 2 else "12"
 
-        # ---- normalize time ----
-        t = (time_hhmm or "").strip().replace(":", "")
-        hh_int = int(t[:2]) if len(t) >= 2 and t[:2].isdigit() else 12
-        hh = f"{hh_int:02d}00"  # 1200
+        # 2. 서비스키 디코딩
+        final_key = unquote(self.service_key)
 
-        url = f"{self.base_url}?serviceKey={self.service_key}"
-
-        # =========================
-        # 1) ✅ yr/mm/day/hh/lat/lot ONLY (너가 브라우저에서 성공한 포맷)
-        # =========================
+        # 3. 파라미터 조합 (에러 10번 방지를 위해 소수점 제한 및 명칭 최적화)
         params = {
+            "serviceKey": final_key,
+            "pageNo": str(page_no),
+            "numOfRows": str(num_rows),
             "dataType": "JSON",
-            "pageNo": int(page_no),
-            "numOfRows": int(num_rows),
-            "yr": yr,
-            "mm": mm,
-            "day": day,
-            "hh": hh,
-            "lat": str(lat),
-            "lot": str(lot),
+            "date": d_try,
+            "time": t_val,  # HHMM이 아니라 HH일 가능성 적용
+            "lat": str(round(float(lat), 4)),  # 소수점 너무 길면 에러날 수 있음
+            "lot": str(round(float(lon_v), 4)),
         }
 
+        url = self.base_url.split("?", 1)[0]
+
+        # 4. 호출 및 URL 출력 (여기서 확인 가능합니다)
         r = requests.get(url, params=params, timeout=self.timeout_sec)
-        print("[KIER][HTTP] status =", r.status_code)
-        print("[KIER][HTTP] url    =", r.url)
+
+        print("-" * 50)
+        print(f"[KIER][HTTP] status = {r.status_code}")
+        print(f"[KIER][HTTP] url    = {r.url}")  # 이 URL을 복사해서 브라우저에 붙여넣으세요!
+        print("-" * 50)
 
         data = self._safe_parse_body(r)
         code, msg = self._extract_header_code_msg(data)
         print(f"[KIER][PARSE] resultCode={code} msg={msg}")
 
         if str(code) != "00":
-            print("[KIER][ERR_BODY_HEAD]", (r.text or "")[:300])
+            print("[KIER][PARSE][FAIL_BODY_HEAD]", (r.text or "")[:300])
             return None
 
         items = self._extract_items(data)
-        print("[KIER][PARSE] items_len =", len(items))
         if not items:
             return None
 
         return KierSolarResult(
             fetched_at=time.time(),
-            date=d,
-            time=hh,
+            date=d_try,
+            time=t_val,
             lat=float(lat),
-            lot=float(lot),
+            lon=float(lon_v),
             items=items,
             raw=data if isinstance(data, dict) else {"raw": data},
         )
@@ -136,18 +146,15 @@ class KierSolarClient:
     # Internals
     # -------------------------
     def _safe_parse_body(self, r: requests.Response) -> Any:
-        """
-        JSON 실패하면 XML 파싱 시도.
-        """
         txt = (r.text or "").strip()
 
-        # 1) JSON 시도
+        # 1) JSON
         try:
             return r.json()
         except Exception:
             pass
 
-        # 2) XML 시도
+        # 2) XML
         if txt.startswith("<"):
             try:
                 return self._xml_to_dict(txt)
@@ -155,13 +162,10 @@ class KierSolarClient:
                 print("[KIER][ERR] xml parse failed:", e)
                 return {"raw_text_head": txt[:300]}
 
-        # 3) 기타(HTML 등)
+        # 3) HTML/기타
         return {"raw_text_head": txt[:300]}
 
     def _xml_to_dict(self, xml_text: str) -> Dict[str, Any]:
-        """
-        data.go.kr 스타일 XML을 dict 비슷하게.
-        """
         root = ET.fromstring(xml_text)
 
         def strip_tag(tag: str) -> str:
@@ -175,7 +179,6 @@ class KierSolarClient:
             for ch in children:
                 k = strip_tag(ch.tag)
                 v = node_to_obj(ch)
-                # 같은 태그가 여러 번 나오면 list로
                 if k in d:
                     if not isinstance(d[k], list):
                         d[k] = [d[k]]
@@ -187,19 +190,15 @@ class KierSolarClient:
         return {strip_tag(root.tag): node_to_obj(root)}
 
     def _extract_header_code_msg(self, data: Any) -> Tuple[str, str]:
-        """
-        JSON/XML 어디로 와도 resultCode/resultMsg를 최대한 찾아본다.
-        """
         if isinstance(data, dict):
-            # JSON 케이스: response.header
-            resp = data.get("response") if "response" in data else None
+            # JSON: response.header.resultCode/resultMsg
+            resp = data.get("response")
             if isinstance(resp, dict):
                 header = resp.get("header")
                 if isinstance(header, dict):
                     return str(header.get("resultCode") or ""), str(header.get("resultMsg") or "")
 
-            # XML dict 케이스: response/header/resultCode 이런 구조일 수도
-            # root가 response일 수도 있으니 전부 탐색
+            # XML dict 등 fallback
             code = self._deep_get(data, ["response", "header", "resultCode"]) or self._deep_find_key(data, "resultCode")
             msg = self._deep_get(data, ["response", "header", "resultMsg"]) or self._deep_find_key(data, "resultMsg")
             return str(code or ""), str(msg or "")
@@ -207,14 +206,9 @@ class KierSolarClient:
         return "", ""
 
     def _extract_items(self, data: Any) -> List[Dict[str, Any]]:
-        """
-        JSON: response.body.items.item
-        XML dict: 비슷한 경로로 최대한 접근
-        """
         if not isinstance(data, dict):
             return []
 
-        # JSON 표준 경로
         resp = data.get("response")
         if isinstance(resp, dict):
             body = resp.get("body")
@@ -227,13 +221,11 @@ class KierSolarClient:
                     if isinstance(item, dict):
                         return [item]
 
-        # XML dict fallback: key 이름이 조금 다를 수 있으니 느슨하게 찾기
         found = self._deep_find_key(data, "item")
         if isinstance(found, list):
             return [x for x in found if isinstance(x, dict)]
         if isinstance(found, dict):
             return [found]
-
         return []
 
     def _deep_get(self, d: Dict[str, Any], path: List[str]) -> Any:

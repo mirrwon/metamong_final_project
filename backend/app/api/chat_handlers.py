@@ -53,65 +53,36 @@ class AnalyzeBody(BaseModel):
     filters: Dict[str, Any] = {}
     meta: Optional[Dict[str, Any]] = None
 
-def _pick_scene_for_room_compat(room_type: str):
+def _pick_scene_for_room_compat(room_type: str, seed: Optional[str] = None):
     """
     room_type(거실/침실/주방/욕실 또는 영어 변형)를 받아서
-    DEFAULT_SCENE_ROOT 기준으로 scene_id를 무조건 하나 뽑아 반환한다.
-    (없으면 None)
+    DEFAULT_SCENE_ROOT 기준으로 scene_id를 하나 뽑아 반환한다. (없으면 None)
     """
-    # --- normalize to Korean keys ---
     rt = (room_type or "").strip()
     rt_key = rt.replace(" ", "").lower()
 
     rt_map = {
-        # Korean
-        "거실": "거실",
-        "침실": "침실",
-        "주방": "주방",
-        "욕실": "욕실",
-
-        # English variants -> Korean
-        "livingroom": "거실",
-        "living_room": "거실",
-        "living": "거실",
-
-        "bedroom": "침실",
-        "bed_room": "침실",
-
+        "거실": "거실", "침실": "침실", "주방": "주방", "욕실": "욕실",
+        "livingroom": "거실", "living_room": "거실", "living": "거실",
+        "bedroom": "침실", "bed_room": "침실",
         "kitchen": "주방",
-
-        "bathroom": "욕실",
-        "bath_room": "욕실",
-        "restroom": "욕실",
-        "toilet": "욕실",
+        "bathroom": "욕실", "bath_room": "욕실", "restroom": "욕실", "toilet": "욕실",
     }
-
     room_kor = rt_map.get(rt, rt_map.get(rt_key, rt))
 
-    # --- 1) groups에서 직접 뽑기 (가장 확실) ---
+    # ✅ groups를 반드시 dict로 만든 뒤 pick_scene_for_room(groups, room_type)로만 호출
     try:
         groups = build_room_groups(DEFAULT_SCENE_ROOT)
-        arr = groups.get(room_kor) or []
-        if isinstance(arr, list) and len(arr) > 0:
-            # 항상 하나는 뽑아서 반환
-            return random.choice(arr)
-    except Exception as e:
-        print("[pick_scene_compat][WARN] build_room_groups failed:", e)
+        if not isinstance(groups, dict):
+            print("[pick_scene_compat][WARN] groups is not dict:", type(groups))
+            return None
 
-    # --- 2) 기존 pick_scene_for_room 시도 (있으면 사용) ---
-    try:
-        return pick_scene_for_room(DEFAULT_SCENE_ROOT, room_kor)
-    except TypeError:
-        pass
+        picked = pick_scene_for_room(groups, room_kor, seed=seed)
+        return picked
     except Exception as e:
-        print("[pick_scene_compat][WARN] pick_scene_for_room(root, room) failed:", e)
+        print("[pick_scene_compat][WARN] build/pick failed:", e)
+        return None
 
-    try:
-        return pick_scene_for_room(room_kor)
-    except Exception as e:
-        print("[pick_scene_compat][WARN] pick_scene_for_room(room) failed:", e)
-
-    return None
 
 
 # ✅ room groups(options)만
@@ -941,7 +912,7 @@ async def handle_chat_analyze(request: Request, body: AnalyzeBody) -> JSONRespon
         if lat_v is not None and lot_v is not None:
             solar_res = solar_client.fetch_predc(
                 lat=lat_v,
-                lot=lot_v,
+                lon=lot_v,
                 date=time.strftime("%Y%m%d"),
                 time_hhmm=hhmm_kier,
             )
