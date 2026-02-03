@@ -28,6 +28,41 @@ const normalizeValues = (val) =>
     .map((v) => String(v).trim().toLowerCase())
     .filter(Boolean);
 
+const SIZE_LABELS = {
+  small: "소형",
+  medium: "중형",
+  large: "대형",
+  s: "소형",
+  m: "중형",
+  l: "대형",
+};
+
+const STYLE_LABELS = {
+  natural: "내추럴",
+  minimal: "미니멀",
+  trendy: "트렌디",
+};
+
+const PLANT_STYLE_LABELS = {
+  flowery: "꽃",
+  leafy: "관엽",
+  fruity: "열매",
+};
+
+const formatSummaryValues = (values, labelMap) => {
+  const tokens = normalizeValues(values);
+  const labels = [];
+  const seen = new Set();
+  tokens.forEach((token) => {
+    const label = labelMap[token] || token;
+    if (!seen.has(label)) {
+      seen.add(label);
+      labels.push(label);
+    }
+  });
+  return labels.join(", ");
+};
+
 const sizeTokenFromText = (text) => {
   const v = String(text || "").toLowerCase();
   if (!v) return null;
@@ -171,7 +206,7 @@ const shuffle = (arr) => {
   return out;
 };
 
-const DISPLAY_COUNT = 8;
+const DISPLAY_COUNT = 9;
 
 const fetchAllPlants = async () => {
   const items = [];
@@ -200,7 +235,6 @@ export default function PlantSelectPage() {
   const [allPlants, setAllPlants] = useState([]);
   const [filteredPlants, setFilteredPlants] = useState([]);
   const [visiblePlants, setVisiblePlants] = useState([]);
-  const [remainingPlants, setRemainingPlants] = useState([]);
 
   useEffect(() => {
     const raw = sessionStorage.getItem(SURVEY_STORAGE_KEY);
@@ -260,17 +294,7 @@ export default function PlantSelectPage() {
     const shuffled = shuffle(normalized);
     setFilteredPlants(shuffled);
     setVisiblePlants(shuffled.slice(0, DISPLAY_COUNT));
-    setRemainingPlants(shuffled.slice(DISPLAY_COUNT));
   }, [status, allPlants, survey]);
-
-  const remainingCount = remainingPlants.length;
-
-  const handleShowMore = () => {
-    if (remainingPlants.length === 0) return;
-    const shuffled = shuffle(remainingPlants);
-    setVisiblePlants(shuffled.slice(0, DISPLAY_COUNT));
-    setRemainingPlants(shuffled.slice(DISPLAY_COUNT));
-  };
 
   const handlePick = (plant) => {
     const payload = {
@@ -282,11 +306,24 @@ export default function PlantSelectPage() {
     nav(ROUTES.ANALYZE);
   };
 
+  const handleRetrySurvey = () => {
+    try {
+      sessionStorage.removeItem(SURVEY_STORAGE_KEY);
+      sessionStorage.removeItem(SELECTED_PLANT_KEY);
+    } catch (e) {
+      // ignore storage errors
+    }
+    nav(ROUTES.SURVEY);
+  };
+
   const summaryText = useMemo(() => {
     if (!survey) return "";
-    const size = normalizeValues(survey.size).join(", ");
-    const style = normalizeValues(survey.style).join(", ");
-    const plantStyle = normalizeValues(survey.Plant_style || survey.plant_style || survey.plantStyle).join(", ");
+    const size = formatSummaryValues(survey.size, SIZE_LABELS);
+    const style = formatSummaryValues(survey.style, STYLE_LABELS);
+    const plantStyle = formatSummaryValues(
+      survey.Plant_style || survey.plant_style || survey.plantStyle,
+      PLANT_STYLE_LABELS
+    );
 
     const parts = [];
     if (size) parts.push(`크기: ${size}`);
@@ -309,9 +346,12 @@ export default function PlantSelectPage() {
           {status === "error" && <p className="surveyStatus surveyStatus--error">{error}</p>}
 
           {status === "ready" && filteredPlants.length === 0 && (
-            <p className="surveyStatus surveyStatus--error">
-              조건에 맞는 식물을 찾지 못했습니다. 설문 값을 확인해주세요.
-            </p>
+            <div className="surveyStatus surveyStatus--error">
+              <p>조건에 맞는 식물을 찾지 못했습니다. 설문 값을 확인해주세요.</p>
+              <button className="chatBtn chatBtn--accent" type="button" onClick={handleRetrySurvey}>
+                다시 선택하기
+              </button>
+            </div>
           )}
 
           {status === "ready" && visiblePlants.length > 0 && (
@@ -320,20 +360,22 @@ export default function PlantSelectPage() {
                 {visiblePlants.map((plant) => (
                   <div key={plant.id || plant.displayImage} className="plantCard">
                     <div className="plantCard__name">{plant.displayName}</div>
-                    <div className="plantCard__imageWrap">
+                    <div
+                      className="plantCard__imageWrap"
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => handlePick(plant)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          handlePick(plant);
+                        }
+                      }}
+                    >
                       <img className="plantCard__img" src={plant.displayImage} alt={plant.displayName} />
                     </div>
-                    <button className="chatBtn" type="button" onClick={() => handlePick(plant)}>
-                      선택하고 분석하기
-                    </button>
                   </div>
                 ))}
-              </div>
-
-              <div className="plantSelectFooter">
-                <button className="chatBtn" type="button" onClick={handleShowMore} disabled={remainingCount === 0}>
-                  {remainingCount > 0 ? `다른 식물 보기 (${remainingCount}개 남음)` : "더 보여줄 식물이 없습니다"}
-                </button>
               </div>
             </>
           )}
