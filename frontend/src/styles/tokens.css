@@ -27,7 +27,8 @@
   /* font-size */
   --fs-2: 16px;
   --fs-3: 20px;
-  --fs-4: 40px;
+  --fs-4: 30px;
+  --fs-5: 50px;
   --fs-6: 55px;
 
   /* size */
@@ -36,7 +37,7 @@
   --bw-line: 2px;
 
   /* background image */
-  --bg-overlay: rgba(255, 250, 244, 0.774);
+  --bg-overlay: rgba(212, 212, 212, 0.712);
   /* Whiter, stronger overlay */
 
 }

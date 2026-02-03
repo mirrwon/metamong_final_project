@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import api from "../../services/api";
 import { Swiper, SwiperSlide } from "swiper/react";
-import { Autoplay, Pagination } from "swiper/modules";
+import { Autoplay } from "swiper/modules";
 import "swiper/css";
 import "swiper/css/pagination";
 
@@ -93,10 +93,10 @@ const PlantPreview = () => {
         spaceBetween={12} /* Tighter spacing for more items */
         slidesPerView={3}
         breakpoints={{
-          600: { slidesPerView: 4 },
-          900: { slidesPerView: 5 },
-          1200: { slidesPerView: 6 },
-          1600: { slidesPerView: 7 },
+          600: { slidesPerView: 3 },
+          900: { slidesPerView: 4 },
+          1200: { slidesPerView: 5 },
+          1600: { slidesPerView: 6 },
         }}
         loop={true}
         autoplay={{
