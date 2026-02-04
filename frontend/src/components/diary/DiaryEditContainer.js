@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import DiaryForm from "./DiaryForm";
 import { diaryApi } from "../../services/diaryApi";
-import { getStoredUsername } from "../../services/user";
 
 
 const BACKEND_ORIGIN = "http://localhost:8000";
@@ -66,8 +65,7 @@ const DiaryEditContainer = ({ id, onSuccess, onCancel }) => {
     const loadPost = async () => {
       setLoadStatus("loading");
       try {
-        const username = getStoredUsername();
-        const res = await diaryApi.getList(username);
+        const res = await diaryApi.getList();
         const list = normalizeDiaryItems(res?.data);
 
         const found = list.find((item) => String(item?.id || item?._id) === String(id));

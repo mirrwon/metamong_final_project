@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import DiaryForm from "./DiaryForm";
 import { diaryApi } from "../../services/diaryApi";
-import { getStoredUsername } from "../../services/user";
 
 const toDateInputValue = (value) => {
   if (!value) return "";
@@ -50,8 +49,6 @@ const DiaryNewContainer = ({ onSuccess, onCancel }) => {
       // 날짜 전송 (백엔드가 date 받는 경우)
       if (date) formData.append("date", date);
 
-      const username = getStoredUsername();
-      if (username) formData.append("username", username);
       if (imageFile) formData.append("image", imageFile);
 
       const res = await diaryApi.create(formData);

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { fetchWithSession, readStoredUser } from "../../services/session";
+import { fetchWithSession } from "../../services/session";
 import { useNavigate } from "react-router-dom";
 import { ROUTES } from "../../constants/routes";
 import "./Survey.css";
@@ -91,9 +91,6 @@ const normalizeSurvey = (data) => {
 };
 
 export default function Survey({ onComplete, allowSkip = true }) {
-  const storedUser = readStoredUser();
-  const username = storedUser?.user_name || storedUser?.username || "";
-
   const nav = useNavigate();
 
   const [survey, setSurvey] = useState(null);
@@ -200,7 +197,6 @@ export default function Survey({ onComplete, allowSkip = true }) {
         body: JSON.stringify({
           survey_key: survey.key,
           answers: selected,
-          username,
         }),
       });
 

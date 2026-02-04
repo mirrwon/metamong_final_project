@@ -35,7 +35,6 @@ const MapPage = () => {
   const [loading, setLoading] = useState(false);
 
   const storedUser = useMemo(() => readStoredUser(), []);
-  const username = storedUser?.user_name || storedUser?.username || "";
   const kakaoKey = useMemo(() => process.env.REACT_APP_KAKAO_JS_KEY || "", []);
   const mapContainerRef = useRef(null);
   const mapRef = useRef(null);
@@ -95,7 +94,7 @@ const MapPage = () => {
   }, [kakaoKey]);
 
   const fetchShops = useCallback(async () => {
-    if (!username) {
+    if (!storedUser) {
       setError("로그인 정보를 찾을 수 없어요.");
       setShops([]);
       setAddress("");
@@ -108,7 +107,7 @@ const MapPage = () => {
 
     try {
       const response = await api.get("/api/map/flowers", {
-        params: { username, radius: DEFAULT_RADIUS, include_parking: true },
+        params: { radius: DEFAULT_RADIUS, include_parking: true },
       });
 
       const payload = response?.data;
@@ -137,7 +136,7 @@ const MapPage = () => {
     } finally {
       setLoading(false);
     }
-  }, [username]);
+  }, [storedUser]);
 
   useEffect(() => {
     fetchShops();
@@ -295,7 +294,7 @@ const MapPage = () => {
           <div className="map-info">
             <p className="map-label">기준 주소</p>
             <p className="map-address">
-              {address || "등록된 주소가 없습니다."}
+              {address || "주소를 불러오고 있습니다."}
             </p>
             <p className="map-radius">검색 범위: 반경 3km</p>
           </div>
@@ -314,7 +313,7 @@ const MapPage = () => {
         <section className="map-canvas-wrap">
           {mapError ? <p className="map-error">{mapError}</p> : null}
           {!coord && !error ? (
-            <p className="map-status">주소 좌표를 불러오지 못했어요.</p>
+            <p className="map-status">잠시만 기다려주세요.</p>
           ) : null}
           <div ref={mapContainerRef} className="map-canvas" />
         </section>

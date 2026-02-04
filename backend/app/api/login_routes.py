@@ -8,9 +8,18 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 
-from fastapi import APIRouter, Form, HTTPException, UploadFile, File, Request
+from fastapi import APIRouter, Form, HTTPException, UploadFile, File, Request, Depends
 from fastapi.responses import JSONResponse, RedirectResponse
 import requests
+from app.api.security import (
+    verify_password,
+    get_password_hash,
+    create_access_token,
+    is_password_hash,
+    set_access_cookie,
+    clear_access_cookie,
+)
+from app.api.deps import get_current_user
 
 router = APIRouter(prefix="/api/auth")
 
@@ -84,6 +93,24 @@ def _normalize_user_record(data: Dict[str, Any]) -> bool:
         data["user_name"] = data.pop("username")
         changed = True
     return changed
+
+
+def _verify_or_migrate_password(record: Dict[str, Any], password: str) -> tuple[bool, bool]:
+    stored = record.get("password") or ""
+    if not stored:
+        return False, False
+
+    if is_password_hash(stored):
+        try:
+            return verify_password(password, stored), False
+        except Exception:
+            return False, False
+
+    if stored == password:
+        record["password"] = get_password_hash(password)
+        return True, True
+
+    return False, False
 
 
 def _cleanup_oauth_state() -> None:
@@ -254,13 +281,15 @@ def google_callback(
     response = {k: v for k, v in record.items() if k != "password"}
     profile_url = _build_profile_image_url(request, record.get("profile_image_filename"))
     response["profileImageUrl"] = profile_url or picture
-    response["accessToken"] = "local-token"
     response["needsProfile"] = _needs_profile(record)
 
     frontend_redirect = os.getenv("FRONTEND_OAUTH_REDIRECT", "http://localhost:3000/login")
     payload = _encode_oauth_payload(response)
     redirect_url = f"{frontend_redirect}?oauth=google&payload={urllib.parse.quote(payload)}"
-    return RedirectResponse(redirect_url)
+    access_token = create_access_token(data={"sub": username})
+    resp = RedirectResponse(redirect_url)
+    set_access_cookie(resp, access_token)
+    return resp
 
 
 @router.post("/register")
@@ -285,7 +314,7 @@ def register(
     record: Dict[str, Any] = {
         "user_num": str(_next_user_num()),
         "user_name": username,
-        "password": password,
+        "password": get_password_hash(password),
         "name": name,
         "birthDate": birthDate,
         "phone": phone,
@@ -306,7 +335,10 @@ def register(
     response["profileImageUrl"] = _build_profile_image_url(
         request, record.get("profile_image_filename")
     )
-    return JSONResponse(response, status_code=201)
+    access_token = create_access_token(data={"sub": username})
+    resp = JSONResponse(response, status_code=201)
+    set_access_cookie(resp, access_token)
+    return resp
 
 
 @router.post("/login")
@@ -317,21 +349,27 @@ def login(payload: Dict[str, Any], request: Request) -> JSONResponse:
         raise HTTPException(status_code=400, detail="Username and password required")
 
     record = _load_user(_user_path(username))
-    if record.get("password") != password:
+    ok, migrated = _verify_or_migrate_password(record, password)
+    if not ok:
         raise HTTPException(status_code=401, detail="Invalid credentials")
+
+    if migrated:
+        _save_user(_user_path(username), record)
 
     response = {k: v for k, v in record.items() if k != "password"}
     response["profileImageUrl"] = _build_profile_image_url(
         request, record.get("profile_image_filename")
     )
-    response["accessToken"] = "local-token"
-    return JSONResponse(response)
+    access_token = create_access_token(data={"sub": username})
+    resp = JSONResponse(response)
+    set_access_cookie(resp, access_token)
+    return resp
 
 
 @router.put("/profile")
 def update_profile(
     request: Request,
-    username: str = Form(...),
+    current_user: dict = Depends(get_current_user),
     password: Optional[str] = Form(None),
     name: Optional[str] = Form(None),
     birthDate: Optional[str] = Form(None),
@@ -343,6 +381,10 @@ def update_profile(
     address1: Optional[str] = Form(None),
     address2: Optional[str] = Form(None),
 ) -> JSONResponse:
+    username = current_user.get("user_name")
+    if not username:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
     path = _user_path(username)
     record = _load_user(path)
 
@@ -365,7 +407,7 @@ def update_profile(
         raise HTTPException(status_code=400, detail="OAuth users cannot change password")
 
     if password:
-        record["password"] = password
+        record["password"] = get_password_hash(password)
 
     if profileImage:
         record["profile_image_filename"] = _save_profile_image(profileImage, username)
@@ -377,6 +419,13 @@ def update_profile(
         request, record.get("profile_image_filename")
     )
     return JSONResponse(response)
+
+
+@router.post("/logout")
+def logout() -> JSONResponse:
+    resp = JSONResponse({"ok": True})
+    clear_access_cookie(resp)
+    return resp
 
 
 @router.get("/results")

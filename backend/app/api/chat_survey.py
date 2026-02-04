@@ -5,7 +5,7 @@ import json
 import uuid
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, UploadFile, File, Form, Request, HTTPException
+from fastapi import APIRouter, UploadFile, File, Form, Request, HTTPException, Depends
 
 from app.config import BASE_DIR, UPLOAD_DIR, RESULT_DIR
 from app.cv.pipeline import run_pipeline
@@ -14,6 +14,7 @@ from app.llm.image_edit import composite_plant_on_original
 from .chat_session import _get_or_create_sid
 from .chat_storage import get_user_ctx, set_user_ctx
 from .chat_utils import abs_url, extract_best_point
+from app.api.deps import get_current_user
 
 survey_router = APIRouter()
 
@@ -26,13 +27,20 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 os.makedirs(RESULT_DIR, exist_ok=True)
 
 
-def _survey_path(sid: str) -> str:
-    safe = (sid or "anonymous").replace("/", "_").replace("\\", "_")
+def _safe_username(name: str) -> str:
+    safe = name.replace(os.sep, "_")
+    if os.altsep:
+        safe = safe.replace(os.altsep, "_")
+    return safe
+
+
+def _survey_path(username: str) -> str:
+    safe = _safe_username(username or "anonymous")
     return os.path.join(SURVEY_DIR, f"{safe}.jsonl")
 
 
-def _next_survey_id(sid: str) -> int:
-    path = _survey_path(sid)
+def _next_survey_id(username: str) -> int:
+    path = _survey_path(username)
     if not os.path.exists(path):
         return 1
     last_id = 0
@@ -52,9 +60,9 @@ def _next_survey_id(sid: str) -> int:
     return last_id + 1 if last_id else 1
 
 
-def _append_survey(sid: str, record: Dict[str, Any]) -> None:
-    path = _survey_path(sid)
-    record = {"id": _next_survey_id(sid), **record}
+def _append_survey(username: str, record: Dict[str, Any]) -> None:
+    path = _survey_path(username)
+    record = {"id": _next_survey_id(username), **record}
     with open(path, "a", encoding="utf-8") as f:
         f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
@@ -63,7 +71,7 @@ def _append_survey(sid: str, record: Dict[str, Any]) -> None:
 # v3 Contract: GET /api/chat/survey
 # -------------------------
 @survey_router.get("/api/chat/survey")
-def get_survey():
+def get_survey(current_user: dict = Depends(get_current_user)):
     return {
         "key": "style_survey",
         "label": "선호 스타일 선택",
@@ -119,11 +127,14 @@ def get_survey():
 # v3 Contract: POST /api/chat/survey
 # -------------------------
 @survey_router.post("/api/chat/survey")
-async def submit_survey(request: Request):
+async def submit_survey(request: Request, current_user: dict = Depends(get_current_user)):
     body = await request.json()
 
     sid, _ = _get_or_create_sid(request)
     key = sid
+    username = current_user.get("user_name")
+    if not username:
+        raise HTTPException(status_code=401, detail="Invalid token")
 
     # "설문 이미지를 먼저 올려야 한다" 룰 유지
 
@@ -140,7 +151,7 @@ async def submit_survey(request: Request):
         set_user_ctx(key, ctx, ttl_sec=60 * 60 * 6)
 
         # JSONL에도 저장(구형 로직 유지, 단 username 대신 sid 기준)
-        _append_survey(sid, {"answers": answers})
+        _append_survey(username, {"answers": answers})
 
     return {"ok": True, "received": body}
 
@@ -151,10 +162,14 @@ async def submit_survey(request: Request):
 @survey_router.post("/api/chat/survey/image")
 async def survey_image_upload(
     request: Request,
+    current_user: dict = Depends(get_current_user),
     files: Optional[List[UploadFile]] = File(None),
     image: Optional[UploadFile] = File(None),
     survey_key: Optional[str] = Form(None),
 ):
+    username = current_user.get("user_name")
+    if not username:
+        raise HTTPException(status_code=401, detail="Invalid token")
     sid, _ = _get_or_create_sid(request)
     key = sid
 

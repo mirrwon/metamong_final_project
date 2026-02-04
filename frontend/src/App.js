@@ -11,6 +11,7 @@ import {
   touchActivity,
   isSessionExpired,
 } from './services/session';
+import api from './services/api';
 
 //이미지 배경으로 설정
 import { useEffect } from "react";
@@ -133,6 +134,7 @@ function App() {
 
   // 로그아웃: localStorage 비우고 user 상태도 null로
   const handleLogout = () => {
+    api.post('/api/auth/logout').catch(() => {});
     clearSession();
     setUser(null);
   };

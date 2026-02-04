@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Button from "../common/Button";
-import { fetchWithSession, readStoredUser } from "../../services/session";
+import { fetchWithSession } from "../../services/session";
 import "./Chat.css";
 
 const API_BASE = "http://localhost:8000/api/chat";
@@ -104,8 +104,6 @@ const formatTime = (timestamp) => {
 };
 
 export default function Chat() {
-  const storedUser = readStoredUser();
-  const username = storedUser?.user_name || storedUser?.username || "";
   const [messages, setMessages] = useState([]);
   const [payload, setPayload] = useState(null);
   const [status, setStatus] = useState("idle");
@@ -381,7 +379,6 @@ export default function Chat() {
         body: JSON.stringify({
           text: summaryText,
           filters: { ...selectedFilters },
-          username,
         }),
       });
       if (!response.ok) throw new Error("failed");
@@ -458,7 +455,6 @@ export default function Chat() {
         body: JSON.stringify({
           text: option,
           filters: { ...selectedFilters },
-          username,
         }),
       });
 
@@ -484,10 +480,7 @@ export default function Chat() {
     const fetchMessages = async () => {
       setStatus("loading");
       try {
-        const chatUrl = username
-          ? `${API_BASE}?username=${encodeURIComponent(username)}`
-          : API_BASE;
-        const response = await fetchWithSession(chatUrl, { method: "GET" });
+        const response = await fetchWithSession(API_BASE, { method: "GET" });
         if (!response.ok) throw new Error("failed");
 
         const data = await response.json();
@@ -504,7 +497,7 @@ export default function Chat() {
     };
 
     fetchMessages();
-  }, [username]);
+  }, []);
 
   useEffect(() => {
     const fetchResults = async () => {
@@ -695,7 +688,6 @@ export default function Chat() {
         body: JSON.stringify({
           text: trimmed,
           filters: { ...selectedFilters },
-          username,
         }),
       });
       if (!response.ok) throw new Error("failed");
@@ -960,7 +952,6 @@ export default function Chat() {
         body: JSON.stringify({
           text: label,
           filters: { ...selectedFilters },
-          username,
         }),
       });
       if (!response.ok) throw new Error("failed");
@@ -1018,7 +1009,6 @@ export default function Chat() {
         body: JSON.stringify({
           text,
           filters: { ...selectedFilters },
-          username,
         }),
       });
       if (!response.ok) throw new Error("failed");
