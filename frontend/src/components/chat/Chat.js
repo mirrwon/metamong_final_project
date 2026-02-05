@@ -8,7 +8,10 @@ const IMAGE_API = `${API_BASE}/image`;
 const RESULTS_API = `${API_BASE}/results`;
 const SCENES_API = `${API_BASE.replace(/\/api\/chat$/, "")}/api/chat/scenes`;
 const SCENES_API_ALL = `${API_BASE.replace(/\/api\/chat$/, "")}/api/chat/scenes/all`;
-const SPOT_API = `${API_BASE}/spot`;
+// const SPOT_API = `${API_BASE}/spot`;
+const ANALYZE_API = `${API_BASE}/analyze`;
+const RENDER_API = `${API_BASE}/render`;
+const RECOMMEND_API = `${API_BASE}/recommend`;
 
 function normalizeCvResult(raw) {
   const out = raw && typeof raw === "object" ? raw : {};
@@ -194,7 +197,8 @@ export default function Chat() {
     ]);
 
     try {
-      const res = await fetchWithSession(SPOT_API, {
+      // const res = await fetchWithSession(SPOT_API, {
+      const res = await fetchWithSession(RENDER_API, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -375,13 +379,13 @@ export default function Chat() {
 
     setStatus("loading");
     try {
-      const response = await fetchWithSession(API_BASE, {
+      // const response = await fetchWithSession(API_BASE, {
+      const response = await fetchWithSession(RECOMMEND_API, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          text: summaryText,
           filters: { ...selectedFilters },
-          username,
+          meta: { lat: 37.5665, lot: 126.9780, hhmm: "1200" }, // 임시 고정값
         }),
       });
       if (!response.ok) throw new Error("failed");

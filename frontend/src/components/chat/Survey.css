@@ -14,6 +14,12 @@
   z-index: 0;
 }
 
+/* ✅ analyze/render 같은 페이지에서 blur 끄기 */
+.surveyPage.noBlur::before {
+  backdrop-filter: none;
+}
+
+
 .surveyShell {
   position: relative;
   z-index: 1;

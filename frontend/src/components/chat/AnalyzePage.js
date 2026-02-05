@@ -1,22 +1,17 @@
 import { useEffect, useState } from "react";
 import { fetchWithSession } from "../../services/session";
-import "./Survey.css";
+import { useNavigate } from "react-router-dom";
+import { ROUTES } from "../../constants/routes";
+import PlantSelectPage from "./PlantSelectPage";
 
 const API_BASE = "http://localhost:8000/api/chat";
-const ANALYZE_API = `${API_BASE}/analyze`;
-const API_ORIGIN = "http://localhost:8000";
-
-const resolveImageUrl = (url) => {
-  if (!url) return null;
-  if (url.startsWith("http://") || url.startsWith("https://")) return url;
-  if (url.startsWith("/")) return `${API_ORIGIN}${url}`;
-  return url;
-};
+const ANALYZE_API = `${API_BASE}/analyze`; // ✅ analyze로 고정
 
 export default function AnalyzePage() {
-  const [status, setStatus] = useState("idle"); // idle|loading|done|error
+  const nav = useNavigate();
+
+  const [status, setStatus] = useState("idle"); // idle | loading | done | error
   const [error, setError] = useState("");
-  const [images, setImages] = useState([]);
 
   useEffect(() => {
     let alive = true;
@@ -24,39 +19,31 @@ export default function AnalyzePage() {
     const run = async () => {
       setStatus("loading");
       setError("");
-      setImages([]);
+
+      // ✅ Analyze 진입 시 "이전 결과 잔재"용 키들 싹 정리 (있으면만)
+      try {
+        sessionStorage.removeItem("ai_edit_url");
+        sessionStorage.removeItem("render_result");
+        sessionStorage.removeItem("last_render");
+      } catch (e) {}
 
       try {
-        // ✅ 지금은 목데이터(filters 비워도 백엔드가 동작하도록 설계돼있음)
         const meta = {
-          lat: 37.5665,          // 임시 고정값 (나중에 GPS/EXIF)
-          lot: 126.9780,
+          lat: 37.5665,
+          lot: 126.978,
           hhmm: new Date().toTimeString().slice(0, 5).replace(":", ""),
         };
 
         const res = await fetchWithSession(ANALYZE_API, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            filters: {},
-            meta: { lat: 37.5665, lot: 126.9780, hhmm: "1200" }
-          }),
+          body: JSON.stringify({ meta, filters: {} }),
         });
 
-
         if (!res.ok) throw new Error("analyze_failed");
-        const data = await res.json();
-
-        const imgs = Array.isArray(data?.images) ? data.images : [];
-        const normalized = imgs
-          .map((x) => ({
-            name: x?.name || "image",
-            url: resolveImageUrl(x?.url),
-          }))
-          .filter((x) => x.url);
+        await res.json(); // 응답은 받아두기만 하고 UI에 표시 안함
 
         if (!alive) return;
-        setImages(normalized);
         setStatus("done");
       } catch (e) {
         if (!alive) return;
@@ -71,39 +58,15 @@ export default function AnalyzePage() {
     };
   }, []);
 
+  // ✅ PlantSelectPage가 이미 Survey.css 레이아웃을 가지고 있으므로
+  // AnalyzePage에서 surveyPage/surveyShell 같은 wrapper를 또 씌우지 말 것!
+  if (status === "loading") return <p className="surveyStatus">공간 분석 중...</p>;
+  if (status === "error") return <p className="surveyStatus surveyStatus--error">{error}</p>;
+
   return (
-    <div className="surveyPage">
-      <div className="surveyShell">
-        <div className="surveyCard">
-          <header className="surveyHeader">
-            <h2 className="surveyTitle">공간 분석</h2>
-            <p className="surveyDesc">분석 결과 및 Gemini 이미지 생성 결과를 표시합니다.</p>
-          </header>
-
-          {status === "loading" && <p className="surveyStatus">공간 분석 중...</p>}
-          {error && <p className="surveyStatus surveyStatus--error">{error}</p>}
-
-          {images.length > 0 && (
-            <div style={{ marginTop: 16 }}>
-              <h3 className="surveyGroup__title">결과 이미지</h3>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 12, marginTop: 8 }}>
-                {images.map((img) => (
-                  <div key={img.url}>
-                    <div style={{ fontSize: 12, opacity: 0.8, marginBottom: 6 }}>{img.name}</div>
-                    <img src={img.url} alt={img.name} style={{ width: "100%", borderRadius: 8 }} />
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {status === "done" && images.length === 0 && (
-            <p className="surveyStatus surveyStatus--error">
-              analyze는 성공했는데 images가 비어있음. 백엔드 응답(images 배열) 확인 필요.
-            </p>
-          )}
-        </div>
-      </div>
-    </div>
+    <PlantSelectPage
+      onPicked={() => nav(ROUTES.RENDER)}
+      onRetrySurvey={() => nav(ROUTES.SURVEY)}
+    />
   );
 }

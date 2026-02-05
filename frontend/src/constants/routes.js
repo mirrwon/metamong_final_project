@@ -23,6 +23,8 @@ export const ROUTES = {
 
     UPLOAD: "/upload",
     SURVEY: "/survey",
-    ANALYZE: "/analyze"
+    ANALYZE: "/analyze",
 
+    RENDER: "/render",
+    // RECOMMEND: "/recommend",
 };

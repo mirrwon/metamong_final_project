@@ -53,6 +53,54 @@ class AnalyzeBody(BaseModel):
     filters: Dict[str, Any] = {}
     meta: Optional[Dict[str, Any]] = None
 
+class RecommendBody(BaseModel):
+    filters: Dict[str, Any] = {}
+    meta: Optional[Dict[str, Any]] = None  # 필요하면 받기만
+
+async def handle_chat_recommend(request: Request, body: RecommendBody) -> JSONResponse:
+    sid, sid_is_new = _get_or_create_sid(request)
+    key = sid
+
+    # 1) 기존 분석 결과 로드
+    latest_json = os.path.join(RESULT_DIR, "result_latest.json")
+    if not os.path.exists(latest_json):
+        return _json_with_sid(
+            {"ok": False, "messages": [{"type": "text", "text": "저장된 분석 결과가 없습니다. 먼저 analyze를 실행하세요."}]},
+            sid, sid_is_new
+        )
+
+    try:
+        with open(latest_json, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except Exception as e:
+        return _json_with_sid(
+            {"ok": False, "messages": [{"type": "text", "text": f"result_latest.json 읽기 실패: {e}"}]},
+            sid, sid_is_new
+        )
+
+    # 2) 필터 저장 + 추천만 재실행
+    user_filters = body.filters if isinstance(body.filters, dict) else {}
+    set_user_ctx(key, {"filters": user_filters}, ttl_sec=60 * 60 * 6)
+
+    data = recommend_for_analysis(data, user_filters=user_filters)
+
+    # 3) 저장
+    try:
+        with open(latest_json, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        print("[WARN] overwrite latest_json failed:", e)
+
+    # 4) 프론트가 쓰기 쉬운 응답
+    return _json_with_sid(
+        {
+            "ok": True,
+            "messages": [{"type": "text", "text": "✅ 필터가 적용되어 추천 결과를 갱신했습니다."}],
+            "cv_result": data,
+        },
+        sid, sid_is_new
+    )
+
 def _pick_scene_for_room_compat(room_type: str, seed: Optional[str] = None):
     """
     room_type(거실/침실/주방/욕실 또는 영어 변형)를 받아서
@@ -738,6 +786,7 @@ async def chat_image(
 
 class PickSpotBody(BaseModel):
     spot_index: int
+    plant_name: Optional[str] = None
     regen: bool = False  # 기본은 캐시 모드
 
 
@@ -886,7 +935,7 @@ async def chat_pick_spot(request: Request, body: PickSpotBody) -> JSONResponse:
     if top_plants is None and isinstance(chosen, dict):
         top_plants = chosen.get("top_plants")
 
-    plant_name = _pick_plant_for_spot(top_plants, spot_index)
+    plant_name = body.plant_name or _pick_plant_for_spot(top_plants, spot_index)
 
     pt = best_point.get("pt") if isinstance(best_point, dict) else None
 
@@ -948,3 +997,6 @@ async def chat_pick_spot(request: Request, body: PickSpotBody) -> JSONResponse:
         msgs.append({"type": "text", "text": f"선택 좌표: {pt}"})
 
     return _json_with_sid({"messages": msgs, "cv_result": data}, sid, sid_is_new)
+
+async def chat_render(request: Request, body: PickSpotBody) -> JSONResponse:
+    return await chat_pick_spot(request, body)

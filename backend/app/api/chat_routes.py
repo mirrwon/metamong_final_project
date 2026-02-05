@@ -17,6 +17,8 @@ from .chat_handlers import (
     get_scenes_all,
     handle_chat_analyze,
     AnalyzeBody,
+    chat_render,
+    handle_chat_recommend, RecommendBody
 )
 
 from .chat_survey import survey_router
@@ -87,3 +89,27 @@ def route_results():
 @router.post("/api/chat/analyze")
 async def chat_analyze(request: Request, body: AnalyzeBody) -> JSONResponse:
     return await handle_chat_analyze(request, body)
+
+# -------------------------
+# Page-specific aliases (NEW)
+# 3페이지: 9개 추천
+# 4페이지: 선택 식물 spot 이미지 생성
+# -------------------------
+
+@router.post("/api/chat/recommend")
+async def chat_recommend(request: Request, body: RecommendBody) -> JSONResponse:
+    return await handle_chat_recommend(request, body)
+
+@router.post("/api/chat/render")
+async def route_chat_render(request: Request, body: PickSpotBody) -> JSONResponse:
+    # ✅ 기존 spot 로직 재사용
+    return await chat_pick_spot(request, body)
+
+from fastapi.responses import JSONResponse
+
+@router.get("/api/chat/render")
+def chat_render_get():
+    return JSONResponse(
+        {"ok": False, "hint": "Use POST /api/chat/render with JSON {spot_index, regen}"},
+        status_code=200,
+    )
