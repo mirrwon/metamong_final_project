@@ -32,12 +32,15 @@ export default function AnalyzePage() {
           lat: 37.5665,
           lot: 126.978,
           hhmm: new Date().toTimeString().slice(0, 5).replace(":", ""),
-        };
-
+        };  
+          
+        // ✅ 지금은 목데이터(filters 비워도 백엔드가 동작하도록 설계돼있음)
+        const filters = selectedPlant ? { selectedPlant } : {};
         const res = await fetchWithSession(ANALYZE_API, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ meta, filters: {} }),
+          body: JSON.stringify({ meta, filters }),
+          // body: JSON.stringify({ meta, filters: {} }),
         });
 
         if (!res.ok) throw new Error("analyze_failed");
@@ -56,7 +59,7 @@ export default function AnalyzePage() {
     return () => {
       alive = false;
     };
-  }, []);
+  }, [selectedPlant]);
 
   // ✅ PlantSelectPage가 이미 Survey.css 레이아웃을 가지고 있으므로
   // AnalyzePage에서 surveyPage/surveyShell 같은 wrapper를 또 씌우지 말 것!

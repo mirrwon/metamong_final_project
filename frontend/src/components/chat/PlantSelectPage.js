@@ -281,7 +281,6 @@ export default function PlantSelectPage({
 
   useEffect(() => {
     if (status !== "ready") return;
-
     const filtered = filterPlantsBySurvey(allPlants, survey || {});
     const normalized = filtered
       .map((plant) => {

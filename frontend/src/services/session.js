@@ -33,7 +33,9 @@ export const expireSession = () => {
 };
 
 export const storeUser = (user) => {
-  localStorage.setItem(STORAGE_KEY_USER, JSON.stringify(user));
+  if (!user || typeof user !== "object") return;
+  const { accessToken, ...rest } = user;
+  localStorage.setItem(STORAGE_KEY_USER, JSON.stringify(rest));
   touchActivity();
 };
 
@@ -43,6 +45,12 @@ export const readStoredUser = () => {
     if (!raw) return null;
     const user = JSON.parse(raw);
     if (!user) return null;
+
+    if (user?.accessToken) {
+      delete user.accessToken;
+      localStorage.setItem(STORAGE_KEY_USER, JSON.stringify(user));
+    }
+
 
     const last = readLastActivity();
     if (!last) {
@@ -67,9 +75,13 @@ export const fetchWithSession = async (input, init = {}) => {
     throw new Error("Session expired");
   }
 
-  // ✅ 쿠키(세션 sid) 항상 포함
+  const headers = {
+    ...(init.headers || {}),
+  };
+
   const nextInit = {
     ...init,
+    headers,
     credentials: "include",
   };
 

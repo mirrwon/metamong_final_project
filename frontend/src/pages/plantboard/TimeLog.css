@@ -53,10 +53,11 @@
   overflow-y: auto;
   scrollbar-width: thin;
   scrollbar-color: var(--p-accent) transparent;
+  width: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
 }
 
-/* Glassmorphism Plant Select */
-/* Glassmorphism Plant Select */
 .timelog-plant {
   display: flex;
   align-items: center;
@@ -166,7 +167,9 @@
   padding: 5px;
   background: rgba(109, 76, 65, 0.05);
   border-radius: 4px;
-  width: fit-content;
+  width: 100%;
+  flex-wrap: nowrap;
+  justify-content: space-between;
 }
 
 .timelog-tab {
@@ -179,6 +182,7 @@
   cursor: pointer;
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   font-weight: 600;
+  white-space: nowrap;
 }
 
 .timelog-tab.is-active {
@@ -323,23 +327,14 @@
 }
 
 .timelog-item__decorBtn {
-  background: var(--p-accent);
-  color: #fff;
-  border: none;
-  padding: 6px 14px;
+  margin-bottom: 0;
+  height: 34px;
+  padding: 0 14px;
   border-radius: 4px;
-  /* Slightly softer */
   font-size: 12px;
-  cursor: pointer;
-  font-weight: 700;
-  box-shadow: none;
-  /* Remove shadow */
-  transition: all 0.2s ease;
 }
 
 .timelog-item__decorBtn:hover {
-  background-color: var(--p-primary);
-  /* Darker on hover */
   transform: translateY(-1px);
 }
 
@@ -371,7 +366,7 @@
   border: 1px solid #efebe9;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
   width: fit-content;
-  max-width: 450px;
+  max-width: 360px;
   margin-top: 10px;
 }
 

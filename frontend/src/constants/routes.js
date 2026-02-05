@@ -19,6 +19,8 @@ export const ROUTES = {
     DIARY_DETAIL: '/diary/:id',
     DIARY_EDIT: '/diary/:id/edit',
 
+    MAP: '/map',
+
     PLANT_DATA: '/plant-data',
 
     UPLOAD: "/upload",

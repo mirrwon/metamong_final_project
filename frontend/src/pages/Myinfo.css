@@ -55,17 +55,23 @@
 
 .myinfo-text {
   width: 100%;
-  max-width: 300px;
+  max-width: 420px;
   margin: 0 auto var(--s-5);
   text-align: left;
 }
 
 .myinfo-text p {
-  font-size: var(--fs-3);
+  font-size: var(--fs-2);
   font-weight: 600;
   color: var(--c-text);
   margin-bottom: var(--s-3);
-  line-height: 1.6;
+  line-height: 1.5;
+  background: rgba(255, 255, 255, 0.384);
+  padding: 7px 10px;
+  border-radius: 6px;
+  display: flex;
+  justify-content: space-between;
+  gap: 15px;
 }
 
 /* =========================

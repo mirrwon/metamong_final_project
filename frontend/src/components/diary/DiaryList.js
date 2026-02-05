@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import api from "../../services/api";
 import "./DiaryList.css";
-import { getStoredUsername } from "../../services/user";
 import { fetchWithSession } from "../../services/session";
 
 const API_BASE = "/api/diary";
@@ -58,22 +57,15 @@ const DiaryList = ({ onViewDetail, onNewPost }) => {
   useEffect(() => {
     const fetchDiary = async () => {
       setStatus("loading");
-      const username = getStoredUsername();
-      const queryString = username
-        ? `?username=${encodeURIComponent(username)}`
-        : "";
-
       try {
-        const response = await api.get(API_BASE, {
-          params: username ? { username } : undefined,
-        });
+        const response = await api.get(API_BASE);
         const list = normalizeDiaryItems(response.data);
         setItems(list);
         setStatus("ready");
         return;
       } catch (error) {
         try {
-          const res = await fetchWithSession(`${API_BASE}${queryString}`);
+          const res = await fetchWithSession(API_BASE);
           if (!res.ok) throw new Error("failed");
           const data = await res.json();
           const list = normalizeDiaryItems(data);

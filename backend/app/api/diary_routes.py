@@ -4,8 +4,9 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
-from fastapi import APIRouter, Form, HTTPException, UploadFile, File
+from fastapi import APIRouter, Form, HTTPException, UploadFile, File, Depends
 from fastapi.responses import JSONResponse
+from app.api.deps import get_current_user
 
 router = APIRouter(prefix="/api/diary")
 
@@ -46,7 +47,11 @@ def _save_upload(file: UploadFile, diary_id: str) -> str:
 
 
 @router.get("")
-def list_diary(username: Optional[str] = None) -> JSONResponse:
+def list_diary(current_user: dict = Depends(get_current_user)) -> JSONResponse:
+    username = current_user.get("user_name")
+    if not username:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
     items: List[Dict[str, Any]] = []
     for name in os.listdir(DIARY_DIR):
         if not name.endswith(".json"):
@@ -54,7 +59,7 @@ def list_diary(username: Optional[str] = None) -> JSONResponse:
         path = os.path.join(DIARY_DIR, name)
         try:
             record = _load_record(path)
-            if username and record.get("username") != username:
+            if record.get("username") != username:
                 continue
             items.append(record)
         except Exception:
@@ -64,8 +69,17 @@ def list_diary(username: Optional[str] = None) -> JSONResponse:
 
 
 @router.get("/{diary_id}")
-def get_diary(diary_id: str) -> JSONResponse:
+def get_diary(
+    diary_id: str,
+    current_user: dict = Depends(get_current_user),
+) -> JSONResponse:
+    username = current_user.get("user_name")
+    if not username:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
     record = _load_record(_record_path(diary_id))
+    if record.get("username") != username:
+        raise HTTPException(status_code=403, detail="Forbidden")
     return JSONResponse(record)
 
 
@@ -73,9 +87,13 @@ def get_diary(diary_id: str) -> JSONResponse:
 def create_diary(
     title: str = Form(...),
     content: str = Form(...),
-    username: Optional[str] = Form(None),
     image: Optional[UploadFile] = File(None),
+    current_user: dict = Depends(get_current_user),
 ) -> JSONResponse:
+    username = current_user.get("user_name")
+    if not username:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
     diary_id = str(uuid4())
     now = _now_iso()
     record: Dict[str, Any] = {
@@ -98,9 +116,16 @@ def update_diary(
     title: Optional[str] = Form(None),
     content: Optional[str] = Form(None),
     image: Optional[UploadFile] = File(None),
+    current_user: dict = Depends(get_current_user),
 ) -> JSONResponse:
+    username = current_user.get("user_name")
+    if not username:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
     path = _record_path(diary_id)
     record = _load_record(path)
+    if record.get("username") != username:
+        raise HTTPException(status_code=403, detail="Forbidden")
     if title is not None:
         record["title"] = title
     if content is not None:
@@ -113,9 +138,19 @@ def update_diary(
 
 
 @router.delete("/{diary_id}")
-def delete_diary(diary_id: str) -> JSONResponse:
+def delete_diary(
+    diary_id: str,
+    current_user: dict = Depends(get_current_user),
+) -> JSONResponse:
+    username = current_user.get("user_name")
+    if not username:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
     path = _record_path(diary_id)
     if not os.path.exists(path):
         raise HTTPException(status_code=404, detail="Diary not found")
+    record = _load_record(path)
+    if record.get("username") != username:
+        raise HTTPException(status_code=403, detail="Forbidden")
     os.remove(path)
     return JSONResponse({"ok": True, "id": diary_id})

@@ -23,6 +23,7 @@ from app.api.chat_routes import router as chat_router
 from app.api.diary_routes import router as diary_router
 from app.api.login_routes import router as login_router
 from app.api.plantboard_routes import router as plantboard_router
+from app.api.map_routes import router as map_router
 
 # ...
 AUTH_UPLOAD_DIR = os.path.normpath(os.path.join(BASE_DIR, "app", "api", "uploads"))
@@ -61,9 +62,81 @@ app.include_router(chat_router)
 app.include_router(diary_router)
 app.include_router(login_router)
 app.include_router(plantboard_router)
+app.include_router(map_router)
 
 _plants_cache = {}
 _plants_key_cache = {}
+
+# Redis JSON keys in redisinsight_plants_v5_hybrid_import.txt
+PLANT_REDIS_KEY_MAP = {
+    "name_ko": ["이름_한국어", "이름ko"],
+    "name_en": ["이름_영어", "이름_en"],
+    "family": ["과명"],
+    "type": ["종류"],
+    "size": ["크기_구분"],
+    "growth_type": ["생육형태"],
+    "growth_speed": ["생장속도"],
+    "height_min_cm": ["생장높이_min_cm"],
+    "height_max_cm": ["생장높이_max_cm"],
+    "width_min_cm": ["생장너비_min_cm"],
+    "width_max_cm": ["생장너비_max_cm"],
+    "leaf_texture": ["잎_질감"],
+    "leaf_color": ["잎_색"],
+    "leaf_pattern": ["잎_무늬"],
+    "leaf_gloss": ["잎_광택"],
+    "flower_season": ["꽃_계절"],
+    "flower_color": ["꽃_색"],
+    "fruit_season": ["열매_계절"],
+    "fruit_color": ["열매_색"],
+    "light_requirement": ["광_요구도"],
+    "light_lux": ["광_요구도_Lux", "광량"],
+    "direct_light_tolerance": ["직사광_내성"],
+    "placement": ["권장_배치_공간"],
+    "window_distance": ["권장_창문거리_구간"],
+    "humidity_pref": ["습도_선호"],
+    "temp_min_c": ["생육온도_min_C"],
+    "temp_max_c": ["생육온도_max_C"],
+    "winter_min_c": ["겨울최저온도_C"],
+    "soil_ph": ["토양_pH"],
+    "soil_drainage": ["토양_배수"],
+    "fertilizer": ["비료_요구"],
+    "water_spring": ["물주기_봄"],
+    "water_summer": ["물주기_여름"],
+    "water_fall": ["물주기_가을"],
+    "water_winter": ["물주기_겨울"],
+    "care_level": ["관리_난이도", "관리_요구도"],
+    "scent_strength": ["향기_강도"],
+    "style_tags": ["스타일_태그"],
+    "functional_tags": ["기능성_태그"],
+    "pests": ["병충해"],
+    "allergy_notice": ["사람_알러지_주의"],
+    "allergy_type": ["사람_알러지_유형"],
+    "allergy_cause": ["사람_알러지_원인"],
+    "allergy_symptom": ["사람_알러지_증상"],
+    "pet_target": ["반려동물_대상"],
+    "pet_symptom": ["반려동물_증상"],
+    "pet_memo": ["반려동물_메모"],
+    "kid_warning": ["어린이_주의"],
+    "kid_risk_type": ["어린이_위험_유형"],
+    "kid_safety_grade": ["어린이_안전_등급"],
+    "photo_count": ["사진_갯수"],
+}
+
+
+def _pick_first(raw: dict, keys: list):
+    for key in keys:
+        val = raw.get(key)
+        if val is None or val == "" or val == []:
+            continue
+        return val
+    return None
+
+
+def _build_attrs(raw: dict) -> dict:
+    attrs = {}
+    for out_key, redis_keys in PLANT_REDIS_KEY_MAP.items():
+        attrs[out_key] = _pick_first(raw, redis_keys)
+    return attrs
 
 
 def _get_scan_limit() -> int:
@@ -220,8 +293,42 @@ def _s3_presign_value(value: str, base_url: str, prefix_path: str) -> str:
 
 
 def _resolve_plant_image(raw: dict, key: str, prefix: str):
-    image = raw.get("image") or raw.get("\uc774\ubbf8\uc9c0")
+    image = raw.get("image") or raw.get("이미지")
     base_url, use_presigned, prefix_path = _get_s3_settings()
+
+    if isinstance(image, str) and image.strip():
+        image = image.strip()
+        if use_presigned:
+            return _s3_presign_value(image, base_url, prefix_path)
+        if image.lower().startswith(("http://", "https://")):
+            return image
+
+        if not base_url:
+            return image
+
+        prefix_token = f"{prefix_path.lower()}/"
+        if image.lower().startswith(prefix_token) and base_url.lower().endswith(prefix_path.lower()):
+            image = image[len(prefix_path) + 1 :]
+        image = image.lstrip("/")
+        return f"{base_url}/{image}"
+
+    if not base_url and not use_presigned:
+        return None
+
+    exts = os.getenv("S3_PLANT_IMAGE_EXTS", "").strip()
+    ext_list = [ext.strip() for ext in exts.split(",") if ext.strip()] or [".jpg"]
+    ext = ext_list[0]
+    if not ext.startswith("."):
+        ext = f".{ext}"
+
+    plant_id = _normalize_plant_id(key, prefix)
+    if not plant_id:
+        return None
+    filename = f"plant_{plant_id}_1{ext}"
+    if use_presigned:
+        key_path = f"{prefix_path}/{filename}"
+        return get_presigned_url(key_path)
+    return f"{base_url}/{filename}"
 
     if isinstance(image, str) and image.strip():
         image = image.strip()
@@ -263,17 +370,7 @@ def _resolve_plant_images(raw: dict, key: str, prefix: str) -> list:
     if not base_url and not use_presigned:
         return []
 
-    image_count = (
-        raw.get("photo_count")
-        or raw.get("photoCount")
-        or raw.get("photo_cnt")
-        or raw.get("image_count")
-        or raw.get("imageCount")
-        or raw.get("images_count")
-        or raw.get("imagesCount")
-        or raw.get("\uc0ac\uc9c4_\uac1c\uc218")
-        or raw.get("\uc0ac\uc9c4_\uac2f\uc218")
-    )
+    image_count = raw.get("사진_갯수")
     try:
         image_count = int(image_count)
         if image_count < 1:
@@ -281,7 +378,35 @@ def _resolve_plant_images(raw: dict, key: str, prefix: str) -> list:
     except Exception:
         image_count = None
 
-    images_raw = raw.get("images") or raw.get("\uc774\ubbf8\uc9c0\ub4e4")
+    images_raw = raw.get("images") or raw.get("이미지들")
+    if isinstance(images_raw, list):
+        resolved = []
+        for item in images_raw:
+            if not isinstance(item, str) or not item.strip():
+                continue
+            item = item.strip()
+            if use_presigned:
+                resolved.append(_s3_presign_value(item, base_url, prefix_path))
+                continue
+            if item.lower().startswith(("http://", "https://")):
+                resolved.append(item)
+                continue
+            prefix_token = f"{prefix_path.lower()}/"
+            if item.lower().startswith(prefix_token) and base_url.lower().endswith(prefix_path.lower()):
+                item = item[len(prefix_path) + 1 :]
+            item = item.lstrip("/")
+            resolved.append(f"{base_url}/{item}")
+        return resolved
+
+    image_count = raw.get("사진_갯수")
+    try:
+        image_count = int(image_count)
+        if image_count < 1:
+            image_count = None
+    except Exception:
+        image_count = None
+
+    images_raw = raw.get("images") or raw.get("이미지들")
     if isinstance(images_raw, list):
         resolved = []
         for item in images_raw:
@@ -335,27 +460,30 @@ def _normalize_plant_payload(raw, key: str, prefix: str) -> dict:
             return ", ".join([str(item) for item in val if item is not None])
         return val
 
-    name_ko = raw.get("\uc774\ub984ko") or raw.get("\uc774\ub984_\ud55c\uad6d\uc5b4")
-    name_en = raw.get("\uc774\ub984_en") or raw.get("\uc774\ub984_\uc601\uc5b4")
-    care_level = raw.get("\uad00\ub9ac_\ub09c\uc774\ub3c4") or raw.get("\uad00\ub9ac_\uc694\uad6c\ub3c4")
-    allergy_notice = raw.get("\uc0ac\ub78c_\uc54c\ub7ec\uc9c0_\uc8fc\uc758")
-    allergy_type = raw.get("\uc0ac\ub78c_\uc54c\ub7ec\uc9c0_\uc720\ud615")
-    allergy_symptom = raw.get("\uc0ac\ub78c_\uc54c\ub7ec\uc9c0_\uc99d\uc0c1")
-    allergy = allergy_type or allergy_notice or allergy_symptom
+    attrs = _build_attrs(raw)
 
-    pet_target = raw.get("\ubc18\ub824\ub3d9\ubb3c_\ub300\uc0c1")
-    pet_symptom = raw.get("\ubc18\ub824\ub3d9\ubb3c_\uc99d\uc0c1")
+    name_ko = attrs.get("name_ko")
+    name_en = attrs.get("name_en")
+    care_level = attrs.get("care_level")
+    allergy_notice = attrs.get("allergy_notice")
+    allergy_type = attrs.get("allergy_type")
+    allergy_symptom = attrs.get("allergy_symptom")
+    allergy_cause = attrs.get("allergy_cause")
+    allergy = allergy_type or allergy_notice or allergy_symptom or allergy_cause
+
+    pet_target = attrs.get("pet_target")
+    pet_symptom = attrs.get("pet_symptom")
     pet_target_value = _join_list(pet_target)
-    if pet_symptom in (None, "", "\uc5c6\uc74c") and pet_target_value in (None, "", "\uc5c6\uc74c"):
+    if pet_symptom in (None, "", "없음") and pet_target_value in (None, "", "없음"):
         pet_safe = None
-    elif pet_symptom == "\uc5c6\uc74c":
+    elif pet_symptom == "없음":
         pet_safe = True
     else:
         pet_safe = False
 
-    light_lux = raw.get("\uad11_\uc694\uad6c\ub3c4_Lux") or raw.get("\uad11\ub7c9")
-    light_min = raw.get("\uad11\ub7c9_min")
-    light_max = raw.get("\uad11\ub7c9_max")
+    light_lux = attrs.get("light_lux")
+    light_min = raw.get("광량_min")
+    light_max = raw.get("광량_max")
     if isinstance(light_lux, list) and light_lux:
         light_min = light_lux[0]
         if len(light_lux) > 1:
@@ -365,7 +493,7 @@ def _normalize_plant_payload(raw, key: str, prefix: str) -> dict:
     light_min = _join_list(light_min)
     light_max = _join_list(light_max)
 
-    placement = raw.get("\uad8c\uc7a5_\ubc30\uce58_\uacf5\uac04")
+    placement = attrs.get("placement")
     placement = _join_list(placement)
 
     image = _resolve_plant_image(raw, key, prefix)
@@ -379,16 +507,20 @@ def _normalize_plant_payload(raw, key: str, prefix: str) -> dict:
         "name": name_ko or name_en or key,
         "name_ko": name_ko,
         "name_en": name_en,
-        "type": raw.get("\uc885\ub958"),
-        "size": raw.get("\ud06c\uae30_\uad6c\ubd84"),
+        "type": attrs.get("type"),
+        "size": attrs.get("size"),
         "light_min": light_min,
         "light_max": light_max,
+        "light_requirement": attrs.get("light_requirement"),
+        "light_lux": light_lux,
+        "direct_light_tolerance": attrs.get("direct_light_tolerance"),
         "placement": placement,
         "care": care_level,
         "allergy": allergy,
         "pet_safe": pet_safe,
         "image": image,
         "images": images,
+        "attrs": attrs,
     }
 
 @app.get("/health")
@@ -432,7 +564,9 @@ def redis_debug():
     if prefix:
         try:
             sample_key = f"{prefix}1"
-            raw = r.execute_command("JSON.GET", sample_key, "$.\uc774\ub984_\ud55c\uad6d\uc5b4")
+            raw = r.execute_command("JSON.GET", sample_key, "$.이름_한국어")
+            if raw is None:
+                raw = r.execute_command("JSON.GET", sample_key, "$.이름_영어")
             sample_name = raw
         except Exception:
             sample_name = None

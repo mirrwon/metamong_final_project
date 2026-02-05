@@ -1,22 +1,17 @@
-/**
-필터 탭 컴포넌트
- * - activeTab: 현재 선택된 탭
- * - onChangeTab: 탭 클릭 시 부모 상태 변경
- * - counts: 각 탭에 표시할 숫자(원하면 사용)
- */
-
 const TABS = [
   { key: "all", label: "전체" },
-  { key: "water", label: "물주기" },
-  { key: "fertilizer", label: "비료" },
-  { key: "repot", label: "분갈이" },
+  { key: "water", label: "물 주기" },
+  { key: "fertilizer", label: "비료 줌" },
+  { key: "move", label: "자리 이동" },
+  { key: "mist", label: "분무" },
+  { key: "clean", label: "잎 닦기" },
   { key: "note", label: "특이사항" },
   { key: "photo", label: "사진" },
   { key: "new", label: "새 식물" },
 ];
 
 export default function TimeLogFilterTabs({ activeTab, onChangeTab, counts }) {
-  /** 탭 눌렀을 때 부모에게 key 전달 */
+
   const handleClickTab = (key) => {
     onChangeTab(key);
   };

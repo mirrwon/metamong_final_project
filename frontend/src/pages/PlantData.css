@@ -70,6 +70,8 @@
 
 .catalog-filter__reset {
   align-self: end;
+  height: 36px;
+  margin-bottom: 0;
 }
 
 .catalog-loading {
