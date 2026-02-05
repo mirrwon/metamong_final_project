@@ -27,20 +27,20 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 os.makedirs(RESULT_DIR, exist_ok=True)
 
 
-def _safe_username(name: str) -> str:
+def _safe_key(name: str) -> str:
     safe = name.replace(os.sep, "_")
     if os.altsep:
         safe = safe.replace(os.altsep, "_")
     return safe
 
 
-def _survey_path(username: str) -> str:
-    safe = _safe_username(username or "anonymous")
+def _survey_path(key: str) -> str:
+    safe = _safe_key(key or "anonymous")
     return os.path.join(SURVEY_DIR, f"{safe}.jsonl")
 
 
-def _next_survey_id(username: str) -> int:
-    path = _survey_path(username)
+def _next_survey_id(key: str) -> int:
+    path = _survey_path(key)
     if not os.path.exists(path):
         return 1
     last_id = 0
@@ -60,9 +60,9 @@ def _next_survey_id(username: str) -> int:
     return last_id + 1 if last_id else 1
 
 
-def _append_survey(username: str, record: Dict[str, Any]) -> None:
-    path = _survey_path(username)
-    record = {"id": _next_survey_id(username), **record}
+def _append_survey(key: str, record: Dict[str, Any]) -> None:
+    path = _survey_path(key)
+    record = {"id": _next_survey_id(key), **record}
     with open(path, "a", encoding="utf-8") as f:
         f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
@@ -151,7 +151,7 @@ async def submit_survey(request: Request, current_user: dict = Depends(get_curre
         set_user_ctx(key, ctx, ttl_sec=60 * 60 * 6)
 
         # JSONL에도 저장(구형 로직 유지, 단 username 대신 sid 기준)
-        _append_survey(username, {"answers": answers})
+        _append_survey(sid, {"answers": answers})
 
     return {"ok": True, "received": body}
 
