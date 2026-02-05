@@ -5,7 +5,7 @@ import { ROUTES } from "../../constants/routes";
 import PlantSelectPage from "./PlantSelectPage";
 
 const API_BASE = "http://localhost:8000/api/chat";
-const ANALYZE_API = `${API_BASE}/analyze`; // ✅ analyze로 고정
+const ANALYZE_API = `${API_BASE}/analyze`;
 
 export default function AnalyzePage() {
   const nav = useNavigate();
@@ -20,8 +20,9 @@ export default function AnalyzePage() {
       setStatus("loading");
       setError("");
 
-      // ✅ Analyze 진입 시 "이전 결과 잔재"용 키들 싹 정리 (있으면만)
+      // ✅ Analyze 진입 시 "이전 결과 잔재" 정리
       try {
+        sessionStorage.removeItem("selected_plant"); // 렌더에서 쓰는 키도 초기화(원하면 유지해도 됨)
         sessionStorage.removeItem("ai_edit_url");
         sessionStorage.removeItem("render_result");
         sessionStorage.removeItem("last_render");
@@ -32,19 +33,16 @@ export default function AnalyzePage() {
           lat: 37.5665,
           lot: 126.978,
           hhmm: new Date().toTimeString().slice(0, 5).replace(":", ""),
-        };  
-          
-        // ✅ 지금은 목데이터(filters 비워도 백엔드가 동작하도록 설계돼있음)
-        const filters = selectedPlant ? { selectedPlant } : {};
+        };
+
         const res = await fetchWithSession(ANALYZE_API, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ meta, filters }),
-          // body: JSON.stringify({ meta, filters: {} }),
+          body: JSON.stringify({ meta, filters: {} }),
         });
 
         if (!res.ok) throw new Error("analyze_failed");
-        await res.json(); // 응답은 받아두기만 하고 UI에 표시 안함
+        await res.json(); // 응답은 받기만 하고 화면에 출력 안함
 
         if (!alive) return;
         setStatus("done");
@@ -59,10 +57,8 @@ export default function AnalyzePage() {
     return () => {
       alive = false;
     };
-  }, [selectedPlant]);
+  }, []); // ✅ selectedPlant 의존성 제거
 
-  // ✅ PlantSelectPage가 이미 Survey.css 레이아웃을 가지고 있으므로
-  // AnalyzePage에서 surveyPage/surveyShell 같은 wrapper를 또 씌우지 말 것!
   if (status === "loading") return <p className="surveyStatus">공간 분석 중...</p>;
   if (status === "error") return <p className="surveyStatus surveyStatus--error">{error}</p>;
 

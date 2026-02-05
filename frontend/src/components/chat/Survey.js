@@ -6,6 +6,16 @@ import "./Survey.css";
 
 const API_BASE = "http://localhost:8000/api/chat";
 const SURVEY_API = `${API_BASE}/survey`;
+const API_ORIGIN = "http://localhost:8000";
+
+/** ✅ survey option image url normalize */
+const resolveImageUrl = (url) => {
+  if (!url) return null;
+  const u = String(url);
+  if (u.startsWith("http://") || u.startsWith("https://")) return u;
+  if (u.startsWith("/")) return `${API_ORIGIN}${u}`;
+  return u;
+};
 
 const normalizeOption = (option, index) => {
   if (option == null) {
@@ -29,6 +39,16 @@ const normalizeOption = (option, index) => {
   const value = option.value ?? option.key ?? option.id ?? option.label ?? `option-${index + 1}`;
   const label = option.label ?? option.text ?? option.value ?? option.key ?? `Option ${index + 1}`;
 
+  /** ✅ 여기만 추가: option에서 이미지 후보 필드들 수집 */
+  const rawImage =
+    option.image ??
+    option.img ??
+    option.thumbnail ??
+    option.thumb ??
+    option.url ??
+    option.src ??
+    (Array.isArray(option.images) ? option.images[0] : null);
+
   const rawChildren = Array.isArray(option.children)
     ? option.children
     : Array.isArray(option.items)
@@ -39,7 +59,7 @@ const normalizeOption = (option, index) => {
   return {
     value: String(value),
     label: String(label),
-    image: null,
+    image: resolveImageUrl(rawImage), // ✅ image 살림
     children,
   };
 };
@@ -249,6 +269,8 @@ export default function Survey({ onComplete, allowSkip = true }) {
               <div className="surveyChecks">
                 {options.map((option, index) => {
                   const isSelected = selectedValues.includes(option.value);
+                  const hasImage = !!option.image; // ✅
+
                   return (
                     <label key={`${group.key}-${option.value}-${index}`} className="surveyCheck">
                       <input
@@ -259,7 +281,26 @@ export default function Survey({ onComplete, allowSkip = true }) {
                           handleParentToggle(group.key, option, isMultiple, group.max, selectedValues)
                         }
                       />
-                      <span className="surveyCheck__label">
+
+                      {/* ✅ 이미지 있으면 image 라벨 스타일 적용 */}
+                      <span
+                        className={
+                          hasImage
+                            ? "surveyCheck__label surveyCheck__label--image"
+                            : "surveyCheck__label"
+                        }
+                      >
+                        {hasImage && (
+                          <img
+                            className="surveyCheck__thumb"
+                            src={option.image}
+                            alt={option.label}
+                            onError={(e) => {
+                              // 깨진 이미지면 그냥 숨김 (UX)
+                              e.currentTarget.style.display = "none";
+                            }}
+                          />
+                        )}
                         <span className="surveyCheck__text">{option.label}</span>
                       </span>
                     </label>
@@ -276,6 +317,7 @@ export default function Survey({ onComplete, allowSkip = true }) {
                 {options.map((option, index) => {
                   const isSelected = selectedValues.includes(option.value);
                   const optionKey = `${path}${option.value}-${index}`;
+                  const hasImage = !!option.image; // ✅
 
                   return (
                     <div key={optionKey} className="surveyChildItem">
@@ -288,10 +330,28 @@ export default function Survey({ onComplete, allowSkip = true }) {
                             handleOptionToggle(group.key, option.value, isMultiple, group.max)
                           }
                         />
-                        <span className="surveyCheck__label">
+
+                        <span
+                          className={
+                            hasImage
+                              ? "surveyCheck__label surveyCheck__label--image"
+                              : "surveyCheck__label"
+                          }
+                        >
+                          {hasImage && (
+                            <img
+                              className="surveyCheck__thumb"
+                              src={option.image}
+                              alt={option.label}
+                              onError={(e) => {
+                                e.currentTarget.style.display = "none";
+                              }}
+                            />
+                          )}
                           <span className="surveyCheck__text">{option.label}</span>
                         </span>
                       </label>
+
                       {option.children?.length && isSelected
                         ? renderChildChecks(option.children, depth + 1, `${optionKey}-`)
                         : null}
