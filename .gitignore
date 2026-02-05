@@ -13,3 +13,5 @@ backend/results/*.png
 backend/results/result_latest.json
 backend/uploads/*.jpg
 backend/uploads/*.png
+# runtime artifacts
+backend/surveys/
