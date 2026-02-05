@@ -125,8 +125,9 @@
   align-items: center;
 }
 
-/* zipcode input은 address-row 안에서 margin 제거 */
-.address-row .ui-input {
+/* address-row 안에서 input/button margin 제거 */
+.address-row .ui-input,
+.address-row .ui-btn {
   margin: 0;
 }
 

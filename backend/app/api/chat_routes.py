@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Request, UploadFile, File, Form
+from fastapi import APIRouter, Request, UploadFile, File, Form, Depends
 from fastapi.responses import JSONResponse
 from typing import Optional, List
+from app.api.deps import get_current_user
 
 from .chat_progress import stream_route
 from .chat_handlers import (
@@ -51,16 +52,17 @@ def route_stream(request: Request):
     return stream_route(request)
 
 @router.get("/api/chat")
-async def route_chat_get(request: Request):
+async def route_chat_get(request: Request, current_user: dict = Depends(get_current_user)):
     return await chat_get(request)
 
 @router.post("/api/chat")
-async def route_chat_post(request: Request):
+async def route_chat_post(request: Request, current_user: dict = Depends(get_current_user)):
     return await chat_post(request)
 
 @router.post("/api/chat/image")
 async def route_chat_image(
     request: Request,
+    current_user: dict = Depends(get_current_user),
     files: Optional[List[UploadFile]] = File(None),
     image: Optional[UploadFile] = File(None),
     meta: Optional[str] = Form(None),
@@ -77,13 +79,21 @@ async def route_chat_image(
     )
 
 @router.post("/api/chat/spot")
-async def route_chat_spot(request: Request, body: PickSpotBody):
+async def route_chat_spot(
+    request: Request,
+    body: PickSpotBody,
+    current_user: dict = Depends(get_current_user),
+):
     return await chat_pick_spot(request, body)
 
 @router.get("/api/chat/results")
-def route_results():
+def route_results(current_user: dict = Depends(get_current_user)):
     return get_results()
 
 @router.post("/api/chat/analyze")
-async def chat_analyze(request: Request, body: AnalyzeBody) -> JSONResponse:
+async def chat_analyze(
+    request: Request,
+    body: AnalyzeBody,
+    current_user: dict = Depends(get_current_user),
+) -> JSONResponse:
     return await handle_chat_analyze(request, body)

@@ -219,7 +219,7 @@ const JoinRegister = ({ onSubmit }) => {
     }
 
     const payload = {
-      username: formData.username,
+      ...(isOauth ? {} : { username: formData.username }),
       password: isOauth ? undefined : formData.password,
       name: formData.name,
       age: formData.age,

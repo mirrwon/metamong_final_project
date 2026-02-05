@@ -13,13 +13,12 @@ import "./TimeLog.css";
 
 export default function TimeLogPage({ onEnterDecorate, decoratedData }) {
   const [activeTab, setActiveTab] = useState("all");
-  const username = "test_user";
   const [activePlantId, setActivePlantId] = useState("");
   const [isAddPlantOpen, setIsAddPlantOpen] = useState(false);
   const [newPlantName, setNewPlantName] = useState("");
   const [newPlantFile, setNewPlantFile] = useState(null);
 
-  const { plants, logs, createLog, createPlant, deleteLog } = useTimeLogData(username);
+  const { plants, logs, createLog, createPlant, deleteLog } = useTimeLogData();
   const activePlant = useMemo(() => plants.find((p) => p.id === activePlantId) || null, [plants, activePlantId]);
   const isPlantSelected = Boolean(activePlantId);
   const { counts, groups } = useTimeLogComputed({ logs, activePlantId, activeTab });

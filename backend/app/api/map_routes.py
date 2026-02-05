@@ -3,7 +3,8 @@ import os
 from typing import Any, Dict
 
 import requests
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
+from app.api.deps import get_current_user
 
 router = APIRouter(prefix="/api/map")
 
@@ -200,12 +201,13 @@ def _parse_distance(value: Any, default: int = 10**9) -> int:
 
 @router.get("/flowers")
 def list_nearby_flowers(
-    username: str,
+    current_user: dict = Depends(get_current_user),
     radius: int = 3000,
     size: int = 30,
     include_parking: bool = False,
     parking_radius: int = 2000,
 ) -> Dict[str, Any]:
+    username = current_user["user_name"]
     if not username:
         raise HTTPException(status_code=400, detail="Username required")
 
@@ -294,7 +296,6 @@ def list_nearby_flowers(
             "원예업",
             "나무,묘목",
             "원예용품",
-            "조경자재",
             "꽃집,꽃배달"
         ]
     )
@@ -346,7 +347,6 @@ def list_nearby_flowers(
         raw_count += len(documents)
         for doc in documents:
             item = _extract_place(doc)
-            print(f"[kakao] name={item.get('name')} category={item.get('category')}")
             category_text = _normalize_text(item.get("category"))
             if category_allow_keywords and not _find_keywords(
                 category_text, category_allow_keywords

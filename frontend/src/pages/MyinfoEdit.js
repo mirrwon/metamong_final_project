@@ -111,7 +111,6 @@ const MyinfoEdit = ({ user, setUser }) => {
 
     try {
       const payload = {
-        username: myinfo.username,
         password: isOauthUser ? undefined : myinfo.password || undefined,
         name: myinfo.name,
         gender: myinfo.gender,
@@ -126,7 +125,10 @@ const MyinfoEdit = ({ user, setUser }) => {
 
       const res = await updateProfile(payload);
       const cacheBust = Date.now();
-      const nextUser = { ...res.data, profileImageCacheBust: cacheBust };
+      const nextUser = {
+        ...res.data,
+        profileImageCacheBust: cacheBust,
+      };
 
       storeUser(nextUser);
       if (setUser) setUser(nextUser);

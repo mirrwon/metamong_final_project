@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useState } from "react";
+import { fetchWithSession } from "../services/session";
 
-export default function useTimeLogData(username) {
+export default function useTimeLogData() {
   const [plants, setPlants] = useState([]);
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(false);
 
   const fetchPlants = useCallback(async () => {
     try {
-      const res = await fetch(`/api/plantboard/plants?username=${username}`);
+      const res = await fetchWithSession("/api/plantboard/plants");
       const data = await res.json();
       if (data.ok) {
         setPlants(data.items || []);
@@ -15,12 +16,12 @@ export default function useTimeLogData(username) {
     } catch (err) {
       console.error("Failed to fetch plants:", err);
     }
-  }, [username]);
+  }, []);
 
   const fetchLogs = useCallback(async () => {
     try {
       setLoading(true);
-      const res = await fetch(`/api/plantboard/logs?username=${username}`);
+      const res = await fetchWithSession("/api/plantboard/logs");
       const data = await res.json();
       if (data.ok) {
         setLogs(data.items || []);
@@ -30,15 +31,15 @@ export default function useTimeLogData(username) {
     } finally {
       setLoading(false);
     }
-  }, [username]);
+  }, []);
 
   const createLog = useCallback(
     async (logData) => {
       try {
-        const res = await fetch("/api/plantboard/logs", {
+        const res = await fetchWithSession("/api/plantboard/logs", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ username, log: logData }),
+          body: JSON.stringify({ log: logData }),
         });
         const data = await res.json();
         if (data.ok) {
@@ -48,16 +49,16 @@ export default function useTimeLogData(username) {
         console.error("Failed to create log:", err);
       }
     },
-    [username, fetchLogs]
+    [fetchLogs]
   );
 
   const createPlant = useCallback(
     async (plantData) => {
       try {
-        const res = await fetch("/api/plantboard/plants", {
+        const res = await fetchWithSession("/api/plantboard/plants", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ username, plant: plantData }),
+          body: JSON.stringify({ plant: plantData }),
         });
         const data = await res.json();
         if (data.ok) {
@@ -69,13 +70,13 @@ export default function useTimeLogData(username) {
       }
       return null;
     },
-    [username, fetchPlants]
+    [fetchPlants]
   );
 
   const deleteLog = useCallback(
     async (logId) => {
       try {
-        const res = await fetch(`/api/plantboard/logs/${logId}?username=${username}`, {
+        const res = await fetchWithSession(`/api/plantboard/logs/${logId}`, {
           method: "DELETE",
         });
         const data = await res.json();
@@ -86,7 +87,7 @@ export default function useTimeLogData(username) {
         console.error("Failed to delete log:", err);
       }
     },
-    [username, fetchLogs]
+    [fetchLogs]
   );
 
   useEffect(() => {
