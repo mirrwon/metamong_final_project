@@ -83,8 +83,8 @@ def get_survey(current_user: dict = Depends(get_current_user)):
                 "multiple": True,
                 "label": "주의 사항을 선택해 주세요",
                 "options": [
-                    {"value": "beginner", "label": "초심자"},
-                    {"value": "baby", "label": "아기"},
+                    {"value": "", "label": "없음"},
+                    {"value": "baby", "label": "아이"},
                     {"value": "dog", "label": "강아지"},
                     {"value": "cat", "label": "고양이"},
                     {"value": "allergy", "label": "알러지"},
@@ -95,6 +95,7 @@ def get_survey(current_user: dict = Depends(get_current_user)):
                 "multiple": True,
                 "label": "원하는 식물 크기는 무엇인가요?",
                 "options": [
+                    {"value": "", "label": "없음"},
                     {"value": "small", "label": "탁상용"},
                     {"value": "large", "label": "바닥용"},
                 ],
@@ -104,6 +105,7 @@ def get_survey(current_user: dict = Depends(get_current_user)):
                 "multiple": True,
                 "label": "방 분위기를 선택해주세요.",
                 "options": [
+                    {"value": "", "label": "없음", "image": "/assets/survey/none.png"},
                     {"value": "natural", "label": "내추럴", "image": "/assets/survey/natural.jpg"},
                     {"value": "minimal", "label": "미니멀", "image": "/assets/survey/minimal.jpg"},
                     {"value": "trendy", "label": "트렌디", "image": "/assets/survey/trendy.jpg"},
@@ -114,6 +116,7 @@ def get_survey(current_user: dict = Depends(get_current_user)):
                 "multiple": True,
                 "label": "당신이 원하는 식물 스타일은 무엇인가요?",
                 "options": [
+                    {"value": "", "label": "없음", "image": "/assets/survey/none.png"},
                     {"value": "flowery", "label": "화려한 꽃", "image": "/assets/survey/flowery.jpg"},
                     {"value": "leafy", "label": "푸른 잎", "image": "/assets/survey/leafy.png"},
                     {"value": "fruity", "label": "싱그러운 과일", "image": "/assets/survey/fruity.jpg"},

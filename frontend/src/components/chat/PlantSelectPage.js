@@ -197,6 +197,38 @@ const filterPlantsBySurvey = (plants, answers) => {
   });
 };
 
+const buildAnswersWithStyleNone = (answers) => ({
+  ...(answers || {}),
+  style: [],
+});
+
+const buildAnswersWithPlantStyleNone = (answers) => ({
+  ...(answers || {}),
+  Plant_style: [],
+  plant_style: [],
+  plantStyle: [],
+});
+
+const filterPlantsBySurveyWithFallback = (plants, answers) => {
+  const baseAnswers = answers || {};
+
+  const attempts = [
+    baseAnswers,
+    buildAnswersWithStyleNone(baseAnswers),
+    buildAnswersWithPlantStyleNone(baseAnswers),
+    buildAnswersWithPlantStyleNone(buildAnswersWithStyleNone(baseAnswers)),
+  ];
+
+  for (const attempt of attempts) {
+    const matched = filterPlantsBySurvey(plants, attempt);
+    if (matched.length > 0) {
+      return matched;
+    }
+  }
+
+  return [];
+};
+
 const shuffle = (arr) => {
   const out = [...arr];
   for (let i = out.length - 1; i > 0; i -= 1) {
@@ -281,7 +313,7 @@ export default function PlantSelectPage({
 
   useEffect(() => {
     if (status !== "ready") return;
-    const filtered = filterPlantsBySurvey(allPlants, survey || {});
+    const filtered = filterPlantsBySurveyWithFallback(allPlants, survey || {});
     const normalized = filtered
       .map((plant) => {
         const image = resolveImageUrl(plant?.image) || resolveImageUrl(plant?.images?.[0]);
