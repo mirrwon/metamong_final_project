@@ -115,8 +115,6 @@ async def route_chat_render(request: Request, body: PickSpotBody) -> JSONRespons
     # ✅ 기존 spot 로직 재사용
     return await chat_pick_spot(request, body)
 
-from fastapi.responses import JSONResponse
-
 @router.get("/api/chat/render")
 def chat_render_get():
     return JSONResponse(

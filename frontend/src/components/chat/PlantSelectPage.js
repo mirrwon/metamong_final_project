@@ -150,6 +150,11 @@ const buildPlantFilters = (plant) => {
 };
 
 const filterPlantsBySurvey = (plants, answers) => {
+
+  console.log("전체 식물 수:", plants.length);
+  console.log("첫번째 식물 데이터:", plants[0]);
+  console.log("설문 답변:", answers);
+
   const cautionWanted = normalizeValues(answers?.caution);
   const sizeWanted = answers?.size || [];
   const styleWanted = answers?.style || [];

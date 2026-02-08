@@ -15,29 +15,49 @@ PointLike = Union[Tuple[float, float], Dict[str, float], list]
 def _parse_best_point(obj: Any) -> Optional[Tuple[float, float]]:
     """
     best_point가 아래 형태 중 무엇이든 받아서 (x, y) float로 반환.
-    - [x, y]
-    - (x, y)
+    지원:
+    - [x, y], (x, y)
     - {"x":..., "y":...}
-    - {"cx":..., "cy":...} 같은 변형도 일부 허용
+    - {"cx":..., "cy":...}
+    - {"px":..., "py":...}
+    - {"pt":[x,y]} / {"point":[x,y]} / {"xy":[x,y]} / {"center":[x,y]}
+    - {"pt":{"x":..,"y":..}} 같은 중첩도 일부 대응
     """
     if obj is None:
         return None
 
+    # 1) list/tuple
     if isinstance(obj, (list, tuple)) and len(obj) >= 2:
         try:
             return float(obj[0]), float(obj[1])
         except Exception:
             return None
 
+    # 2) dict
     if isinstance(obj, dict):
+        # 2-A) {"pt":[x,y]} 류
+        for key in ["pt", "point", "xy", "center"]:
+            v = obj.get(key)
+            if isinstance(v, (list, tuple)) and len(v) >= 2:
+                try:
+                    return float(v[0]), float(v[1])
+                except Exception:
+                    return None
+            if isinstance(v, dict) and ("x" in v and "y" in v):
+                try:
+                    return float(v["x"]), float(v["y"])
+                except Exception:
+                    return None
+
+        # 2-B) {"x":..,"y":..} 류
         for kx, ky in [("x", "y"), ("cx", "cy"), ("px", "py")]:
             if kx in obj and ky in obj:
                 try:
                     return float(obj[kx]), float(obj[ky])
                 except Exception:
                     return None
-    return None
 
+    return None
 
 def _to_pixel_xy(pt: Tuple[float, float], width: int, height: int) -> Tuple[int, int]:
     """
@@ -153,6 +173,14 @@ def composite_plant_on_original(
         _draw_green_dot(base, (px, py), dot_r)
 
     used_plant = False
+
+    # ✅ 1) plant_png_path가 없거나 파일이 없으면 placeholder를 자동으로 만든다
+    if (not plant_png_path) or (not os.path.exists(plant_png_path)):
+        # out_path 폴더 옆에 placeholder를 만들어서 항상 합성되게
+        ph_path = os.path.join(os.path.dirname(out_path), "_placeholder_plant.png")
+        plant_png_path = ensure_placeholder_plant_png(ph_path, size=512)
+
+    # ✅ 2) 이제는 무조건 plant_png_path가 존재한다고 가정하고 합성
     if plant_png_path and os.path.exists(plant_png_path):
         plant = _load_rgba(plant_png_path)
 
@@ -167,11 +195,13 @@ def composite_plant_on_original(
             left = px - pw // 2
             top = py - ph
 
-        left = max(-pw // 2, min(left, w - pw // 2))
-        top = max(-ph // 2, min(top, h - ph // 2))
+        # ✅ alpha_composite는 음수 좌표에서 문제날 수 있어서 0~로 클램프 (안전)
+        left = max(0, min(int(left), w - pw))
+        top = max(0, min(int(top), h - ph))
 
-        base.alpha_composite(plant, (int(left), int(top)))
+        base.alpha_composite(plant, (left, top))
         used_plant = True
+
 
     base.save(out_path)
     return {"ok": True, "out_path": out_path, "used_plant": used_plant, "pixel_xy": (px, py)}

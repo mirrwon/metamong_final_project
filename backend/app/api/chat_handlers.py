@@ -1,14 +1,14 @@
 from __future__ import annotations
 
-import os, json, time, random, uuid, pathlib, glob , inspect
-
+import os, json, time, random, uuid, pathlib, glob, inspect, hashlib, requests, shutil
 from typing import Any, Dict, List, Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from datetime import datetime
 from dotenv import load_dotenv
 
 from fastapi import UploadFile, File, Form, Request
 from fastapi.responses import JSONResponse
+from urllib.parse import urlparse
 
 from app.cv.pipeline import run_pipeline, list_71765_scenes
 from app.cv.space_classifier import classify_space
@@ -16,46 +16,33 @@ from app.cv.scene_room_infer import infer_room_type_from_scene_json, load_scene_
 from app.cv.scene_catalog import build_room_groups, DEFAULT_SCENE_ROOT, pick_scene_for_room
 
 from app.config import BASE_DIR, RESULT_DIR, RESULT_JSON_LATEST, UPLOAD_DIR, ASSET_DIR
-
 from app.llm.image_edit import composite_plant_on_original
 from app.llm.gemini.gemini_image_edit import gemini_edit_image
-
 from app.solar.weather_client import AsosWeatherClient
 from app.reco.recommender import recommend_for_analysis
 
 from .chat_session import _get_or_create_sid, _json_with_sid, _get_client_id
-from .chat_progress import progress
-from .chat_storage import get_user_ctx, set_user_ctx, get_user_state, set_user_state, USER_CTX
-from .chat_db import db_save_reco, db_list_recos
-from .chat_utils import (
-    abs_url,
-    to_results_url,
-    cache_bust_url,
-    load_latest_result,
-    pick_latest_result_file,
-    extract_best_point,
-    scene_to_label,
-    now_kst_yyyymmdd_hhmm,
-    get_lat_lot_from_meta,
-    safe_float,
-    parse_hh_from_any,
-    scene_id_to_room_label,
-)
+from .chat_storage import get_user_ctx, set_user_ctx
+from .chat_utils import cache_bust_url, to_results_url, extract_best_point, safe_float
 
 load_dotenv()
-
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 os.makedirs(RESULT_DIR, exist_ok=True)
 
 weather_client = AsosWeatherClient()
 
+# =========================
+# Models
+# =========================
+
 class AnalyzeBody(BaseModel):
-    filters: Dict[str, Any] = {}
+    filters: Dict[str, Any] = Field(default_factory=dict)
     meta: Optional[Dict[str, Any]] = None
 
 class RecommendBody(BaseModel):
-    filters: Dict[str, Any] = {}
-    meta: Optional[Dict[str, Any]] = None  # 필요하면 받기만
+    filters: Dict[str, Any] = Field(default_factory=dict)
+    meta: Optional[Dict[str, Any]] = None
+
 
 async def handle_chat_recommend(request: Request, body: RecommendBody) -> JSONResponse:
     sid, sid_is_new = _get_or_create_sid(request)
@@ -465,6 +452,7 @@ async def handle_chat_image(
     sid, sid_is_new = _get_or_create_sid(request)
     key = sid
     cid = _get_client_id(request) or sid
+    # cid = sid
 
     upload: Optional[UploadFile] = None
     if files and len(files) > 0:
@@ -616,6 +604,58 @@ async def handle_chat_image(
     )
 
 # =========================
+# render_plan → best_point 강제 반영 헬퍼
+# =========================
+def _best_point_from_spot(s: Dict[str, Any]) -> Dict[str, Any]:
+    if not isinstance(s, dict):
+        return {}
+    pt = None
+    for k in ["pt", "point", "xy", "center"]:
+        v = s.get(k)
+        if isinstance(v, (list, tuple)) and len(v) >= 2:
+            pt = [float(v[0]), float(v[1])]
+            break
+        if isinstance(v, dict) and "x" in v and "y" in v:
+            pt = [float(v["x"]), float(v["y"])]
+            break
+    if pt is None:
+        feats = s.get("features")
+        if isinstance(feats, dict):
+            v = feats.get("pt") or feats.get("xy") or feats.get("center")
+            if isinstance(v, (list, tuple)) and len(v) >= 2:
+                pt = [float(v[0]), float(v[1])]
+            elif isinstance(v, dict) and "x" in v and "y" in v:
+                pt = [float(v["x"]), float(v["y"])]
+    return {"pt": pt, "spot_index": s.get("spot_index")}
+
+def _choose_spot_by_render_plan(data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    spots = data.get("spots")
+    if not isinstance(spots, list) or not spots:
+        return None
+
+    # 1) render_plan이 있으면 그걸 최우선
+    rp = data.get("render_plan")
+    if isinstance(rp, dict):
+        idxs = rp.get("spot_indexes")
+        if isinstance(idxs, list) and idxs:
+            try:
+                i = int(idxs[0])
+                if 0 <= i < len(spots) and isinstance(spots[i], dict):
+                    return spots[i]
+            except Exception:
+                pass
+
+    # 2) render_plan이 없거나 깨졌으면 기존 best_spot
+    bs = data.get("best_spot")
+    if isinstance(bs, dict):
+        return bs
+
+    # 3) 최후: 첫 spot
+    return spots[0] if isinstance(spots[0], dict) else None
+
+
+
+# =========================
 # /api/chat/analyze handler (CV + RECO + IMAGES)
 # =========================
 async def handle_chat_analyze(request: Request, body: AnalyzeBody) -> JSONResponse:
@@ -641,16 +681,17 @@ async def handle_chat_analyze(request: Request, body: AnalyzeBody) -> JSONRespon
     try:
         out = _run_pipeline_compat(str(save_path), user_opts=user_opts)
     except Exception as e:
-        return _json_with_sid({"ok": False, "messages": [{"type": "text", "text": f"분석 중 오류: {e}"}]}, sid, sid_is_new)
+        return _json_with_sid(
+            {"ok": False, "messages": [{"type": "text", "text": f"분석 중 오류: {e}"}]},
+            sid, sid_is_new
+        )
 
     data = out if isinstance(out, dict) else {}
 
     # ========================================================
-    # 🚀 [기상청 ASOS 데이터 주입 및 보정] - 수정 포인트
+    # 🚀 [기상청 ASOS 데이터 주입 및 보정]
     # ========================================================
     weather_res = None
-
-    ## 원래 코드 ##
     try:
         weather_res = weather_client.fetch_growth_profile("108")
 
@@ -658,8 +699,6 @@ async def handle_chat_analyze(request: Request, body: AnalyzeBody) -> JSONRespon
         weather_res["solar_radiation"] = "2.5"
         weather_res["ok"] = True
         # -----------------------------------------------
-
-
 
         data["solar"] = weather_res
 
@@ -678,6 +717,183 @@ async def handle_chat_analyze(request: Request, body: AnalyzeBody) -> JSONRespon
     data = recommend_for_analysis(data, user_filters=user_filters)
     data["image_path"] = str(save_path)
 
+    # ====== (A) spot 선택 정책 계산: small=table 1개, else=floor 3개(멀리) ======
+
+    def _synthesize_table_spot(data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """
+        table 후보가 없을 때, 화면 중간 높이(바닥보다 위)에 '테이블용' spot 1개를 강제로 만든다.
+        - 원근/깊이 기반 테이블 검출은 없으니, 최소 UX용 휴리스틱.
+        - 나중에 CV에서 진짜 table 후보가 생기면 제거 가능.
+        """
+        w = int((data.get("image_w") or data.get("w") or 1248))
+        h = int((data.get("image_h") or data.get("h") or 832))
+
+        win = data.get("window") if isinstance(data.get("window"), dict) else None
+        y = int(h * 0.62)
+        x = int(w * 0.55)
+
+        if isinstance(win, dict):
+            bb = win.get("bbox") or win.get("xyxy") or win.get("box")
+            if isinstance(bb, (list, tuple)) and len(bb) >= 4:
+                x1, y1, x2, y2 = [int(v) for v in bb[:4]]
+                x = int((x1 + x2) * 0.5)
+                y = int(min(h * 0.75, y2 + (h * 0.10)))
+
+        x = max(10, min(w - 10, x))
+        y = max(10, min(h - 10, y))
+
+        return {
+            "spot_index": None,  # 아래에서 채움
+            "surface": "table",  # ✅ 핵심 라벨
+            "synthetic": True,
+            "score": 999,
+            "pt": [x, y],
+            "features": {"center": [x, y], "pt": [x, y]},
+        }
+
+    def _spot_surface(s: Dict[str, Any]) -> str:
+        if not isinstance(s, dict):
+            return ""
+        for k in ["surface", "spot_usage", "place", "placement", "spot_type"]:
+            v = s.get(k)
+            if isinstance(v, str) and v.strip():
+                return v.strip().lower()
+        feats = s.get("features")
+        if isinstance(feats, dict):
+            for k in ["surface", "place", "placement", "spot_type"]:
+                v = feats.get(k)
+                if isinstance(v, str) and v.strip():
+                    return v.strip().lower()
+        return ""
+
+    def _spot_index_value(s: Dict[str, Any], fallback: int) -> int:
+        if not isinstance(s, dict):
+            return fallback
+        v = s.get("spot_index", s.get("index", fallback))
+        try:
+            return int(v)
+        except Exception:
+            return fallback
+
+    def _pick_one_table_spot(spots: List[Dict[str, Any]]) -> Optional[int]:
+        table_like = []
+        for i, s in enumerate(spots):
+            surf = _spot_surface(s)
+            if any(x in surf for x in ["table", "desk", "shelf", "counter", "stand"]):
+                table_like.append((i, s))
+        if table_like:
+            i, s = table_like[0]
+            return _spot_index_value(s, i)
+
+        non_floor = []
+        for i, s in enumerate(spots):
+            surf = _spot_surface(s)
+            if surf and ("floor" not in surf):
+                non_floor.append((i, s))
+        if non_floor:
+            i, s = non_floor[0]
+            return _spot_index_value(s, i)
+
+        return None
+
+    def _get_spot_pt(s: Dict[str, Any]):
+        for k in ["pt", "point", "xy", "center"]:
+            v = s.get(k)
+            if isinstance(v, (list, tuple)) and len(v) >= 2:
+                return float(v[0]), float(v[1])
+            if isinstance(v, dict) and "x" in v and "y" in v:
+                return float(v["x"]), float(v["y"])
+        feats = s.get("features")
+        if isinstance(feats, dict):
+            v = feats.get("pt") or feats.get("xy") or feats.get("center")
+            if isinstance(v, (list, tuple)) and len(v) >= 2:
+                return float(v[0]), float(v[1])
+            if isinstance(v, dict) and "x" in v and "y" in v:
+                return float(v["x"]), float(v["y"])
+        return None
+
+    def _dist2(a, b):
+        return (a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2
+
+    def pick_far_spot_indexes(spots: List[Dict[str, Any]], k: int = 3, min_dist_px: int = 180) -> List[int]:
+        cand = []
+        for idx, s in enumerate(spots):
+            if not isinstance(s, dict):
+                continue
+            pt = _get_spot_pt(s)
+            score = s.get("score", 0)
+            cand.append((idx, pt, score, s))
+
+        cand.sort(key=lambda x: (x[1] is None, -(x[2] or 0)))
+        chosen = []
+        chosen_pts = []
+        min_d2 = float(min_dist_px * min_dist_px)
+
+        for idx, pt, score, s in cand:
+            if pt is None:
+                continue
+            if all(_dist2(pt, p) >= min_d2 for p in chosen_pts):
+                chosen.append(_spot_index_value(s, idx))
+                chosen_pts.append(pt)
+            if len(chosen) >= k:
+                break
+
+        if len(chosen) < k:
+            for idx, pt, score, s in cand:
+                v = _spot_index_value(s, idx)
+                if v not in chosen:
+                    chosen.append(v)
+                if len(chosen) >= k:
+                    break
+
+        return chosen[:k]
+
+    # ---- 실제 render_plan 적용 ----
+    spots = data.get("spots") if isinstance(data, dict) else None
+    if isinstance(spots, list) and spots:
+        # ✅ 소형 여부 판단
+        size_pref = None
+        if isinstance(user_filters, dict):
+            size_pref = user_filters.get("size") or user_filters.get("size_pref")
+        if not size_pref and isinstance(data.get("constraints"), dict):
+            size_pref = data["constraints"].get("size_pref")
+        size_pref = (str(size_pref).lower().strip() if size_pref else "")
+
+        if size_pref == "small":
+            # 1) 진짜 table 후보 있으면 사용
+            table_idx = _pick_one_table_spot(spots)
+
+            # 2) 없으면 fake table spot 추가 후 그 인덱스를 사용 (✅ 바닥 fallback 제거)
+            if table_idx is None:
+                fake = _synthesize_table_spot(data)
+                if fake:
+                    fake["spot_index"] = len(spots)
+                    spots.append(fake)
+                    data["spots"] = spots
+                    table_idx = fake["spot_index"]
+                else:
+                    # fake 생성도 실패하면 마지막 fallback (여기까지 올 일 거의 없음)
+                    table_idx = _spot_index_value(spots[0], 0)
+
+            data["render_plan"] = {"count": 1, "spot_indexes": [table_idx], "reason": "table_small"}
+
+        else:
+            idxs = pick_far_spot_indexes(spots, k=3, min_dist_px=180)
+            data["render_plan"] = {"count": 3, "spot_indexes": idxs, "reason": "floor_large"}
+
+    # ✅ render_plan이 실제 합성 좌표(best_point) / best_spot에 반영되게 강제
+    chosen_spot = _choose_spot_by_render_plan(data)
+    if isinstance(chosen_spot, dict):
+        data["best_spot"] = chosen_spot  # pick_spot 등 다른 플로우도 일관되게
+        forced_best_point = _best_point_from_spot(chosen_spot)
+    else:
+        forced_best_point = None
+
+    # ✅ 핵심: 합성에 쓰이는 좌표(best_point)까지 render_plan 기반으로 강제 고정
+    if isinstance(forced_best_point, dict) and forced_best_point.get("pt"):
+        data["best_point"] = {"pt": forced_best_point["pt"], "spot_index": forced_best_point.get("spot_index")}
+        # 호환용 키들도 같이 박아두면 extract_best_point 구현이 뭐든 안 흔들림
+        data["best_pt"] = forced_best_point["pt"]
 
     # 3) 결과 저장
     latest_json = os.path.join(RESULT_DIR, "result_latest.json")
@@ -693,6 +909,11 @@ async def handle_chat_analyze(request: Request, body: AnalyzeBody) -> JSONRespon
 
     # 4) 결과 이미지 생성
     best_point = extract_best_point(data)
+
+    # ✅ 최종 안전장치: render_plan 기반 강제 best_point가 있으면 그걸 100% 사용
+    if isinstance(forced_best_point, dict) and forced_best_point.get("pt"):
+        best_point = {"pt": forced_best_point["pt"], "spot_index": forced_best_point.get("spot_index")}
+
     plant_asset = os.path.join(BASE_DIR, "assets", "plants", "default.png")
 
     composite_plant_on_original(
@@ -702,7 +923,7 @@ async def handle_chat_analyze(request: Request, body: AnalyzeBody) -> JSONRespon
         plant_png_path=plant_asset if os.path.exists(plant_asset) else None,
         plant_width_ratio=0.22,
         anchor="bottom_center",
-        add_green_dot=True,
+        add_green_dot=False,
     )
 
     composite_plant_on_original(
@@ -718,18 +939,18 @@ async def handle_chat_analyze(request: Request, body: AnalyzeBody) -> JSONRespon
     # (옵션) gemini 편집은 실패해도 전체 플로우는 진행되게
     try:
         pt = best_point.get("pt") if isinstance(best_point, dict) else None
-        prompt = (
-            "Add a realistic potted plant at the marked spot on the floor. "
-            "Match lighting and perspective naturally. Do not change the room layout. "
-            "Remove any green dot marker in the final image."
-        )
+        rp = data.get("render_plan") if isinstance(data, dict) else None
+        spot_usage = "table_small" if (isinstance(rp, dict) and rp.get("reason") == "table_small") else "floor_large"
+
+        prompt = _prompt_for_edit(best_point, spot_usage=spot_usage, plant_name=None)
         if pt:
             prompt += f" The spot coordinates are {pt}."
+
         gemini_edit_image(input_image_path=marker_path, prompt=prompt, out_path=ai_edit_path)
     except Exception as e:
         print("[WARN] gemini_edit_image failed:", e)
 
-    # 5) 응답 (프론트에서 바로 이미지 띄우기)
+    # 5) 응답
     ts_ms = int(time.time() * 1000)
     images_payload: List[Dict[str, Any]] = []
 
@@ -751,7 +972,6 @@ async def handle_chat_analyze(request: Request, body: AnalyzeBody) -> JSONRespon
         sid,
         sid_is_new,
     )
-
 
 # =========================
 # Router-facing aliases
@@ -786,8 +1006,79 @@ async def chat_image(
 
 class PickSpotBody(BaseModel):
     spot_index: int
+    plant_id: Optional[str] = None
     plant_name: Optional[str] = None
-    regen: bool = False  # 기본은 캐시 모드
+    plant_image_url: Optional[str] = None
+    regen: bool = False
+    mode: Optional[str] = None
+
+def _safe_ext_from_url(url: str) -> str:
+    try:
+        p = urlparse(url)
+        ext = pathlib.Path(p.path).suffix.lower()
+        if ext in [".png", ".jpg", ".jpeg", ".webp"]:
+            return ext
+    except Exception:
+        pass
+    return ".png"
+
+def _download_image_cached(url: str, cache_dir: str, cache_key: str, regen: bool = False) -> Optional[str]:
+    """
+    S3(또는 외부) 이미지 URL을 로컬 파일로 다운로드해서 composite에서 사용할 수 있게 한다.
+    regen=True면 캐시 무시하고 다시 받는다.
+    """
+    if not url or not isinstance(url, str):
+        return None
+
+    os.makedirs(cache_dir, exist_ok=True)
+
+    ext = _safe_ext_from_url(url)
+    h = hashlib.sha1((cache_key + "|" + url).encode("utf-8")).hexdigest()[:16]
+    out_path = os.path.join(cache_dir, f"plant_{h}{ext}")
+
+    if (not regen) and os.path.exists(out_path) and os.path.getsize(out_path) > 0:
+        return out_path
+
+    try:
+        r = requests.get(url, timeout=10, stream=True)
+        if r.status_code != 200:
+            print(f"[PLANT_DL][WARN] status={r.status_code} url={url}")
+            return None
+
+        ctype = (r.headers.get("content-type") or "").lower()
+        if "image" not in ctype:
+            # 일부 S3는 content-type이 이상할 수 있어 경고만
+            print(f"[PLANT_DL][WARN] non-image content-type={ctype} url={url}")
+
+        with open(out_path, "wb") as f:
+            for chunk in r.iter_content(chunk_size=8192):
+                if chunk:
+                    f.write(chunk)
+
+        if os.path.getsize(out_path) <= 0:
+            print(f"[PLANT_DL][WARN] empty file url={url}")
+            return None
+
+        return out_path
+    except Exception as e:
+        print(f"[PLANT_DL][ERR] {e} url={url}")
+        return None
+
+def _find_plant_image_url(top_plants: Any, pid: str) -> Optional[str]:
+    """
+    top_plants(list[dict])에서 plant_id에 해당하는 이미지 URL을 찾아온다.
+    (키 이름이 image / image_url / url 등 여러 형태일 수 있어서 다 대응)
+    """
+    if not pid or not isinstance(top_plants, list):
+        return None
+
+    for p in top_plants:
+        if not isinstance(p, dict):
+            continue
+        cand_id = p.get("id") or p.get("plant_id")
+        if cand_id is not None and str(cand_id) == str(pid):
+            return p.get("image_url") or p.get("image") or p.get("url")
+    return None
 
 
 def get_filters():
@@ -823,15 +1114,14 @@ async def chat_pick_spot(request: Request, body: PickSpotBody) -> JSONResponse:
     sid, sid_is_new = _get_or_create_sid(request)
     key = sid
 
-    spot_index = int(body.spot_index)
     regen = bool(getattr(body, "regen", False))
+    mode = (getattr(body, "mode", "") or "").strip().lower()
 
     latest_json = os.path.join(RESULT_DIR, "result_latest.json")
     if not os.path.exists(latest_json):
         return _json_with_sid(
-            {"messages": [{"type": "text", "text": "저장된 분석 결과가 없습니다. 먼저 사진을 업로드해 주세요."}]},
-            sid,
-            sid_is_new,
+            {"messages": [{"type": "text", "text": "저장된 분석 결과가 없습니다. 먼저 analyze를 실행하세요."}]},
+            sid, sid_is_new,
         )
 
     try:
@@ -840,163 +1130,186 @@ async def chat_pick_spot(request: Request, body: PickSpotBody) -> JSONResponse:
     except Exception as e:
         return _json_with_sid(
             {"messages": [{"type": "text", "text": f"결과 파일을 읽지 못했습니다: {e}"}]},
-            sid,
-            sid_is_new,
+            sid, sid_is_new,
         )
 
-    spots = data.get("spots") if isinstance(data, dict) else None
-    if not isinstance(spots, list) or len(spots) == 0:
+    spots = data.get("spots")
+    if not isinstance(spots, list) or not spots:
         return _json_with_sid(
-            {"messages": [{"type": "text", "text": "후보(spots)가 없습니다. 다시 분석해 주세요."}]},
-            sid,
-            sid_is_new,
+            {"messages": [{"type": "text", "text": "spots가 없습니다. analyze를 다시 실행하세요."}]},
+            sid, sid_is_new,
         )
 
-    if spot_index < 0 or spot_index >= len(spots):
-        return _json_with_sid(
-            {"messages": [{"type": "text", "text": f"spot_index 범위가 올바르지 않습니다. (0 ~ {len(spots)-1})"}]},
-            sid,
-            sid_is_new,
-        )
+    # =========================
+    # 1) render_plan 기반 렌더 대상 spot index 결정
+    # =========================
+    rp = data.get("render_plan") if isinstance(data, dict) else None
+    render_reason = None
+    render_idxs: List[int] = []
 
-    chosen = spots[spot_index]
-    if not isinstance(chosen, dict):
-        return _json_with_sid(
-            {"messages": [{"type": "text", "text": "선택한 후보 데이터 형식이 올바르지 않습니다."}]},
-            sid,
-            sid_is_new,
-        )
+    if isinstance(rp, dict):
+        render_reason = (rp.get("reason") or "").lower().strip()
+        idxs = rp.get("spot_indexes")
+        if isinstance(idxs, list):
+            for x in idxs:
+                try:
+                    i = int(x)
+                    if 0 <= i < len(spots):
+                        render_idxs.append(i)
+                except Exception:
+                    pass
 
-    # ✅ 원본 이미지 경로 찾기 (분리 구조에 맞게 보강)
-    # 1) ctx last_image_path 우선
-    ctx = get_user_ctx(key)
-    save_path = (ctx.get("last_image_path") if isinstance(ctx, dict) else None)
+    # fallback
+    if not render_idxs:
+        try:
+            render_idxs = [int(body.spot_index)]
+        except Exception:
+            render_idxs = [0]
+        render_reason = "manual"
 
-    # 2) 없으면 result_latest.json 내부 키 시도
-    if not save_path:
-        save_path = (
-            (data.get("image") if isinstance(data, dict) else None)
-            or (data.get("image_path") if isinstance(data, dict) else None)
-            or (data.get("save_path") if isinstance(data, dict) else None)
-        )
+    # ✅ 소형(table_small)은 무조건 1장
+    if render_reason == "table_small":
+        render_idxs = [render_idxs[0]]
+
+    # =========================
+    # 2) 원본 이미지 경로
+    # =========================
+    ctx = get_user_ctx(key) or {}
+    save_path = ctx.get("last_image_path")
+
+    if not save_path or not os.path.exists(str(save_path)):
+        save_path = data.get("image_path") or data.get("save_path")
 
     if not save_path or not os.path.exists(str(save_path)):
         return _json_with_sid(
-            {"messages": [{"type": "text", "text": "원본 이미지 경로를 찾지 못했습니다. 다시 사진을 업로드해 주세요."}]},
-            sid,
-            sid_is_new,
+            {"messages": [{"type": "text", "text": "원본 이미지 경로를 찾지 못했습니다."}]},
+            sid, sid_is_new,
         )
 
-    print(f"[CHAT_SPOT] spot_index={spot_index} regen={regen} save_path={save_path}")
+    # =========================
+    # 3) plant 이미지 고정 (유저 선택 = plant_image_url이 진실)
+    # =========================
+    pid = (str(body.plant_id).strip() if body.plant_id else "")
+    pid_safe = pid if pid else "none"
 
-    # best_spot 갱신
-    data["best_spot"] = chosen
+    # ✅ 1순위: 프론트가 보내준 plant_image_url
+    plant_url = (str(body.plant_image_url).strip() if body.plant_image_url else "")
 
-    marker_path = os.path.join(RESULT_DIR, "result_latest_marker.png")
-    composite_path = os.path.join(RESULT_DIR, "result_latest_composite.png")
+    # ✅ 유저 선택 렌더에서는 plant_image_url 없으면 즉시 실패 (default 금지)
+    if not plant_url:
+        return _json_with_sid(
+            {"messages": [{"type": "text", "text": "선택한 식물 이미지 URL이 없습니다. (plant_image_url 필수)"}]},
+            sid, sid_is_new
+        )
 
-    best_point = extract_best_point(data)
-
-    plant_asset = os.path.join(BASE_DIR, "assets", "plants", "default.png")
-
-    # composite: 점 없이(원본 유지)
-    composite_plant_on_original(
-        original_image_path=str(save_path),
-        best_point_obj=best_point,
-        out_path=composite_path,
-        plant_png_path=plant_asset if os.path.exists(plant_asset) else None,
-        plant_width_ratio=0.22,
-        anchor="bottom_center",
-        add_green_dot=False,
+    # ✅ 다운로드해서 composite에서 사용할 로컬 파일 확보
+    plant_cache_dir = os.path.join(str(RESULT_DIR), "plant_cache")
+    plant_asset = _download_image_cached(
+        url=plant_url,
+        cache_dir=plant_cache_dir,
+        cache_key=pid_safe,  # pid가 없으면 "none"이지만 url까지 해시에 들어가서 충돌 거의 없음
+        regen=regen,
     )
 
-    # marker: 점만
-    composite_plant_on_original(
-        original_image_path=str(save_path),
-        best_point_obj=best_point,
-        out_path=marker_path,
-        plant_png_path=None,
-        plant_width_ratio=0.22,
-        anchor="bottom_center",
-        add_green_dot=True,
-    )
+    if not plant_asset or not os.path.exists(plant_asset):
+        return _json_with_sid(
+            {"messages": [{"type": "text", "text": f"plant_image_url 다운로드 실패. pid={pid_safe} url={plant_url}"}]},
+            sid, sid_is_new,
+        )
 
-    # AI 편집 이미지: 캐시 파일
-    ai_edit_path = os.path.join(RESULT_DIR, f"ai_edit_{sid}_spot_{spot_index}.png")
-
-    # top_plants 출처: data.top_plants 우선, 없으면 chosen/top_plants, best_spot.top_plants도 fallback
-    top_plants = None
-    if isinstance(data, dict):
-        top_plants = data.get("top_plants")
-        if top_plants is None:
-            bs = data.get("best_spot")
-            if isinstance(bs, dict):
-                top_plants = bs.get("top_plants")
-    if top_plants is None and isinstance(chosen, dict):
-        top_plants = chosen.get("top_plants")
-
-    plant_name = body.plant_name or _pick_plant_for_spot(top_plants, spot_index)
-
-    pt = best_point.get("pt") if isinstance(best_point, dict) else None
-
-    prompt = (
-        f"Add a realistic potted {plant_name} at the marked spot on the floor. "
-        "Match lighting and perspective naturally. Do not change the room layout. "
-        "Remove any green dot marker in the final image. "
-        f"The plant MUST be a {plant_name}."
-    )
-    if pt:
-        prompt += f" The spot coordinates are {pt}."
-
-    use_cache = (not regen) and os.path.exists(ai_edit_path)
-
-    if use_cache:
-        print("[CHAT_SPOT] cache hit:", ai_edit_path)
-    else:
-        print("[CHAT_SPOT] generating ai_edit:", ai_edit_path)
-        try:
-            edit_res = gemini_edit_image(
-                input_image_path=marker_path,
-                prompt=prompt,
-                out_path=ai_edit_path,
-            )
-            print("[CHAT_SPOT] gemini_edit_image =", edit_res)
-        except Exception as e:
-            print("[CHAT_SPOT][WARN] gemini_edit_image exception:", e)
-            ai_edit_path = None
-
-    # 최신 결과 저장
-    try:
-        with open(latest_json, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
-    except Exception as e:
-        print("[WARN] overwrite latest_json after pick_spot failed:", e)
-
-    # 응답
+    # =========================
+    # 4) 동일 식물로 spot별 렌더
+    # =========================
     ts_ms = int(time.time() * 1000)
     images_payload: List[Dict[str, Any]] = []
 
-    def add_img(label: str, file_path_or_name: Optional[str]):
-        if not file_path_or_name:
-            return
-        abs_path = file_path_or_name if os.path.isabs(file_path_or_name) else os.path.join(RESULT_DIR, os.path.basename(file_path_or_name))
-        if not os.path.exists(abs_path):
-            return
-        images_payload.append({"name": label, "url": cache_bust_url(request, to_results_url(abs_path), ts_ms)})
+    def add_img(label: str, path: str):
+        if path and os.path.exists(path):
+            images_payload.append({
+                "name": label,
+                "url": cache_bust_url(request, to_results_url(path), ts_ms)
+            })
 
-    add_img("ai_edit", ai_edit_path)
+    for ridx in render_idxs:
+        s = spots[ridx]
+        forced = _best_point_from_spot(s)
+        if not forced or not forced.get("pt"):
+            continue
 
-    msgs: List[Dict[str, Any]] = [
-        {"type": "text", "text": f"✅ 후보 #{spot_index + 1} 위치로 다시 합성했습니다. (regen={regen})"}
-    ]
+        best_point = {"pt": forced["pt"], "spot_index": forced.get("spot_index")}
 
+        composite_path = os.path.join(
+            RESULT_DIR, f"composite_{sid}_spot_{ridx}_plant_{pid_safe}.png"
+        )
+        ai_edit_path = os.path.join(
+            RESULT_DIR, f"ai_edit_{sid}_spot_{ridx}_plant_{pid_safe}.png"
+        )
+
+        # 4-1) composite (동일 식물 고정)
+        composite_plant_on_original(
+            original_image_path=str(save_path),
+            best_point_obj=best_point,
+            out_path=composite_path,
+            plant_png_path=plant_asset,
+            plant_width_ratio=0.22,
+            anchor="bottom_center",
+            add_green_dot=False,
+        )
+
+        if not os.path.exists(composite_path):
+            continue
+
+        # 4-2) Gemini는 "보정만"
+        if mode != "composite":
+            prompt = (
+                "You will receive an image where a plant photo has been pasted as a rectangle. "
+                "TASK: Remove the rectangular background around the plant (background removal / cutout) "
+                "and blend the plant naturally into the room at the SAME position and size. "
+                "Do NOT change the plant species/identity/leaf shape/pot design. "
+                "Do NOT add or remove any objects. "
+                "Keep the room unchanged. "
+                "Add realistic contact shadow and edge blending. "
+                f"The plant position must remain at {best_point['pt']}."
+            )
+
+            try:
+                gemini_edit_image(
+                    input_image_path=composite_path,
+                    prompt=prompt,
+                    out_path=ai_edit_path,
+                )
+            except Exception:
+                try:
+                    shutil.copyfile(composite_path, ai_edit_path)
+                except Exception:
+                    ai_edit_path = None
+
+        # 결과 추가
+        if mode == "composite":
+            add_img("composite", composite_path)
+        else:
+            if ai_edit_path and os.path.exists(ai_edit_path):
+                add_img("ai_edit", ai_edit_path)
+            else:
+                add_img("composite", composite_path)
+
+    # =========================
+    # 5) 응답
+    # =========================
+    if render_reason == "table_small":
+        text = "✅ 소형 식물 → 테이블 1개 스팟에 동일 식물로 생성했습니다."
+    else:
+        text = "✅ 동일 식물로 3개 스팟에 생성했습니다."
+
+    msgs: List[Dict[str, Any]] = [{"type": "text", "text": text}]
     if images_payload:
-        msgs.append({"type": "images", "text": "재합성 결과", "images": images_payload})
+        msgs.append({"type": "images", "text": "생성 결과", "images": images_payload})
 
-    if pt:
-        msgs.append({"type": "text", "text": f"선택 좌표: {pt}"})
+    return _json_with_sid(
+        {"messages": msgs, "cv_result": data},
+        sid, sid_is_new,
+    )
 
-    return _json_with_sid({"messages": msgs, "cv_result": data}, sid, sid_is_new)
 
 async def chat_render(request: Request, body: PickSpotBody) -> JSONResponse:
     return await chat_pick_spot(request, body)

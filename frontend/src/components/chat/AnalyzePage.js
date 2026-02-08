@@ -20,13 +20,15 @@ export default function AnalyzePage() {
       setStatus("loading");
       setError("");
 
-      // ✅ Analyze 진입 시 "이전 결과 잔재" 정리
+      // 1. 기존 데이터 정리
       try {
-        sessionStorage.removeItem("selected_plant"); // 렌더에서 쓰는 키도 초기화(원하면 유지해도 됨)
+        sessionStorage.removeItem("selected_plant");
         sessionStorage.removeItem("ai_edit_url");
         sessionStorage.removeItem("render_result");
         sessionStorage.removeItem("last_render");
-      } catch (e) {}
+      } catch (e) {
+        console.error("Session clear error:", e);
+      }
 
       try {
         const meta = {
@@ -35,14 +37,22 @@ export default function AnalyzePage() {
           hhmm: new Date().toTimeString().slice(0, 5).replace(":", ""),
         };
 
+        // 2. 서버 요청 (변수 선언 없이 세션에서 바로 파싱해서 투입)
         const res = await fetchWithSession(ANALYZE_API, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ meta, filters: {} }),
+          body: JSON.stringify({ 
+            meta, 
+            filters: JSON.parse(sessionStorage.getItem("survey_answers") || "{}") 
+          }),
         });
 
         if (!res.ok) throw new Error("analyze_failed");
-        await res.json(); // 응답은 받기만 하고 화면에 출력 안함
+        // await res.json(); 
+        const data = await res.json();
+
+        sessionStorage.setItem("analyze_result", JSON.stringify(data));
+        if (data?.sid) localStorage.setItem("sid", data.sid);
 
         if (!alive) return;
         setStatus("done");
@@ -57,7 +67,7 @@ export default function AnalyzePage() {
     return () => {
       alive = false;
     };
-  }, []); // ✅ selectedPlant 의존성 제거
+  }, []); 
 
   if (status === "loading") return <p className="surveyStatus">공간 분석 중...</p>;
   if (status === "error") return <p className="surveyStatus surveyStatus--error">{error}</p>;

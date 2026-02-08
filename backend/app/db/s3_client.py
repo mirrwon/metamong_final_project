@@ -65,7 +65,9 @@ def ping_s3() -> bool:
         client = _get_client(access_key, secret_key, region)
         bucket_id = access_point_arn or bucket
         client.list_objects_v2(Bucket=bucket_id, MaxKeys=1)
+        print("S3 Connection Success!")  # 성공 시 출력
     except Exception as exc:
+        print(f"S3 Connection Error: {exc}")
         _last_error = repr(exc)
         return False
 
