@@ -36,8 +36,31 @@ const normalizeOption = (option, index) => {
     };
   }
 
-  const value = option.value ?? option.key ?? option.id ?? option.label ?? `option-${index + 1}`;
-  const label = option.label ?? option.text ?? option.value ?? option.key ?? `Option ${index + 1}`;
+  const pickNonEmpty = (...cands) => {
+    for (const c of cands) {
+      if (c == null) continue;
+      const s = String(c).trim();
+      if (s) return s;
+    }
+    return "";
+  };
+
+  const value = pickNonEmpty(
+    option.value,      //  "" 이면 버림
+    option.key,
+    option.id,
+    option.label,
+    `option-${index + 1}`
+  );
+
+  const label = pickNonEmpty(
+    option.label,
+    option.text,
+    option.value,      //  "" 이면 버림
+    option.key,
+    `Option ${index + 1}`
+  );
+
 
   /** ✅ 여기만 추가: option에서 이미지 후보 필드들 수집 */
   const rawImage =
@@ -204,11 +227,75 @@ export default function Survey({ onComplete, allowSkip = true }) {
     }));
   };
 
+  const toToken = (groupKey, vRaw) => {
+    const v = String(vRaw || "").trim();
+    if (!v || v === "없음") return null;
+
+    if (groupKey === "size") {
+      if (v.includes("탁상") || v.includes("table")) return "small";
+      if (v.includes("바닥") || v.includes("floor")) return "large";
+      if (v.includes("소형")) return "small";
+      if (v.includes("대형")) return "large";
+      if (v.includes("중형")) return "medium";
+      return null;
+    }
+
+    if (groupKey === "style") {
+      if (v.includes("내추럴")) return "natural";
+      if (v.includes("미니멀")) return "minimal";
+      if (v.includes("트렌디")) return "trendy";
+      return null;
+    }
+
+    if (groupKey === "Plant_style") {
+      if (v.includes("꽃")) return "flowery";
+      if (v.includes("잎") || v.includes("관엽")) return "leafy";
+      if (v.includes("열매")) return "fruity";
+      return null;
+    }
+
+    if (groupKey === "caution") {
+      if (v.includes("강아지")) return "dog";
+      if (v.includes("고양이")) return "cat";
+      if (v.includes("알러지")) return "allergy";
+      if (v.includes("아이")) return "baby";
+      return null;
+    }
+
+    return null;
+  };
+
+  const tokenizeSelected = (sel) => {
+    const out = {};
+    Object.entries(sel || {}).forEach(([k, arr]) => {
+      const tokens = (Array.isArray(arr) ? arr : [])
+        .map((v) => toToken(k, v))
+        .filter(Boolean);
+      out[k] = Array.from(new Set(tokens));
+    });
+    return out;
+  };
+
   const handleSubmit = async () => {
     if (!survey || !allAnswered || status === "submitting") return;
 
     setStatus("submitting");
     setSubmitError("");
+
+    // ✅ 1) "없음"/빈값 제거 + 토큰으로 통일해서 저장
+    const cleaned = Object.fromEntries(
+      Object.entries(selected || {}).map(([k, v]) => [
+        k,
+        (Array.isArray(v) ? v : [])
+          .map((x) => String(x).trim())
+          .filter((x) => x && x !== "없음"), // 핵심: 없음은 제거해서 [] 만들기
+      ])
+    );
+
+    const tokenized = tokenizeSelected(cleaned);
+
+    console.log("[DEBUG][submit.cleaned]", cleaned);
+    console.log("[DEBUG][submit.tokenized]", tokenized);
 
     try {
       const response = await fetchWithSession(SURVEY_API, {
@@ -216,22 +303,16 @@ export default function Survey({ onComplete, allowSkip = true }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           survey_key: survey.key,
-          answers: selected,
+          answers: tokenized,          // ✅ 서버에도 토큰화된 걸 보냄
         }),
       });
 
       if (!response.ok) throw new Error("survey_failed");
-      const saved = await response.json();
 
       setStatus("done");
-      if (typeof onComplete === "function") onComplete(saved);
 
-      // ✅ 식물 선택 페이지로 이동
-      try {
-        sessionStorage.setItem("survey_answers", JSON.stringify(selected));
-      } catch (e) {
-        // ignore storage errors
-      }
+      // ✅ 2) PlantSelectPage가 읽는 survey_answers도 '토큰화된 값'으로 저장
+      sessionStorage.setItem("survey_answers", JSON.stringify(tokenized));
 
       nav(ROUTES.ANALYZE);
     } catch (e) {
@@ -239,6 +320,8 @@ export default function Survey({ onComplete, allowSkip = true }) {
       setSubmitError("Failed to submit survey.");
     }
   };
+
+
 
   const handleSkip = () => {
     if (typeof onComplete === "function") onComplete(null);

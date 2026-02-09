@@ -99,12 +99,12 @@ def recommend_for_analysis(data: Dict[str, Any], user_filters: Dict[str, Any] | 
     else:
         plants_list = []
 
-    # DB 로드 실패 시 테스트 데이터 (보험)
-    if not plants_list:
-        plants_list = [
-            {"name": "몬스테라(더미)", "pet_safe": True, "light_req": "high"},
-            {"name": "테이블야자(더미)", "pet_safe": True, "light_req": "medium"}
-        ]
+    # # DB 로드 실패 시 테스트 데이터 (보험)
+    # if not plants_list:
+    #     plants_list = [
+    #         {"name": "몬스테라(더미)", "pet_safe": True, "light_req": "high"},
+    #         {"name": "테이블야자(더미)", "pet_safe": True, "light_req": "medium"}
+    #     ]
 
     # 2) 날씨 보정 (밤 시간대에도 0이 되지 않게 보정됨)
     weather_res = data.get("solar")

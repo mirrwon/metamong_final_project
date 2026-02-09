@@ -833,34 +833,50 @@ async def handle_chat_analyze(request: Request, body: AnalyzeBody) -> JSONRespon
             top_n: int = 12,
     ) -> List[int]:
         """
-        - score 높은 후보 중에서만(top_n) 고르고
-        - 서로 min_dist_px 이상 떨어진 것만 뽑고
-        - 부족하면 거리조건을 완화해서라도 k개 채움
+        목적: 서로 '멀리' 떨어진 spot index k개 선택
+
+        개선점(분산 강화):
+        - 1개는 점수 최상(기존 의도 유지)
+        - 이후는 "현재 선택된 점들과의 최소거리"가 가장 큰 후보를 우선 선택 (farthest-point sampling)
+        - strict 실패 시 threshold를 여러 단계로 점진 완화(relax pass)하여 k개를 반드시 채움
+        - 후보 풀은 top_n보다 조금 넉넉히 사용(너무 가까운 고득점만 몰리는 것 방지)
         """
 
-        def _get_pt(s):
+        def _get_pt(s: Dict[str, Any]):
+            if not isinstance(s, dict):
+                return None
             pt = s.get("pt")
             if isinstance(pt, (list, tuple)) and len(pt) >= 2:
                 return (float(pt[0]), float(pt[1]))
+
             feats = s.get("features")
             if isinstance(feats, dict):
                 pt2 = feats.get("pt") or feats.get("center") or feats.get("xy")
                 if isinstance(pt2, (list, tuple)) and len(pt2) >= 2:
                     return (float(pt2[0]), float(pt2[1]))
+                if isinstance(pt2, dict) and "x" in pt2 and "y" in pt2:
+                    return (float(pt2["x"]), float(pt2["y"]))
             return None
 
-        def _score(s):
+        def _score(s: Dict[str, Any]) -> float:
+            if not isinstance(s, dict):
+                return 0.0
             v = s.get("final_score")
-            if v is None: v = s.get("score")
+            if v is None:
+                v = s.get("score")
             try:
                 return float(v)
-            except:
+            except Exception:
                 return 0.0
 
+        def _dist2(a, b) -> float:
+            dx = a[0] - b[0]
+            dy = a[1] - b[1]
+            return dx * dx + dy * dy
+
+        # 0) 후보 수집
         cand = []
         for i, s in enumerate(spots):
-            if not isinstance(s, dict):
-                continue
             pt = _get_pt(s)
             if pt is None:
                 continue
@@ -869,44 +885,73 @@ async def handle_chat_analyze(request: Request, body: AnalyzeBody) -> JSONRespon
         if not cand:
             return [0]
 
-        # score desc
+        # 1) 점수 내림차순 정렬
         cand.sort(key=lambda x: x[2], reverse=True)
-        cand = cand[:max(k, top_n)]
 
-        def dist2(a, b):
-            dx = a[0] - b[0]
-            dy = a[1] - b[1]
-            return dx * dx + dy * dy
+        # 2) 후보 풀: top_n만 쓰면 같은 클러스터 고득점에 몰릴 수 있어 조금 확장
+        #    (외부 호출부는 건드리지 않고, 내부에서만 풀을 넓힘)
+        pool_n = max(top_n, k * 10, 30)
+        cand_pool = cand[:min(len(cand), pool_n)]
 
-        chosen = []
-        chosen_pts = []
-        d2_thr = float(min_dist_px * min_dist_px)
+        # 3) 첫 선택: 최고 점수 1개(기존 의도 유지)
+        chosen: List[int] = [cand_pool[0][0]]
+        chosen_pts = [cand_pool[0][1]]
 
-        # 1) strict pass
-        for idx, pt, sc in cand:
-            if all(dist2(pt, p) >= d2_thr for p in chosen_pts):
-                chosen.append(idx)
-                chosen_pts.append(pt)
-            if len(chosen) >= k:
-                return chosen[:k]
+        # 4) relax 단계: min_dist를 여러 단계로 완화하며 채움
+        #    (strict -> 점진 완화 -> 최후 0)
+        relax_factors = [1.00, 0.90, 0.80, 0.70, 0.55, 0.40, 0.0]
 
-        # 2) relax pass (거리 조건을 70%로 낮춰서라도 채움)
-        d2_thr = float((min_dist_px * 0.7) ** 2)
-        for idx, pt, sc in cand:
-            if idx in chosen:
-                continue
-            if all(dist2(pt, p) >= d2_thr for p in chosen_pts):
-                chosen.append(idx)
-                chosen_pts.append(pt)
-            if len(chosen) >= k:
-                return chosen[:k]
-
-        # 3) final fill (그냥 점수순으로 부족분 채움)
-        for idx, pt, sc in cand:
-            if idx not in chosen:
-                chosen.append(idx)
+        for rf in relax_factors:
             if len(chosen) >= k:
                 break
+
+            d_thr = float(min_dist_px) * float(rf)
+            d2_thr = d_thr * d_thr
+
+            # farthest-point sampling:
+            # 아직 안 뽑힌 후보 중에서 "선택된 점들까지의 최소거리(minDist)"가 가장 큰 후보를 고름
+            while len(chosen) < k:
+                best_idx = None
+                best_pt = None
+                best_min_d2 = -1.0
+                best_sc = -1.0
+
+                for idx, pt, sc in cand_pool:
+                    if idx in chosen:
+                        continue
+
+                    # chosen에 대한 최소 거리
+                    min_d2 = min(_dist2(pt, cp) for cp in chosen_pts)
+
+                    # threshold 통과 후보만 우선
+                    if min_d2 < d2_thr:
+                        continue
+
+                    # 1순위: min_d2 큰 것(멀리)
+                    # 2순위: 점수(sc) 큰 것
+                    if (min_d2 > best_min_d2) or (min_d2 == best_min_d2 and sc > best_sc):
+                        best_min_d2 = min_d2
+                        best_sc = sc
+                        best_idx = idx
+                        best_pt = pt
+
+                if best_idx is None:
+                    break  # 이 relax 단계에서 더는 못 고름 → 다음 relax로
+
+                chosen.append(best_idx)
+                chosen_pts.append(best_pt)
+
+        # 5) 최후 보정: relax를 다 돌았는데도 부족하면 그냥 점수순으로 채움(중복 없이)
+        if len(chosen) < k:
+            for idx, pt, sc in cand_pool:
+                if idx not in chosen:
+                    chosen.append(idx)
+                if len(chosen) >= k:
+                    break
+
+        # 6) 안전: 그래도 0개면 0
+        if not chosen:
+            return [0]
 
         return chosen[:k]
 
@@ -1254,11 +1299,116 @@ async def chat_pick_spot(request: Request, body: PickSpotBody) -> JSONResponse:
             render_idxs = [0]
         render_reason = "manual"
 
+    # ===== helper: spot surface 판단 =====
+    def _spot_surface_local(s: Dict[str, Any]) -> str:
+        if not isinstance(s, dict):
+            return ""
+        for k in ["surface", "spot_usage", "place", "placement", "spot_type"]:
+            v = s.get(k)
+            if isinstance(v, str) and v.strip():
+                return v.strip().lower()
+        feats = s.get("features")
+        if isinstance(feats, dict):
+            for k in ["surface", "place", "placement", "spot_type"]:
+                v = feats.get(k)
+                if isinstance(v, str) and v.strip():
+                    return v.strip().lower()
+        return ""
+
+    # ===== helper: table spot 없을 때 synthetic 생성 =====
+    def _synthesize_table_spot_local(data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        w = int((data.get("image_w") or data.get("w") or 1248))
+        h = int((data.get("image_h") or data.get("h") or 832))
+        x = int(w * 0.55)
+        y = int(h * 0.62)  # 바닥보다 위
+
+        win = data.get("window") if isinstance(data.get("window"), dict) else None
+        if isinstance(win, dict):
+            bb = win.get("bbox") or win.get("xyxy") or win.get("box")
+            if isinstance(bb, (list, tuple)) and len(bb) >= 4:
+                x1, y1, x2, y2 = [int(v) for v in bb[:4]]
+                x = int((x1 + x2) * 0.5)
+                y = int(min(h * 0.75, y2 + (h * 0.10)))
+
+        x = max(10, min(w - 10, x))
+        y = max(10, min(h - 10, y))
+
+        return {
+            "spot_index": None,
+            "surface": "table",
+            "synthetic": True,
+            "score": 999,
+            "pt": [x, y],
+            "features": {"center": [x, y], "pt": [x, y]},
+        }
+
+    # ✅ small 판정은 1번만, sp는 항상 초기화
+    ctx2 = get_user_ctx(key) or {}
+    uf2 = ctx2.get("filters") if isinstance(ctx2, dict) else None
+
+    def _norm_filter_value(v) -> str:
+        if v is None:
+            return ""
+        if isinstance(v, list):
+            for it in v:
+                if isinstance(it, str) and it.strip():
+                    return it.strip().lower()
+            return ""
+        if isinstance(v, str):
+            return v.strip().lower()
+        return ""
+
+    sp = ""
+    if isinstance(uf2, dict):
+        for k in ("size", "size_pref", "plant_size", "pot_size"):
+            cand = _norm_filter_value(uf2.get(k))
+            if cand:  # ✅ 여기서 "small" 같은 유효 토큰만 채택
+                sp = cand
+                break
+
+    is_small = (sp == "small")  # ✅ 최종은 small 토큰만 본다
+
+    print(
+        "[DEBUG][pick_spot] uf2=", uf2,
+        "sp=", sp, "is_small=", is_small,
+        "render_reason(before)=", render_reason,
+        "render_idxs(before)=", render_idxs
+    )
+
+    # small이면 "table_small" + table spot 1개로 강제
+    if is_small:
+        render_reason = "table_small"
+
+        # 1) table 계열 spot 찾기
+        table_idx = None
+        for i, s in enumerate(spots):
+            surf = _spot_surface_local(s)
+            if any(x in surf for x in ["table", "desk", "shelf", "counter", "stand"]):
+                table_idx = i
+                break
+
+        # 2) 없으면 synthetic table spot 생성
+        if table_idx is None:
+            fake = _synthesize_table_spot_local(data)
+            if fake:
+                fake["spot_index"] = len(spots)
+                spots.append(fake)
+                data["spots"] = spots
+                table_idx = len(spots) - 1
+
+        # 3) 최종: small은 무조건 1장 (table_idx가 있으면 그걸 사용, 없으면 기존 첫 idx 사용)
+        if table_idx is not None:
+            render_idxs = [int(table_idx)]
+        elif render_idxs:
+            render_idxs = [render_idxs[0]]
+        else:
+            render_idxs = [0]
+
     # ✅ 중복 제거(같은 spot 3번 렌더 방지)
     render_idxs = list(dict.fromkeys(render_idxs))
 
-    # ✅ floor_large인데 3개가 안 되면 남은 인덱스로 채우기(옵션)
-    if render_reason != "table_small" and len(render_idxs) < 3:
+    # ✅ floor_large일 때만 3개를 채운다 (manual/기타에서는 절대 3개로 불리지 않음)
+    if render_reason == "floor_large" and len(render_idxs) < 3:
         for i in range(len(spots)):
             if i not in render_idxs:
                 render_idxs.append(i)
@@ -1364,47 +1514,39 @@ async def chat_pick_spot(request: Request, body: PickSpotBody) -> JSONResponse:
         # - mode != "composite"  → Gemini 탐 (배경 제거/블렌딩)
         # =========================
 
-        did_ai = False
-        if mode != "composite":
-            prompt = (
-                "You will receive an image where a plant photo has been pasted as a rectangle. "
-                "TASK: Remove the rectangular background around the plant (background removal / cutout) "
-                "and blend the plant naturally into the room at the SAME position and size. "
-                "Do NOT change the plant species/identity/leaf shape/pot design. "
-                "Do NOT add or remove any objects. "
-                "Keep the room unchanged. "
-                "Add realistic contact shadow and edge blending. "
-                f"The plant position must remain at {best_point['pt']}."
+        # ✅ Gemini는 무조건 실행, 실패하면 composite를 내려주지 말고 요청 자체를 실패 처리
+        prompt = (
+            "You are given an image where a plant photo was pasted onto a room image. "
+            "Your ONLY job is to remove the pasted plant's rectangular background and blend edges naturally. "
+            "STRICT RULES: "
+            "1) Do NOT move, resize, rotate, or re-place the plant. Keep its position and scale EXACTLY. "
+            "2) Do NOT change any pixels outside the plant cutout area (the room must remain identical). "
+            "3) Do NOT generate a new plant or alter plant identity/pot/leaf shape. "
+            "4) Output must keep the same resolution and framing. No cropping. "
+            "5) Add a subtle contact shadow ONLY under the plant base without shifting it. "
+            f"Plant anchor point must remain at {best_point['pt']}."
+        )
+
+        try:
+            gemini_edit_image(
+                input_image_path=composite_path,
+                prompt=prompt,
+                out_path=ai_edit_path,
             )
-            try:
-                gemini_edit_image(
-                    input_image_path=composite_path,
-                    prompt=prompt,
-                    out_path=ai_edit_path,
-                )
-                did_ai = os.path.exists(ai_edit_path)
-            except Exception as e:
-                print("[WARN] gemini_edit_image failed:", e)
-                did_ai = False
+        except Exception as e:
+            return _json_with_sid(
+                {"ok": False, "messages": [{"type": "text", "text": f"❌ Gemini 실패: {e}"}]},
+                sid, sid_is_new
+            )
 
-            # =========================
-            # ✅ 핵심 변경 2: Gemini가 실패해도 ai_edit를 "무조건" 내려주기(디버깅/UX 안정)
-            # - copyfile도 실패하면 그냥 ai_edit_path를 composite로 대체
-            # =========================
-            if not did_ai:
-                try:
-                    shutil.copyfile(composite_path, ai_edit_path)
-                    did_ai = os.path.exists(ai_edit_path)
-                except Exception as e:
-                    print("[WARN] copyfile fallback failed:", e)
-                    ai_edit_path = composite_path  # 최후 대체
+        if not os.path.exists(ai_edit_path):
+            return _json_with_sid(
+                {"ok": False, "messages": [{"type": "text", "text": "❌ Gemini 실패: ai_edit 파일이 생성되지 않음"}]},
+                sid, sid_is_new
+            )
 
-        # 결과 추가
-        if mode == "composite":
-            add_img("composite", composite_path)
-        else:
-            # ✅ 항상 ai_edit 이름으로 내려줌 (실패 시 composite가 들어가도 ai_edit로 내려가게)
-            add_img("ai_edit", ai_edit_path if ai_edit_path else composite_path)
+        # ✅ 결과는 ai_edit만
+        add_img("ai_edit", ai_edit_path)
 
     # =========================
     # 5) 응답
@@ -1414,11 +1556,8 @@ async def chat_pick_spot(request: Request, body: PickSpotBody) -> JSONResponse:
     else:
         text = "✅ 동일 식물로 3개 스팟에 생성했습니다."
 
-    # mode 안내(디버깅)
-    if mode == "composite":
-        text += " (mode=composite → Gemini 보정 생략)"
-    else:
-        text += " (mode!=composite → Gemini 보정 시도)"
+    # ✅ 현재 정책: mode와 무관하게 Gemini 무조건 실행
+    text += " (Gemini forced)"
 
     msgs: List[Dict[str, Any]] = [{"type": "text", "text": text}]
     if images_payload:
