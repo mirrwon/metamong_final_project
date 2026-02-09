@@ -88,7 +88,8 @@ export default function RenderPage() {
                 plant_name: plant?.name,
                 regen: true,   
                 // mode: "gemini",
-                mode: "composite",
+                // mode: "composite",
+                mode: "ai_edit",
               }),
             });
 

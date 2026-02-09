@@ -13,43 +13,33 @@ PointLike = Union[Tuple[float, float], Dict[str, float], list]
 
 
 def _parse_best_point(obj: Any) -> Optional[Tuple[float, float]]:
-    """
-    best_point가 아래 형태 중 무엇이든 받아서 (x, y) float로 반환.
-    지원:
-    - [x, y], (x, y)
-    - {"x":..., "y":...}
-    - {"cx":..., "cy":...}
-    - {"px":..., "py":...}
-    - {"pt":[x,y]} / {"point":[x,y]} / {"xy":[x,y]} / {"center":[x,y]}
-    - {"pt":{"x":..,"y":..}} 같은 중첩도 일부 대응
-    """
     if obj is None:
         return None
 
-    # 1) list/tuple
+    # list/tuple: [x,y]
     if isinstance(obj, (list, tuple)) and len(obj) >= 2:
         try:
             return float(obj[0]), float(obj[1])
         except Exception:
             return None
 
-    # 2) dict
     if isinstance(obj, dict):
-        # 2-A) {"pt":[x,y]} 류
-        for key in ["pt", "point", "xy", "center"]:
-            v = obj.get(key)
+        # ✅ 1) 가장 중요한 케이스: {"pt":[x,y]} / {"pt":(x,y)} / {"pt":{"x":..,"y":..}}
+        if "pt" in obj:
+            v = obj.get("pt")
             if isinstance(v, (list, tuple)) and len(v) >= 2:
                 try:
                     return float(v[0]), float(v[1])
                 except Exception:
                     return None
-            if isinstance(v, dict) and ("x" in v and "y" in v):
-                try:
-                    return float(v["x"]), float(v["y"])
-                except Exception:
-                    return None
+            if isinstance(v, dict):
+                if "x" in v and "y" in v:
+                    try:
+                        return float(v["x"]), float(v["y"])
+                    except Exception:
+                        return None
 
-        # 2-B) {"x":..,"y":..} 류
+        # ✅ 2) 호환: {"x":..,"y":..} / {"cx":..,"cy":..} / {"px":..,"py":..}
         for kx, ky in [("x", "y"), ("cx", "cy"), ("px", "py")]:
             if kx in obj and ky in obj:
                 try:
@@ -58,6 +48,7 @@ def _parse_best_point(obj: Any) -> Optional[Tuple[float, float]]:
                     return None
 
     return None
+
 
 def _to_pixel_xy(pt: Tuple[float, float], width: int, height: int) -> Tuple[int, int]:
     """

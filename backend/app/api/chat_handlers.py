@@ -688,22 +688,36 @@ async def handle_chat_analyze(request: Request, body: AnalyzeBody) -> JSONRespon
 
     data = out if isinstance(out, dict) else {}
 
+    # CV 실행 직후 (out 받은 바로 다음)
+    try:
+        data["space"] = classify_space(data)
+    except Exception as e:
+        print("[WARN] classify_space failed:", e)
+        data["space"] = {"type": "unknown", "reason": "classify_failed"}
+
     # ========================================================
     # 🚀 [기상청 ASOS 데이터 주입 및 보정]
     # ========================================================
-    weather_res = None
+    weather_res: Optional[Dict[str, Any]] = None
+
     try:
         weather_res = weather_client.fetch_growth_profile("108")
+    except Exception as e:
+        print("[WARN] weather_client failed:", e)
 
-        # --- 낮시간 테스트를 위한 코드 (확인 후 삭제) ---
-        weather_res["solar_radiation"] = "2.5"
-        weather_res["ok"] = True
-        # -----------------------------------------------
+    if not isinstance(weather_res, dict):
+        weather_res = {"ok": False, "reason": "weather_fetch_failed"}
 
-        data["solar"] = weather_res
+    # --- 낮시간 테스트 (원하면 유지) ---
+    weather_res["solar_radiation"] = "2.5"
+    weather_res["ok"] = True
+    # ---------------------------------
 
+    data["solar"] = weather_res
+
+    try:
         solar_summary = _solar_summary_from_asos(weather_res)
-        if solar_summary.get("ok"):
+        if isinstance(solar_summary, dict) and solar_summary.get("ok"):
             data = _apply_solar_to_spots(data, solar_summary)
             print(f"☀️ 기상청 데이터 적용 성공: {weather_res.get('solar_radiation')} MJ/m2")
     except Exception as solar_err:
@@ -712,7 +726,6 @@ async def handle_chat_analyze(request: Request, body: AnalyzeBody) -> JSONRespon
     # =========================
     # 2) 추천 (보정된 data 전달)
     # =========================
-    data["space"] = classify_space(data) if isinstance(data, dict) else None
 
     data = recommend_for_analysis(data, user_filters=user_filters)
     data["image_path"] = str(save_path)
@@ -780,19 +793,17 @@ async def handle_chat_analyze(request: Request, body: AnalyzeBody) -> JSONRespon
         for i, s in enumerate(spots):
             surf = _spot_surface(s)
             if any(x in surf for x in ["table", "desk", "shelf", "counter", "stand"]):
-                table_like.append((i, s))
+                table_like.append(i)
         if table_like:
-            i, s = table_like[0]
-            return _spot_index_value(s, i)
+            return table_like[0]
 
         non_floor = []
         for i, s in enumerate(spots):
             surf = _spot_surface(s)
             if surf and ("floor" not in surf):
-                non_floor.append((i, s))
+                non_floor.append(i)
         if non_floor:
-            i, s = non_floor[0]
-            return _spot_index_value(s, i)
+            return non_floor[0]
 
         return None
 
@@ -815,36 +826,87 @@ async def handle_chat_analyze(request: Request, body: AnalyzeBody) -> JSONRespon
     def _dist2(a, b):
         return (a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2
 
-    def pick_far_spot_indexes(spots: List[Dict[str, Any]], k: int = 3, min_dist_px: int = 180) -> List[int]:
+    def pick_far_spot_indexes(
+            spots: List[Dict[str, Any]],
+            k: int = 3,
+            min_dist_px: int = 220,
+            top_n: int = 12,
+    ) -> List[int]:
+        """
+        - score 높은 후보 중에서만(top_n) 고르고
+        - 서로 min_dist_px 이상 떨어진 것만 뽑고
+        - 부족하면 거리조건을 완화해서라도 k개 채움
+        """
+
+        def _get_pt(s):
+            pt = s.get("pt")
+            if isinstance(pt, (list, tuple)) and len(pt) >= 2:
+                return (float(pt[0]), float(pt[1]))
+            feats = s.get("features")
+            if isinstance(feats, dict):
+                pt2 = feats.get("pt") or feats.get("center") or feats.get("xy")
+                if isinstance(pt2, (list, tuple)) and len(pt2) >= 2:
+                    return (float(pt2[0]), float(pt2[1]))
+            return None
+
+        def _score(s):
+            v = s.get("final_score")
+            if v is None: v = s.get("score")
+            try:
+                return float(v)
+            except:
+                return 0.0
+
         cand = []
-        for idx, s in enumerate(spots):
+        for i, s in enumerate(spots):
             if not isinstance(s, dict):
                 continue
-            pt = _get_spot_pt(s)
-            score = s.get("score", 0)
-            cand.append((idx, pt, score, s))
-
-        cand.sort(key=lambda x: (x[1] is None, -(x[2] or 0)))
-        chosen = []
-        chosen_pts = []
-        min_d2 = float(min_dist_px * min_dist_px)
-
-        for idx, pt, score, s in cand:
+            pt = _get_pt(s)
             if pt is None:
                 continue
-            if all(_dist2(pt, p) >= min_d2 for p in chosen_pts):
-                chosen.append(_spot_index_value(s, idx))
+            cand.append((i, pt, _score(s)))
+
+        if not cand:
+            return [0]
+
+        # score desc
+        cand.sort(key=lambda x: x[2], reverse=True)
+        cand = cand[:max(k, top_n)]
+
+        def dist2(a, b):
+            dx = a[0] - b[0]
+            dy = a[1] - b[1]
+            return dx * dx + dy * dy
+
+        chosen = []
+        chosen_pts = []
+        d2_thr = float(min_dist_px * min_dist_px)
+
+        # 1) strict pass
+        for idx, pt, sc in cand:
+            if all(dist2(pt, p) >= d2_thr for p in chosen_pts):
+                chosen.append(idx)
                 chosen_pts.append(pt)
             if len(chosen) >= k:
-                break
+                return chosen[:k]
 
-        if len(chosen) < k:
-            for idx, pt, score, s in cand:
-                v = _spot_index_value(s, idx)
-                if v not in chosen:
-                    chosen.append(v)
-                if len(chosen) >= k:
-                    break
+        # 2) relax pass (거리 조건을 70%로 낮춰서라도 채움)
+        d2_thr = float((min_dist_px * 0.7) ** 2)
+        for idx, pt, sc in cand:
+            if idx in chosen:
+                continue
+            if all(dist2(pt, p) >= d2_thr for p in chosen_pts):
+                chosen.append(idx)
+                chosen_pts.append(pt)
+            if len(chosen) >= k:
+                return chosen[:k]
+
+        # 3) final fill (그냥 점수순으로 부족분 채움)
+        for idx, pt, sc in cand:
+            if idx not in chosen:
+                chosen.append(idx)
+            if len(chosen) >= k:
+                break
 
         return chosen[:k]
 
@@ -870,7 +932,8 @@ async def handle_chat_analyze(request: Request, body: AnalyzeBody) -> JSONRespon
                     fake["spot_index"] = len(spots)
                     spots.append(fake)
                     data["spots"] = spots
-                    table_idx = fake["spot_index"]
+                    # table_idx = fake["spot_index"]
+                    table_idx = len(spots) - 1
                 else:
                     # fake 생성도 실패하면 마지막 fallback (여기까지 올 일 거의 없음)
                     table_idx = _spot_index_value(spots[0], 0)
@@ -908,70 +971,93 @@ async def handle_chat_analyze(request: Request, body: AnalyzeBody) -> JSONRespon
         print("[WARN] write result_latest.json failed:", e)
 
     # 4) 결과 이미지 생성
-    best_point = extract_best_point(data)
+    rp = data.get("render_plan") if isinstance(data, dict) else None
+    render_idxs: List[int] = []
 
-    # ✅ 최종 안전장치: render_plan 기반 강제 best_point가 있으면 그걸 100% 사용
-    if isinstance(forced_best_point, dict) and forced_best_point.get("pt"):
-        best_point = {"pt": forced_best_point["pt"], "spot_index": forced_best_point.get("spot_index")}
+    if isinstance(rp, dict):
+        idxs = rp.get("spot_indexes")
+        if isinstance(idxs, list):
+            for x in idxs:
+                try:
+                    i = int(x)
+                    if 0 <= i < len(data.get("spots") or []):
+                        render_idxs.append(i)
+                except Exception:
+                    pass
+
+    # fallback
+    if not render_idxs:
+        render_idxs = [0]
+
+    # 중복 제거
+    render_idxs = list(dict.fromkeys(render_idxs))
 
     plant_asset = os.path.join(BASE_DIR, "assets", "plants", "default.png")
+    plant_asset = plant_asset if os.path.exists(plant_asset) else None
 
-    composite_plant_on_original(
-        original_image_path=str(save_path),
-        best_point_obj=best_point,
-        out_path=composite_path,
-        plant_png_path=plant_asset if os.path.exists(plant_asset) else None,
-        plant_width_ratio=0.22,
-        anchor="bottom_center",
-        add_green_dot=False,
-    )
+    # analyze에서는 marker/composite/ai_edit를 "spot별로" 생성
+    spot_images: List[Dict[str, Any]] = []
+    ts_ms = int(time.time() * 1000)
 
-    composite_plant_on_original(
-        original_image_path=str(save_path),
-        best_point_obj=best_point,
-        out_path=marker_path,
-        plant_png_path=None,
-        plant_width_ratio=0.22,
-        anchor="bottom_center",
-        add_green_dot=True,
-    )
+    spots = data.get("spots") if isinstance(data, dict) else []
+    for ridx in render_idxs[:3]:
+        if not (0 <= ridx < len(spots)):
+            continue
+        bp = _best_point_from_spot(spots[ridx])
+        if not isinstance(bp, dict) or not bp.get("pt"):
+            continue
 
-    # (옵션) gemini 편집은 실패해도 전체 플로우는 진행되게
-    try:
-        pt = best_point.get("pt") if isinstance(best_point, dict) else None
-        rp = data.get("render_plan") if isinstance(data, dict) else None
-        spot_usage = "table_small" if (isinstance(rp, dict) and rp.get("reason") == "table_small") else "floor_large"
+        marker_path = os.path.join(RESULT_DIR, f"result_latest_marker_spot_{ridx}.png")
+        composite_path = os.path.join(RESULT_DIR, f"result_latest_composite_spot_{ridx}.png")
+        ai_edit_path = os.path.join(RESULT_DIR, f"result_latest_ai_edit_spot_{ridx}.png")
 
-        prompt = _prompt_for_edit(best_point, spot_usage=spot_usage, plant_name=None)
-        if pt:
-            prompt += f" The spot coordinates are {pt}."
+        # marker (점)
+        composite_plant_on_original(
+            original_image_path=str(save_path),
+            best_point_obj=bp,
+            out_path=marker_path,
+            plant_png_path=None,
+            plant_width_ratio=0.22,
+            anchor="bottom_center",
+            add_green_dot=True,
+        )
 
-        gemini_edit_image(input_image_path=marker_path, prompt=prompt, out_path=ai_edit_path)
-    except Exception as e:
-        print("[WARN] gemini_edit_image failed:", e)
+        # composite (붙이기)
+        composite_plant_on_original(
+            original_image_path=str(save_path),
+            best_point_obj=bp,
+            out_path=composite_path,
+            plant_png_path=plant_asset,
+            plant_width_ratio=0.22,
+            anchor="bottom_center",
+            add_green_dot=False,
+        )
+
+        # gemini 편집 (옵션)
+        try:
+            prompt = _prompt_for_edit(bp, spot_usage=(rp.get("reason") if isinstance(rp, dict) else "floor_large"))
+            gemini_edit_image(input_image_path=composite_path, prompt=prompt, out_path=ai_edit_path)
+        except Exception as e:
+            print("[WARN] gemini_edit_image failed:", e)
+
+        # payload 추가 (ai_edit 우선, 없으면 composite)
+        if os.path.exists(ai_edit_path):
+            spot_images.append({"name": "ai_edit", "url": cache_bust_url(request, to_results_url(ai_edit_path), ts_ms)})
+        elif os.path.exists(composite_path):
+            spot_images.append(
+                {"name": "composite", "url": cache_bust_url(request, to_results_url(composite_path), ts_ms)})
 
     # 5) 응답
-    ts_ms = int(time.time() * 1000)
-    images_payload: List[Dict[str, Any]] = []
-
-    def add_img(label: str, file_path: str):
-        if file_path and os.path.exists(file_path):
-            images_payload.append({"name": label, "url": cache_bust_url(request, to_results_url(file_path), ts_ms)})
-
-    add_img("marker", marker_path)
-    add_img("composite", composite_path)
-    if os.path.exists(ai_edit_path):
-        add_img("ai_edit", ai_edit_path)
-
     return _json_with_sid(
         {
             "ok": True,
-            "images": images_payload,
+            "images": spot_images,
             "cv_result": data,
         },
         sid,
         sid_is_new,
     )
+
 
 # =========================
 # Router-facing aliases
@@ -1115,7 +1201,8 @@ async def chat_pick_spot(request: Request, body: PickSpotBody) -> JSONResponse:
     key = sid
 
     regen = bool(getattr(body, "regen", False))
-    mode = (getattr(body, "mode", "") or "").strip().lower()
+    mode_raw = getattr(body, "mode", None)
+    mode = (str(mode_raw).strip().lower() if mode_raw is not None else "")
 
     latest_json = os.path.join(RESULT_DIR, "result_latest.json")
     if not os.path.exists(latest_json):
@@ -1167,6 +1254,17 @@ async def chat_pick_spot(request: Request, body: PickSpotBody) -> JSONResponse:
             render_idxs = [0]
         render_reason = "manual"
 
+    # ✅ 중복 제거(같은 spot 3번 렌더 방지)
+    render_idxs = list(dict.fromkeys(render_idxs))
+
+    # ✅ floor_large인데 3개가 안 되면 남은 인덱스로 채우기(옵션)
+    if render_reason != "table_small" and len(render_idxs) < 3:
+        for i in range(len(spots)):
+            if i not in render_idxs:
+                render_idxs.append(i)
+            if len(render_idxs) >= 3:
+                break
+
     # ✅ 소형(table_small)은 무조건 1장
     if render_reason == "table_small":
         render_idxs = [render_idxs[0]]
@@ -1192,22 +1290,19 @@ async def chat_pick_spot(request: Request, body: PickSpotBody) -> JSONResponse:
     pid = (str(body.plant_id).strip() if body.plant_id else "")
     pid_safe = pid if pid else "none"
 
-    # ✅ 1순위: 프론트가 보내준 plant_image_url
     plant_url = (str(body.plant_image_url).strip() if body.plant_image_url else "")
 
-    # ✅ 유저 선택 렌더에서는 plant_image_url 없으면 즉시 실패 (default 금지)
     if not plant_url:
         return _json_with_sid(
             {"messages": [{"type": "text", "text": "선택한 식물 이미지 URL이 없습니다. (plant_image_url 필수)"}]},
             sid, sid_is_new
         )
 
-    # ✅ 다운로드해서 composite에서 사용할 로컬 파일 확보
     plant_cache_dir = os.path.join(str(RESULT_DIR), "plant_cache")
     plant_asset = _download_image_cached(
         url=plant_url,
         cache_dir=plant_cache_dir,
-        cache_key=pid_safe,  # pid가 없으면 "none"이지만 url까지 해시에 들어가서 충돌 거의 없음
+        cache_key=pid_safe,
         regen=regen,
     )
 
@@ -1259,7 +1354,17 @@ async def chat_pick_spot(request: Request, body: PickSpotBody) -> JSONResponse:
         if not os.path.exists(composite_path):
             continue
 
-        # 4-2) Gemini는 "보정만"
+        # =========================
+        # ✅ 핵심 변경 1: mode가 "composite"여도, 유저가 원하면 ai_edit를 타게 만들 수 있게 함
+        # - 프론트가 mode를 안 보내면 기본 "" 이라서 여기 들어옴
+        # - mode="composite"면 원래는 스킵했는데, 이제는 "ai_edit"가 아니면 스킵하도록 더 명확히
+        #
+        # ✅ 권장 정책:
+        # - mode == "composite"  → Gemini 안 탐 (빠른 합성만)
+        # - mode != "composite"  → Gemini 탐 (배경 제거/블렌딩)
+        # =========================
+
+        did_ai = False
         if mode != "composite":
             prompt = (
                 "You will receive an image where a plant photo has been pasted as a rectangle. "
@@ -1271,27 +1376,35 @@ async def chat_pick_spot(request: Request, body: PickSpotBody) -> JSONResponse:
                 "Add realistic contact shadow and edge blending. "
                 f"The plant position must remain at {best_point['pt']}."
             )
-
             try:
                 gemini_edit_image(
                     input_image_path=composite_path,
                     prompt=prompt,
                     out_path=ai_edit_path,
                 )
-            except Exception:
+                did_ai = os.path.exists(ai_edit_path)
+            except Exception as e:
+                print("[WARN] gemini_edit_image failed:", e)
+                did_ai = False
+
+            # =========================
+            # ✅ 핵심 변경 2: Gemini가 실패해도 ai_edit를 "무조건" 내려주기(디버깅/UX 안정)
+            # - copyfile도 실패하면 그냥 ai_edit_path를 composite로 대체
+            # =========================
+            if not did_ai:
                 try:
                     shutil.copyfile(composite_path, ai_edit_path)
-                except Exception:
-                    ai_edit_path = None
+                    did_ai = os.path.exists(ai_edit_path)
+                except Exception as e:
+                    print("[WARN] copyfile fallback failed:", e)
+                    ai_edit_path = composite_path  # 최후 대체
 
         # 결과 추가
         if mode == "composite":
             add_img("composite", composite_path)
         else:
-            if ai_edit_path and os.path.exists(ai_edit_path):
-                add_img("ai_edit", ai_edit_path)
-            else:
-                add_img("composite", composite_path)
+            # ✅ 항상 ai_edit 이름으로 내려줌 (실패 시 composite가 들어가도 ai_edit로 내려가게)
+            add_img("ai_edit", ai_edit_path if ai_edit_path else composite_path)
 
     # =========================
     # 5) 응답
@@ -1301,6 +1414,12 @@ async def chat_pick_spot(request: Request, body: PickSpotBody) -> JSONResponse:
     else:
         text = "✅ 동일 식물로 3개 스팟에 생성했습니다."
 
+    # mode 안내(디버깅)
+    if mode == "composite":
+        text += " (mode=composite → Gemini 보정 생략)"
+    else:
+        text += " (mode!=composite → Gemini 보정 시도)"
+
     msgs: List[Dict[str, Any]] = [{"type": "text", "text": text}]
     if images_payload:
         msgs.append({"type": "images", "text": "생성 결과", "images": images_payload})
@@ -1309,7 +1428,6 @@ async def chat_pick_spot(request: Request, body: PickSpotBody) -> JSONResponse:
         {"messages": msgs, "cv_result": data},
         sid, sid_is_new,
     )
-
 
 async def chat_render(request: Request, body: PickSpotBody) -> JSONResponse:
     return await chat_pick_spot(request, body)
