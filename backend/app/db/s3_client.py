@@ -24,6 +24,30 @@ def _get_settings() -> Tuple[str, str, str, str, str, int]:
     return access_key, secret_key, region, bucket, access_point_arn, expires
 
 
+def _resolve_bucket_id(bucket: str, access_point_arn: str) -> str:
+    return access_point_arn or bucket
+
+
+def _validate_base_settings(
+    access_key: str, secret_key: str, region: str, bucket: str, access_point_arn: str
+) -> Optional[str]:
+    if not bucket and not access_point_arn:
+        return "missing_bucket"
+    if not access_key or not secret_key:
+        return "missing_credentials"
+    if not region:
+        return "missing_region"
+    return None
+
+
+def _sign_get_object_url(client, bucket_id: str, key: str, expires: int) -> str:
+    return client.generate_presigned_url(
+        "get_object",
+        Params={"Bucket": bucket_id, "Key": key},
+        ExpiresIn=expires,
+    )
+
+
 def _get_client(access_key: str, secret_key: str, region: str):
     cache_key = (access_key, secret_key, region)
     client = _client_cache.get(cache_key)
@@ -51,23 +75,16 @@ def _get_client(access_key: str, secret_key: str, region: str):
 def ping_s3() -> bool:
     global _last_error
     access_key, secret_key, region, bucket, access_point_arn, _ = _get_settings()
-    if not bucket and not access_point_arn:
-        _last_error = "missing_bucket"
-        return False
-    if not access_key or not secret_key:
-        _last_error = "missing_credentials"
-        return False
-    if not region:
-        _last_error = "missing_region"
+    validation_error = _validate_base_settings(access_key, secret_key, region, bucket, access_point_arn)
+    if validation_error:
+        _last_error = validation_error
         return False
 
     try:
         client = _get_client(access_key, secret_key, region)
-        bucket_id = access_point_arn or bucket
+        bucket_id = _resolve_bucket_id(bucket, access_point_arn)
         client.list_objects_v2(Bucket=bucket_id, MaxKeys=1)
-        print("S3 Connection Success!")  # 성공 시 출력
     except Exception as exc:
-        print(f"S3 Connection Error: {exc}")
         _last_error = repr(exc)
         return False
 
@@ -85,27 +102,66 @@ def get_presigned_url(key: str) -> Optional[str]:
     if not key:
         _last_error = "missing_key"
         return None
-    if not access_key or not secret_key:
-        _last_error = "missing_credentials"
-        return None
-    if not region:
-        _last_error = "missing_region"
-        return None
-    if not bucket and not access_point_arn:
-        _last_error = "missing_bucket"
+    validation_error = _validate_base_settings(access_key, secret_key, region, bucket, access_point_arn)
+    if validation_error:
+        _last_error = validation_error
         return None
 
     try:
         client = _get_client(access_key, secret_key, region)
-        bucket_id = access_point_arn or bucket
-        url = client.generate_presigned_url(
-            "get_object",
-            Params={"Bucket": bucket_id, "Key": key},
-            ExpiresIn=expires,
-        )
+        bucket_id = _resolve_bucket_id(bucket, access_point_arn)
+        url = _sign_get_object_url(client, bucket_id, key, expires)
     except Exception as exc:
         _last_error = repr(exc)
         return None
 
     _last_error = None
     return url
+
+
+def get_existing_presigned_url(keys: list[str]) -> Optional[str]:
+    global _last_error
+    access_key, secret_key, region, bucket, access_point_arn, expires = _get_settings()
+    if not keys:
+        _last_error = "missing_keys"
+        return None
+    validation_error = _validate_base_settings(access_key, secret_key, region, bucket, access_point_arn)
+    if validation_error:
+        _last_error = validation_error
+        return None
+
+    try:
+        client = _get_client(access_key, secret_key, region)
+        bucket_id = _resolve_bucket_id(bucket, access_point_arn)
+        valid_keys = [k for k in keys if k]
+        if not valid_keys:
+            _last_error = "missing_keys"
+            return None
+
+        for key in valid_keys:
+            search_prefix = key.rsplit(".", 1)[0]
+            try:
+                listed = client.list_objects_v2(Bucket=bucket_id, Prefix=search_prefix, MaxKeys=20)
+                existing = {obj.get("Key") for obj in listed.get("Contents", []) if obj.get("Key")}
+            except Exception:
+                existing = set()
+            if key in existing:
+                url = _sign_get_object_url(client, bucket_id, key, expires)
+                _last_error = None
+                return url
+
+        # Fallback: in some buckets list permission can be limited.
+        for key in valid_keys:
+            try:
+                client.head_object(Bucket=bucket_id, Key=key)
+            except Exception:
+                continue
+            url = _sign_get_object_url(client, bucket_id, key, expires)
+            _last_error = None
+            return url
+    except Exception as exc:
+        _last_error = repr(exc)
+        return None
+
+    _last_error = "not_found"
+    return None
