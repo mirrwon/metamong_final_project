@@ -293,14 +293,8 @@ def _s3_presign_value(value: str, base_url: str, prefix_path: str) -> str:
 
 
 def _get_plant_image_ext_list() -> list[str]:
-    exts = os.getenv("S3_PLANT_IMAGE_EXTS", "").strip()
-    ext_list = [ext.strip() for ext in exts.split(",") if ext.strip()] or [".jpg", ".JPG"]
-    normalized = []
-    for ext in ext_list:
-        if not ext.startswith("."):
-            ext = f".{ext}"
-        normalized.append(ext)
-    return normalized
+    # Project convention: plant images are stored only as .jpg.
+    return [".jpg"]
 
 
 def _build_filenames_for_index(plant_id: str, idx: int) -> list[str]:
@@ -449,13 +443,12 @@ def _normalize_plant_payload(raw, key: str, prefix: str) -> dict:
 
     pet_target = attrs.get("pet_target")
     pet_symptom = attrs.get("pet_symptom")
-    pet_target_value = _join_list(pet_target)
-    if pet_symptom in (None, "", "없음") and pet_target_value in (None, "", "없음"):
-        pet_safe = None
-    elif pet_symptom == "없음":
+    # If pet symptom is explicitly "none", treat as safe.
+    if pet_symptom == "없음":
         pet_safe = True
     else:
-        pet_safe = False
+        # Otherwise keep binary classification (empty target list = safe, else caution).
+        pet_safe = isinstance(pet_target, list) and len(pet_target) == 0
 
     light_lux = attrs.get("light_lux")
     light_min = raw.get("광량_min")
@@ -494,6 +487,7 @@ def _normalize_plant_payload(raw, key: str, prefix: str) -> dict:
         "care": care_level,
         "allergy": allergy,
         "pet_safe": pet_safe,
+        "photo_count": attrs.get("photo_count"),
         "image": image,
         "images": images,
         "attrs": attrs,
