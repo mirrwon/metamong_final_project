@@ -1,7 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-// import { useNavigate } from "react-router-dom";
+import { useEffect, useMemo, useState, useRef } from "react";
 import { fetchWithSession } from "../../services/session";
-// import { ROUTES } from "../../constants/routes";
 import "./Survey.css";
 
 const API_ORIGIN = "http://localhost:8000";
@@ -275,6 +273,9 @@ export default function PlantSelectPage({
   const [filteredPlants, setFilteredPlants] = useState([]);
   const [visiblePlants, setVisiblePlants] = useState([]);
 
+  const pickInFlightRef = useRef(false);
+  const plantsFetchRef = useRef(false);
+
   useEffect(() => {
     const raw = sessionStorage.getItem(SURVEY_STORAGE_KEY);
     if (!raw) {
@@ -293,6 +294,9 @@ export default function PlantSelectPage({
 
   useEffect(() => {
     if (!survey) return;
+    if (plantsFetchRef.current) return;   // 개발모드 중복 실행 방지
+    plantsFetchRef.current = true;
+
     let alive = true;
 
     const run = async () => {
@@ -336,16 +340,17 @@ export default function PlantSelectPage({
   }, [status, allPlants, survey]);
 
   const handlePick = (plant) => {
+    if (pickInFlightRef.current) return;   // 중복 클릭/키 입력 방지
+    pickInFlightRef.current = true;        // 잠금
+
     const payload = {
       id: plant?.id ?? null,
       name: plant?.displayName ?? plant?.name ?? "식물",
       image: plant?.displayImage ?? null,
     };
 
-    // ✅ 기존 키 그대로 유지
     sessionStorage.setItem(SELECTED_PLANT_KEY, JSON.stringify(payload));
 
-    // ✅ 이동/흐름은 부모(AnalyzePage)가 담당
     if (typeof onPicked === "function") {
       onPicked(payload);
     }

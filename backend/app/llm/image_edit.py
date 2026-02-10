@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import os
+import cv2
 from typing import Any, Dict, Optional, Tuple, Union
 
 from PIL import Image, ImageDraw
@@ -164,6 +165,17 @@ def composite_plant_on_original(
         _draw_green_dot(base, (px, py), dot_r)
 
     used_plant = False
+
+    # --- ✅ marker-only mode (PIL 기반, 정상 동작) ---
+    if not plant_png_path:
+        os.makedirs(os.path.dirname(out_path), exist_ok=True)
+        base.save(out_path)
+        return {
+            "ok": True,
+            "out_path": out_path,
+            "used_plant": False,
+            "pixel_xy": (px, py),
+        }
 
     # ✅ 1) plant_png_path가 없거나 파일이 없으면 placeholder를 자동으로 만든다
     if (not plant_png_path) or (not os.path.exists(plant_png_path)):

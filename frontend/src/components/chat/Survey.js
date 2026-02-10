@@ -17,6 +17,20 @@ const resolveImageUrl = (url) => {
   return u;
 };
 
+// ✅ "없음 / none / 빈값"을 필터 미적용([])으로 정규화
+const normalizeNone = (arr) => {
+  if (!Array.isArray(arr)) return [];
+  return arr
+    .map((x) => String(x ?? "").trim())
+    .filter(
+      (x) =>
+        x &&
+        x !== "없음" &&
+        x !== "해당없음" &&
+        x.toLowerCase() !== "none"
+    );
+};
+
 const normalizeOption = (option, index) => {
   if (option == null) {
     return {
@@ -228,10 +242,16 @@ export default function Survey({ onComplete, allowSkip = true }) {
   };
 
   const toToken = (groupKey, vRaw) => {
-    const v = String(vRaw || "").trim();
-    if (!v || v === "없음") return null;
+    const v = String(vRaw || "").trim().toLowerCase();
+    if (!v) return null;
+    if (v === "없음" || v === "none" || v === "해당없음") return null;
+
 
     if (groupKey === "size") {
+      if (v === "small" || v === "s") return "small";
+      if (v === "medium" || v === "m") return "medium";
+      if (v === "large" || v === "l") return "large";
+
       if (v.includes("탁상") || v.includes("table")) return "small";
       if (v.includes("바닥") || v.includes("floor")) return "large";
       if (v.includes("소형")) return "small";
@@ -241,6 +261,10 @@ export default function Survey({ onComplete, allowSkip = true }) {
     }
 
     if (groupKey === "style") {
+      if (v === "natural") return "natural";
+      if (v === "minimal") return "minimal";
+      if (v === "trendy") return "trendy";
+
       if (v.includes("내추럴")) return "natural";
       if (v.includes("미니멀")) return "minimal";
       if (v.includes("트렌디")) return "trendy";
@@ -248,6 +272,10 @@ export default function Survey({ onComplete, allowSkip = true }) {
     }
 
     if (groupKey === "Plant_style") {
+      if (v === "flowery") return "flowery";
+      if (v === "leafy") return "leafy";
+      if (v === "fruity") return "fruity";
+
       if (v.includes("꽃")) return "flowery";
       if (v.includes("잎") || v.includes("관엽")) return "leafy";
       if (v.includes("열매")) return "fruity";
@@ -255,6 +283,11 @@ export default function Survey({ onComplete, allowSkip = true }) {
     }
 
     if (groupKey === "caution") {
+      if (v === "dog") return "dog";
+      if (v === "cat") return "cat";
+      if (v === "allergy") return "allergy";
+      if (v === "baby") return "baby";
+
       if (v.includes("강아지")) return "dog";
       if (v.includes("고양이")) return "cat";
       if (v.includes("알러지")) return "allergy";
@@ -284,13 +317,9 @@ export default function Survey({ onComplete, allowSkip = true }) {
 
     // ✅ 1) "없음"/빈값 제거 + 토큰으로 통일해서 저장
     const cleaned = Object.fromEntries(
-      Object.entries(selected || {}).map(([k, v]) => [
-        k,
-        (Array.isArray(v) ? v : [])
-          .map((x) => String(x).trim())
-          .filter((x) => x && x !== "없음"), // 핵심: 없음은 제거해서 [] 만들기
-      ])
+      Object.entries(selected || {}).map(([k, v]) => [k, normalizeNone(v)])
     );
+
 
     const tokenized = tokenizeSelected(cleaned);
 
