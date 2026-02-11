@@ -126,6 +126,8 @@ const buildPlantFilters = (plant) => {
   const styleSource = [
     plant?.style,
     plant?.tags,
+    plant?.attrs?.style_tags,
+    plant?.attrs?.functional_tags,
     plant?.placement,
     plant?.name,
     plant?.name_ko,
@@ -172,19 +174,29 @@ const filterPlantsBySurvey = (plants, answers) => {
   };
 
   const isHardCare = (plant) => {
-    const val = plant?.care;
-    if (val == null) return false;
-    const text = String(val).toLowerCase();
-    return (
-      text.includes("hard") ||
-      text.includes("difficult") ||
-      text.includes("expert") ||
-      text.includes("high") ||
-      text.includes("어려") ||
-      text.includes("난이도") ||
-      text.includes("고난") ||
-      text.includes("상")
-    );
+    const values = [
+      plant?.care,
+      plant?.care_difficulty,
+      plant?.care_effort,
+      plant?.attrs?.care_level,
+      plant?.attrs?.care_requirement,
+    ].filter((value) => value != null);
+    if (values.length === 0) return false;
+
+    return values.some((value) => {
+      const text = String(value).toLowerCase();
+      return (
+        text.includes("hard") ||
+        text.includes("difficult") ||
+        text.includes("expert") ||
+        text.includes("high") ||
+        text.includes("높") ||
+        text.includes("어려") ||
+        text.includes("난이도") ||
+        text.includes("고난") ||
+        text.includes("상")
+      );
+    });
   };
 
   return plants.filter((plant) => {

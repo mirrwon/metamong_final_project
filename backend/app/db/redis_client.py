@@ -10,14 +10,29 @@ load_dotenv(os.path.join(BASE_DIR, ".env"))
 
 _client: Optional[Redis] = None
 _last_error: Optional[str] = None
+_ENCODING = os.getenv("REDIS_ENCODING", "utf-8")
+_ENCODING_ERRORS = os.getenv("REDIS_ENCODING_ERRORS", "replace")
 
 
 def _build_client() -> Redis:
     def _from_url(conn_url: str) -> Redis:
+        kwargs = {
+            "decode_responses": True,
+            "encoding": _ENCODING,
+            "encoding_errors": _ENCODING_ERRORS,
+        }
         if hasattr(redis, "from_url"):
-            return redis.from_url(conn_url, decode_responses=True)
+            try:
+                return redis.from_url(conn_url, **kwargs)
+            except TypeError:
+                kwargs.pop("encoding_errors", None)
+                return redis.from_url(conn_url, **kwargs)
         if hasattr(redis.Redis, "from_url"):
-            return redis.Redis.from_url(conn_url, decode_responses=True)
+            try:
+                return redis.Redis.from_url(conn_url, **kwargs)
+            except TypeError:
+                kwargs.pop("encoding_errors", None)
+                return redis.Redis.from_url(conn_url, **kwargs)
         raise AttributeError("redis.from_url is not available")
 
     url = os.getenv("REDIS_URL")
@@ -44,6 +59,8 @@ def _build_client() -> Redis:
         password=password,
         db=db,
         decode_responses=True,
+        encoding=_ENCODING,
+        encoding_errors=_ENCODING_ERRORS,
         ssl=use_ssl,
     )
 

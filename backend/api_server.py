@@ -1,6 +1,7 @@
 import os
 import json
 import time
+from typing import Any
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -67,7 +68,7 @@ app.include_router(map_router)
 _plants_cache = {}
 _plants_key_cache = {}
 
-# Redis JSON keys in redisinsight_plants_v5_hybrid_import.txt
+# Redis JSON keys in redisinsight_plants_v7.txt
 PLANT_REDIS_KEY_MAP = {
     "name_ko": ["이름_한국어", "이름ko"],
     "name_en": ["이름_영어", "이름_en"],
@@ -90,9 +91,14 @@ PLANT_REDIS_KEY_MAP = {
     "fruit_color": ["열매_색"],
     "light_requirement": ["광_요구도"],
     "light_lux": ["광_요구도_Lux", "광량"],
+    "light_lux_min": ["최소_광량_Lux", "광량_min"],
+    "light_lux_max": ["최대_광량_Lux", "광량_max"],
     "direct_light_tolerance": ["직사광_내성"],
+    "direct_light_risk": ["직광_위험도"],
     "placement": ["권장_배치_공간"],
     "window_distance": ["권장_창문거리_구간"],
+    "window_min_cm": ["최소_창문_거리_cm"],
+    "window_max_cm": ["최대_창문_거리", "최대_창문_거리_cm"],
     "humidity_pref": ["습도_선호"],
     "temp_min_c": ["생육온도_min_C"],
     "temp_max_c": ["생육온도_max_C"],
@@ -104,7 +110,12 @@ PLANT_REDIS_KEY_MAP = {
     "water_summer": ["물주기_여름"],
     "water_fall": ["물주기_가을"],
     "water_winter": ["물주기_겨울"],
-    "care_level": ["관리_난이도", "관리_요구도"],
+    "water_count_spring": ["물_횟수_봄"],
+    "water_count_summer": ["물_횟수_여름"],
+    "water_count_fall": ["물_횟수_가을"],
+    "water_count_winter": ["물_횟수_겨울"],
+    "care_level": ["관리_난이도"],
+    "care_requirement": ["관리_요구도"],
     "scent_strength": ["향기_강도"],
     "style_tags": ["스타일_태그"],
     "functional_tags": ["기능성_태그"],
@@ -119,6 +130,12 @@ PLANT_REDIS_KEY_MAP = {
     "kid_warning": ["어린이_주의"],
     "kid_risk_type": ["어린이_위험_유형"],
     "kid_safety_grade": ["어린이_안전_등급"],
+    "fertilizer_cycle_spring_days": ["비료주기_일수_봄"],
+    "fertilizer_cycle_summer_days": ["비료주기_일수_여름", "비료주기_일수__여름"],
+    "fertilizer_cycle_fall_days": ["비료주기_일수_가을"],
+    "fertilizer_cycle_winter_days": ["비료주기_일수_겨울"],
+    "character": ["캐릭터"],
+    "personality": ["성격"],
     "photo_count": ["사진_갯수"],
 }
 
@@ -137,6 +154,42 @@ def _build_attrs(raw: dict) -> dict:
     for out_key, redis_keys in PLANT_REDIS_KEY_MAP.items():
         attrs[out_key] = _pick_first(raw, redis_keys)
     return attrs
+
+
+def _decode_redis_text(value: Any, encoding: str = "utf-8") -> str:
+    if isinstance(value, str):
+        return value
+    if isinstance(value, bytes):
+        try:
+            return value.decode(encoding)
+        except UnicodeDecodeError:
+            return value.decode(encoding, errors="replace")
+    return str(value)
+
+
+def _decode_redis_key(key: Any) -> str:
+    return _decode_redis_text(key)
+
+
+def _decode_redis_payload(payload: Any) -> Any:
+    if isinstance(payload, bytes):
+        return _decode_redis_text(payload)
+    return payload
+
+
+def _safe_json_loads(payload: Any) -> Any:
+    payload = _decode_redis_payload(payload)
+    if not isinstance(payload, str):
+        return payload
+
+    text = payload.strip()
+    if not text:
+        return None
+
+    try:
+        return json.loads(text)
+    except Exception:
+        return payload
 
 
 def _get_scan_limit() -> int:
@@ -181,7 +234,7 @@ def _get_cached_keys(r, prefix: str, cache_ttl: int) -> list:
     if ids_set:
         try:
             if r.exists(ids_set):
-                keys = list(r.smembers(ids_set))
+                keys = [_decode_redis_key(key) for key in r.smembers(ids_set)]
         except Exception:
             keys = []
 
@@ -195,6 +248,7 @@ def _get_cached_keys(r, prefix: str, cache_ttl: int) -> list:
     scan_limit = _get_scan_limit()
     while True:
         cursor, batch = r.scan(cursor=cursor, match=f"{prefix}*" if prefix else None, count=1000)
+        batch = [_decode_redis_key(key) for key in batch]
         keys.extend(batch)
         if scan_limit and len(keys) >= scan_limit:
             keys = keys[:scan_limit]
@@ -214,6 +268,7 @@ def _get_cached_keys(r, prefix: str, cache_ttl: int) -> list:
 def _fetch_redis_json_items(r, keys: list, json_path: str) -> list:
     if not keys:
         return []
+    keys = [_decode_redis_key(key) for key in keys]
     try:
         raw_items = r.execute_command("JSON.MGET", *keys, json_path)
     except Exception:
@@ -233,13 +288,11 @@ def _fetch_redis_json_items(r, keys: list, json_path: str) -> list:
 
     items = []
     for payload in raw_items:
+        payload = _decode_redis_payload(payload)
         if payload is None:
             items.append(None)
             continue
-        try:
-            decoded = json.loads(payload)
-        except Exception:
-            decoded = payload
+        decoded = _safe_json_loads(payload)
         if isinstance(decoded, list) and len(decoded) == 1:
             decoded = decoded[0]
         items.append(decoded)
@@ -422,6 +475,8 @@ def _resolve_plant_images(raw: dict, key: str, prefix: str, attrs: dict | None =
 
 
 def _normalize_plant_payload(raw, key: str, prefix: str) -> dict:
+    key = _decode_redis_key(key)
+    raw = _safe_json_loads(raw)
     if not isinstance(raw, dict):
         raw = {}
 
@@ -435,6 +490,11 @@ def _normalize_plant_payload(raw, key: str, prefix: str) -> dict:
     name_ko = attrs.get("name_ko")
     name_en = attrs.get("name_en")
     care_level = attrs.get("care_level")
+    care_requirement = attrs.get("care_requirement")
+    if care_level is None:
+        care_level = raw.get("관리_난이도")
+    if care_requirement is None:
+        care_requirement = raw.get("관리_요구도")
     allergy_notice = attrs.get("allergy_notice")
     allergy_type = attrs.get("allergy_type")
     allergy_symptom = attrs.get("allergy_symptom")
@@ -443,22 +503,49 @@ def _normalize_plant_payload(raw, key: str, prefix: str) -> dict:
 
     pet_target = attrs.get("pet_target")
     pet_symptom = attrs.get("pet_symptom")
-    # If pet symptom is explicitly "none", treat as safe.
-    if pet_symptom == "없음":
+    pet_target_text = pet_target.strip() if isinstance(pet_target, str) else ""
+    pet_symptom_text = pet_symptom.strip() if isinstance(pet_symptom, str) else ""
+    # If symptom/target is explicitly "none", treat as safe.
+    if pet_symptom_text in ("없음", "none", "None"):
+        pet_safe = True
+    elif pet_target_text in ("없음", "none", "None"):
         pet_safe = True
     else:
         # Otherwise keep binary classification (empty target list = safe, else caution).
         pet_safe = isinstance(pet_target, list) and len(pet_target) == 0
 
     light_lux = attrs.get("light_lux")
-    light_min = raw.get("광량_min")
-    light_max = raw.get("광량_max")
+    light_min = attrs.get("light_lux_min")
+    light_max = attrs.get("light_lux_max")
+
+    if light_min is None:
+        light_min = raw.get("광량_min")
+    if light_max is None:
+        light_max = raw.get("광량_max")
+
+    if light_min is None and isinstance(raw.get("최소_광량_Lux"), (str, int, float)):
+        light_min = raw.get("최소_광량_Lux")
+    if light_max is None and isinstance(raw.get("최대_광량_Lux"), (str, int, float)):
+        light_max = raw.get("최대_광량_Lux")
+
     if isinstance(light_lux, list) and light_lux:
-        light_min = light_lux[0]
-        if len(light_lux) > 1:
+        if light_min is None:
+            light_min = light_lux[0]
+        if light_max is None and len(light_lux) > 1:
             light_max = light_lux[-1]
-        else:
-            light_max = None
+        elif light_max is None and len(light_lux) == 1 and isinstance(light_lux[0], str) and "~" in light_lux[0]:
+            parts = [part.strip() for part in light_lux[0].split("~", 1)]
+            if parts and parts[0]:
+                light_min = parts[0]
+            if len(parts) > 1 and parts[1]:
+                light_max = parts[1]
+    elif light_max is None and isinstance(light_lux, str) and "~" in light_lux:
+        parts = [part.strip() for part in light_lux.split("~", 1)]
+        if light_min is None and parts and parts[0]:
+            light_min = parts[0]
+        if len(parts) > 1 and parts[1]:
+            light_max = parts[1]
+
     light_min = _join_list(light_min)
     light_max = _join_list(light_max)
 
@@ -485,8 +572,12 @@ def _normalize_plant_payload(raw, key: str, prefix: str) -> dict:
         "direct_light_tolerance": attrs.get("direct_light_tolerance"),
         "placement": placement,
         "care": care_level,
+        "care_difficulty": care_level,
+        "care_effort": care_requirement,
         "allergy": allergy,
         "pet_safe": pet_safe,
+        "character": attrs.get("character"),
+        "personality": attrs.get("personality"),
         "photo_count": attrs.get("photo_count"),
         "image": image,
         "images": images,
@@ -537,7 +628,9 @@ def redis_debug():
             raw = r.execute_command("JSON.GET", sample_key, "$.이름_한국어")
             if raw is None:
                 raw = r.execute_command("JSON.GET", sample_key, "$.이름_영어")
-            sample_name = raw
+            sample_name = _safe_json_loads(raw)
+            if isinstance(sample_name, list) and len(sample_name) == 1:
+                sample_name = sample_name[0]
         except Exception:
             sample_name = None
 
@@ -624,6 +717,7 @@ def list_plants(cursor: int = 0, limit: int = 24, offset: int | None = None):
                 match=f"{prefix}*" if prefix else None,
                 count=max(limit_val * 2, 50),
             )
+            keys = [_decode_redis_key(key) for key in keys]
             if keys:
                 raw_items = _fetch_redis_json_items(r, keys, json_path)
                 for key, decoded in zip(keys, raw_items):
