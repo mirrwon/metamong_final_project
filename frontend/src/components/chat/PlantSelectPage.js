@@ -160,10 +160,6 @@ const filterPlantsBySurvey = (plants, answers) => {
   const styleWanted = answers?.style || [];
   const plantStyleWanted = answers?.Plant_style || answers?.plant_style || answers?.plantStyle || [];
 
-  const hasPetCaution = cautionWanted.includes("dog") || cautionWanted.includes("cat");
-  const hasAllergyCaution = cautionWanted.includes("allergy") || cautionWanted.includes("baby");
-  const hasBeginnerCaution = cautionWanted.includes("beginner");
-
   const isAllergyRisk = (plant) => {
     const val = plant?.allergy;
     if (val == null) return false;
@@ -199,10 +195,57 @@ const filterPlantsBySurvey = (plants, answers) => {
     });
   };
 
+  const isKidRisk = (plant) => {
+    const raw = plant?.attrs?.kid_safety_grade;
+    if (raw == null) return isAllergyRisk(plant);
+    const text = String(raw).toLowerCase().trim();
+    if (!text) return isAllergyRisk(plant);
+
+    if (
+      text.includes("safe") ||
+      text.includes("low risk") ||
+      text.includes("generally safe")
+    ) {
+      return false;
+    }
+
+    if (
+      text.includes("caution") ||
+      text.includes("risk") ||
+      text.includes("unsafe") ||
+      text.includes("danger") ||
+      text.includes("toxic") ||
+      text.includes("harmful")
+    ) {
+      return true;
+    }
+
+    return isAllergyRisk(plant);
+  };
+
+  const passesCaution = (plant) => {
+    if (cautionWanted.length === 0) return true;
+
+    // caution is strict AND: every selected caution must pass.
+    return cautionWanted.every((token) => {
+      switch (token) {
+        case "dog":
+        case "cat":
+          return plant?.pet_safe === true;
+        case "allergy":
+          return !isAllergyRisk(plant);
+        case "baby":
+          return !isKidRisk(plant);
+        case "beginner":
+          return !isHardCare(plant);
+        default:
+          return true;
+      }
+    });
+  };
+
   return plants.filter((plant) => {
-    if (hasPetCaution && plant?.pet_safe !== true) return false;
-    if (hasAllergyCaution && isAllergyRisk(plant)) return false;
-    if (hasBeginnerCaution && isHardCare(plant)) return false;
+    if (!passesCaution(plant)) return false;
 
     const { sizeTokens, styleTokens, plantStyleTokens } = buildPlantFilters(plant);
     const sizeOk = matchGroup(sizeWanted, sizeTokens, false);
