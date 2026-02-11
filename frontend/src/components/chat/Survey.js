@@ -8,7 +8,7 @@ const API_BASE = "http://localhost:8000/api/chat";
 const SURVEY_API = `${API_BASE}/survey`;
 const API_ORIGIN = "http://localhost:8000";
 
-/** ✅ survey option image url normalize */
+/** 설문 옵션 이미지 URL을 정규화합니다. */
 const resolveImageUrl = (url) => {
   if (!url) return null;
   const u = String(url);
@@ -17,18 +17,19 @@ const resolveImageUrl = (url) => {
   return u;
 };
 
-// ✅ "없음 / none / 빈값"을 필터 미적용([])으로 정규화
+// 빈 값/없음 계열 값은 미적용으로 처리합니다.
+const isNoneLikeValue = (value) => {
+  const raw = String(value ?? "").trim();
+  if (!raw) return true;
+  const v = raw.toLowerCase();
+  return v === "none" || v === "없음" || v === "해당없음" || v === "해당 없음";
+};
+
 const normalizeNone = (arr) => {
   if (!Array.isArray(arr)) return [];
   return arr
     .map((x) => String(x ?? "").trim())
-    .filter(
-      (x) =>
-        x &&
-        x !== "없음" &&
-        x !== "해당없음" &&
-        x.toLowerCase() !== "none"
-    );
+    .filter((x) => !isNoneLikeValue(x));
 };
 
 const normalizeOption = (option, index) => {
@@ -59,24 +60,29 @@ const normalizeOption = (option, index) => {
     return "";
   };
 
-  const value = pickNonEmpty(
-    option.value,      //  "" 이면 버림
-    option.key,
-    option.id,
-    option.label,
-    `option-${index + 1}`
-  );
+  const hasExplicitEmptyValue =
+    Object.prototype.hasOwnProperty.call(option, "value") && option.value === "";
+
+  const value = hasExplicitEmptyValue
+    ? ""
+    : pickNonEmpty(
+      option.value,
+      option.key,
+      option.id,
+      option.label,
+      `option-${index + 1}`
+    );
 
   const label = pickNonEmpty(
     option.label,
     option.text,
-    option.value,      //  "" 이면 버림
+      option.value,
     option.key,
     `Option ${index + 1}`
   );
 
 
-  /** ✅ 여기만 추가: option에서 이미지 후보 필드들 수집 */
+  // 여러 필드에서 이미지 후보를 수집합니다.
   const rawImage =
     option.image ??
     option.img ??
@@ -96,7 +102,7 @@ const normalizeOption = (option, index) => {
   return {
     value: String(value),
     label: String(label),
-    image: resolveImageUrl(rawImage), // ✅ image 살림
+    image: resolveImageUrl(rawImage),
     children,
   };
 };
@@ -147,7 +153,7 @@ const normalizeSurvey = (data) => {
   };
 };
 
-export default function Survey({ onComplete, allowSkip = true }) {
+export default function Survey() {
   const nav = useNavigate();
 
   const [survey, setSurvey] = useState(null);
@@ -157,7 +163,7 @@ export default function Survey({ onComplete, allowSkip = true }) {
   const [loadError, setLoadError] = useState("");
   const [submitError, setSubmitError] = useState("");
 
-  // ✅ 업로드(1페이지) 안 거쳤으면 /upload 로 강제 이동 (원하면 제거 가능)
+  // 업로드를 먼저 하지 않았으면 /upload로 이동합니다.
   useEffect(() => {
     const ok = sessionStorage.getItem("ditto_uploaded") === "1";
     if (!ok) nav(ROUTES.UPLOAD);
@@ -216,12 +222,19 @@ export default function Survey({ onComplete, allowSkip = true }) {
 
   const computeNextSelection = (current, value, isMultiple, max) => {
     const hasValue = current.includes(value);
-    if (isMultiple) {
-      if (hasValue) return current.filter((item) => item !== value);
-      if (!max || current.length < max) return [...current, value];
-      return current;
+
+    if (isNoneLikeValue(value)) {
+      return hasValue ? current.filter((item) => item !== value) : [value];
     }
-    return hasValue ? [] : [value];
+
+    const withoutNone = current.filter((item) => !isNoneLikeValue(item));
+
+    if (isMultiple) {
+      if (withoutNone.includes(value)) return withoutNone.filter((item) => item !== value);
+      if (!max || withoutNone.length < max) return [...withoutNone, value];
+      return withoutNone;
+    }
+    return withoutNone.includes(value) ? [] : [value];
   };
 
   const handleOptionToggle = (groupKey, value, isMultiple, max) => {
@@ -243,55 +256,34 @@ export default function Survey({ onComplete, allowSkip = true }) {
 
   const toToken = (groupKey, vRaw) => {
     const v = String(vRaw || "").trim().toLowerCase();
-    if (!v) return null;
-    if (v === "없음" || v === "none" || v === "해당없음") return null;
-
+    if (isNoneLikeValue(v)) return null;
 
     if (groupKey === "size") {
-      if (v === "small" || v === "s") return "small";
-      if (v === "medium" || v === "m") return "medium";
-      if (v === "large" || v === "l") return "large";
-
-      if (v.includes("탁상") || v.includes("table")) return "small";
-      if (v.includes("바닥") || v.includes("floor")) return "large";
-      if (v.includes("소형")) return "small";
-      if (v.includes("대형")) return "large";
-      if (v.includes("중형")) return "medium";
+      if (v === "small" || v === "s" || v.includes("table")) return "small";
+      if (v === "medium" || v === "m" || v.includes("medium")) return "medium";
+      if (v === "large" || v === "l" || v.includes("floor")) return "large";
       return null;
     }
 
     if (groupKey === "style") {
-      if (v === "natural") return "natural";
-      if (v === "minimal") return "minimal";
-      if (v === "trendy") return "trendy";
-
-      if (v.includes("내추럴")) return "natural";
-      if (v.includes("미니멀")) return "minimal";
-      if (v.includes("트렌디")) return "trendy";
+      if (v === "natural" || v.includes("natural")) return "natural";
+      if (v === "minimal" || v.includes("minimal")) return "minimal";
+      if (v === "trendy" || v.includes("trendy")) return "trendy";
       return null;
     }
 
     if (groupKey === "Plant_style") {
-      if (v === "flowery") return "flowery";
-      if (v === "leafy") return "leafy";
-      if (v === "fruity") return "fruity";
-
-      if (v.includes("꽃")) return "flowery";
-      if (v.includes("잎") || v.includes("관엽")) return "leafy";
-      if (v.includes("열매")) return "fruity";
+      if (v === "flowery" || v.includes("flower")) return "flowery";
+      if (v === "leafy" || v.includes("leaf")) return "leafy";
+      if (v === "fruity" || v.includes("fruit")) return "fruity";
       return null;
     }
 
     if (groupKey === "caution") {
-      if (v === "dog") return "dog";
-      if (v === "cat") return "cat";
-      if (v === "allergy") return "allergy";
-      if (v === "baby") return "baby";
-
-      if (v.includes("강아지")) return "dog";
-      if (v.includes("고양이")) return "cat";
-      if (v.includes("알러지")) return "allergy";
-      if (v.includes("아이")) return "baby";
+      if (v === "dog" || v.includes("dog")) return "dog";
+      if (v === "cat" || v.includes("cat")) return "cat";
+      if (v === "allergy" || v.includes("allergy")) return "allergy";
+      if (v === "baby" || v.includes("baby")) return "baby";
       return null;
     }
 
@@ -315,7 +307,7 @@ export default function Survey({ onComplete, allowSkip = true }) {
     setStatus("submitting");
     setSubmitError("");
 
-    // ✅ 1) "없음"/빈값 제거 + 토큰으로 통일해서 저장
+    // 없음 계열 값을 제거하고 선택값을 토큰으로 정규화합니다.
     const cleaned = Object.fromEntries(
       Object.entries(selected || {}).map(([k, v]) => [k, normalizeNone(v)])
     );
@@ -332,7 +324,7 @@ export default function Survey({ onComplete, allowSkip = true }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           survey_key: survey.key,
-          answers: tokenized,          // ✅ 서버에도 토큰화된 걸 보냄
+          answers: tokenized,
         }),
       });
 
@@ -340,7 +332,7 @@ export default function Survey({ onComplete, allowSkip = true }) {
 
       setStatus("done");
 
-      // ✅ 2) PlantSelectPage가 읽는 survey_answers도 '토큰화된 값'으로 저장
+      // PlantSelectPage에서 읽을 수 있도록 토큰화된 답변을 저장합니다.
       sessionStorage.setItem("survey_answers", JSON.stringify(tokenized));
 
       nav(ROUTES.ANALYZE);
@@ -349,19 +341,6 @@ export default function Survey({ onComplete, allowSkip = true }) {
       setSubmitError("Failed to submit survey.");
     }
   };
-
-
-
-  const handleSkip = () => {
-    if (typeof onComplete === "function") onComplete(null);
-    try {
-      sessionStorage.setItem("survey_answers", JSON.stringify({}));
-    } catch (e) {
-      // ignore storage errors
-    }
-    nav(ROUTES.ANALYZE);
-  };
-
   return (
     <div className="surveyPage">
       <div className="surveyShell">
@@ -381,25 +360,30 @@ export default function Survey({ onComplete, allowSkip = true }) {
               <div className="surveyChecks">
                 {options.map((option, index) => {
                   const isSelected = selectedValues.includes(option.value);
-                  const hasImage = !!option.image; // ✅
-
+                  const hasImage = !!option.image;
+                  const isNoneOption = isNoneLikeValue(option.value) || isNoneLikeValue(option.label);
+                  const hasNoneSelected = selectedValues.some((v) => isNoneLikeValue(v));
+                  const hasNormalSelected = selectedValues.some((v) => !isNoneLikeValue(v));
+                  const isDimmed =
+                    (isNoneOption && hasNormalSelected) || (!isNoneOption && hasNoneSelected);
                   return (
                     <label key={`${group.key}-${option.value}-${index}`} className="surveyCheck">
                       <input
                         className="surveyCheck__input"
                         type="checkbox"
                         checked={isSelected}
+                        
                         onChange={() =>
                           handleParentToggle(group.key, option, isMultiple, group.max, selectedValues)
                         }
                       />
 
-                      {/* ✅ 이미지 있으면 image 라벨 스타일 적용 */}
+                      {/* 이미지가 있으면 이미지형 라벨 스타일을 사용합니다. */}
                       <span
                         className={
                           hasImage
-                            ? "surveyCheck__label surveyCheck__label--image"
-                            : "surveyCheck__label"
+                            ? `surveyCheck__label surveyCheck__label--image${isDimmed ? " surveyCheck__label--dimmed" : ""}`
+                            : `surveyCheck__label${isDimmed ? " surveyCheck__label--dimmed" : ""}`
                         }
                       >
                         {hasImage && (
@@ -408,7 +392,7 @@ export default function Survey({ onComplete, allowSkip = true }) {
                             src={option.image}
                             alt={option.label}
                             onError={(e) => {
-                              // 깨진 이미지면 그냥 숨김 (UX)
+                              // 깨진 이미지는 숨겨서 UI 노이즈를 줄입니다.
                               e.currentTarget.style.display = "none";
                             }}
                           />
@@ -429,8 +413,12 @@ export default function Survey({ onComplete, allowSkip = true }) {
                 {options.map((option, index) => {
                   const isSelected = selectedValues.includes(option.value);
                   const optionKey = `${path}${option.value}-${index}`;
-                  const hasImage = !!option.image; // ✅
-
+                  const hasImage = !!option.image;
+                  const isNoneOption = isNoneLikeValue(option.value) || isNoneLikeValue(option.label);
+                  const hasNoneSelected = selectedValues.some((v) => isNoneLikeValue(v));
+                  const hasNormalSelected = selectedValues.some((v) => !isNoneLikeValue(v));
+                  const isDimmed =
+                    (isNoneOption && hasNormalSelected) || (!isNoneOption && hasNoneSelected);
                   return (
                     <div key={optionKey} className="surveyChildItem">
                       <label className="surveyCheck">
@@ -438,6 +426,7 @@ export default function Survey({ onComplete, allowSkip = true }) {
                           className="surveyCheck__input"
                           type="checkbox"
                           checked={isSelected}
+                          
                           onChange={() =>
                             handleOptionToggle(group.key, option.value, isMultiple, group.max)
                           }
@@ -446,8 +435,8 @@ export default function Survey({ onComplete, allowSkip = true }) {
                         <span
                           className={
                             hasImage
-                              ? "surveyCheck__label surveyCheck__label--image"
-                              : "surveyCheck__label"
+                              ? `surveyCheck__label surveyCheck__label--image${isDimmed ? " surveyCheck__label--dimmed" : ""}`
+                              : `surveyCheck__label${isDimmed ? " surveyCheck__label--dimmed" : ""}`
                           }
                         >
                           {hasImage && (
@@ -487,7 +476,7 @@ export default function Survey({ onComplete, allowSkip = true }) {
               ));
 
             return (
-              <section key={group.key} className="surveyGroup">
+              <section key={group.key} className="surveyGroup" data-group-key={group.key}>
                 <div className="surveyGroup__header">
                   <h3 className="surveyGroup__title">{group.label}</h3>
                   {group.description && <p className="surveyGroup__desc">{group.description}</p>}
@@ -512,12 +501,6 @@ export default function Survey({ onComplete, allowSkip = true }) {
             >
               {status === "submitting" ? "처리 중..." : "Submit"}
             </button>
-
-            {allowSkip && (
-              <button className="chatBtn" type="button" onClick={handleSkip}>
-                Skip
-              </button>
-            )}
 
             {submitError && <p className="surveyStatus surveyStatus--error">{submitError}</p>}
           </footer>
