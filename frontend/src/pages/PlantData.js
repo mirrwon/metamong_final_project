@@ -5,7 +5,7 @@ import './PlantData.css';
 const PAGE_SIZE = 10;
 const PAGE_WINDOW_SIZE = 5;
 const LIGHT_ORDER = ['낮은 광도', '중간 광도', '높은 광도'];
-const CARE_ORDER = ['쉬움', '보통', '어려움'];
+const CARE_ORDER = ['쉬움', '낮음', '보통', '중간', '어려움', '높음'];
 const SIZE_ORDER = ['소', '중', '대'];
 const KID_SAFETY_ORDER = ['대체로 안전', '주의', '비권장'];
 
@@ -51,6 +51,7 @@ const PlantData = () => {
   const [filterPlacement, setFilterPlacement] = useState('');
   const [filterPetSafe, setFilterPetSafe] = useState('');
   const [filterKidSafe, setFilterKidSafe] = useState('');
+  const [lightbox, setLightbox] = useState(null);
   const inFlightRef = useRef(false);
 
   const baseUrl = useMemo(() => api.defaults.baseURL || '', []);
@@ -81,6 +82,32 @@ const PlantData = () => {
       const currentIndex = Math.max(0, images.indexOf(selected));
       const nextIndex = (currentIndex + delta + images.length) % images.length;
       return { ...prev, [plantKey]: images[nextIndex] };
+    });
+  }, []);
+
+  const openLightbox = useCallback((images, index = 0, alt = '식물 이미지') => {
+    if (!Array.isArray(images) || images.length < 1) return;
+    const safeIndex = Math.max(0, Math.min(Number(index) || 0, images.length - 1));
+    setLightbox({ images, index: safeIndex, alt });
+  }, []);
+
+  const closeLightbox = useCallback(() => {
+    setLightbox(null);
+  }, []);
+
+  const shiftLightbox = useCallback((delta) => {
+    setLightbox((prev) => {
+      if (!prev || !Array.isArray(prev.images) || prev.images.length <= 1) return prev;
+      const nextIndex = (prev.index + delta + prev.images.length) % prev.images.length;
+      return { ...prev, index: nextIndex };
+    });
+  }, []);
+
+  const selectLightboxIndex = useCallback((index) => {
+    setLightbox((prev) => {
+      if (!prev || !Array.isArray(prev.images) || prev.images.length < 1) return prev;
+      const safeIndex = Math.max(0, Math.min(Number(index) || 0, prev.images.length - 1));
+      return { ...prev, index: safeIndex };
     });
   }, []);
 
@@ -199,6 +226,28 @@ const PlantData = () => {
       setPageIndex(safePageIndex);
     }
   }, [pageIndex, safePageIndex]);
+
+  useEffect(() => {
+    const handleKeyDown = (event) => {
+      if (!lightbox) return;
+      if (event.key === 'Escape') {
+        closeLightbox();
+        return;
+      }
+      if (event.key === 'ArrowLeft') {
+        event.preventDefault();
+        shiftLightbox(-1);
+        return;
+      }
+      if (event.key === 'ArrowRight') {
+        event.preventDefault();
+        shiftLightbox(1);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [closeLightbox, lightbox, shiftLightbox]);
 
   const handleNext = () => {
     if (loading) return;
@@ -421,6 +470,7 @@ const PlantData = () => {
                 const selected = selectedImageByPlant[plantKey];
                 const displayImage = visibleImages.includes(selected) ? selected : visibleImages[0];
                 const displayIndex = Math.max(0, uiImages.indexOf(displayImage));
+                const lightboxIndex = Math.max(0, visibleImages.indexOf(displayImage));
 
                 if (!displayImage) {
                   return <div className="catalog-image catalog-image--placeholder" />;
@@ -428,58 +478,69 @@ const PlantData = () => {
 
                 return (
                   <div className="catalog-image-stack">
-                    <img
-                      className="catalog-image"
-                      src={displayImage}
-                      alt={plant.name}
-                      loading="lazy"
-                      onError={() => handleImageError(displayImage)}
-                    />
-                    {visibleImages.length > 1 ? (
-                      <div className="catalog-image-nav">
-                        <button
-                          className="catalog-image-nav-btn"
-                          type="button"
-                          onClick={() => handleShiftPlantImage(plantKey, uiImages, -1)}
-                          aria-label={`${plant.name} 이전 사진`}
-                        >
-                          ‹
-                        </button>
+                    <div className="catalog-image-frame">
+                      <button
+                        type="button"
+                        className="catalog-image-open-btn"
+                        onClick={() => openLightbox(visibleImages, lightboxIndex, plant.name)}
+                        aria-label={`${plant.name} 원본 이미지 보기`}
+                      >
+                        <img
+                          className="catalog-image"
+                          src={displayImage}
+                          alt={plant.name}
+                          loading="lazy"
+                          onError={() => handleImageError(displayImage)}
+                        />
+                      </button>
+                      {visibleImages.length > 1 ? (
+                        <div className="catalog-image-nav">
+                          <button
+                            className="catalog-image-nav-btn"
+                            type="button"
+                            onClick={() => handleShiftPlantImage(plantKey, uiImages, -1)}
+                            aria-label={`${plant.name} 이전 사진`}
+                          >
+                            ‹
+                          </button>
+                          <button
+                            className="catalog-image-nav-btn"
+                            type="button"
+                            onClick={() => handleShiftPlantImage(plantKey, uiImages, 1)}
+                            aria-label={`${plant.name} 다음 사진`}
+                          >
+                            ›
+                          </button>
+                        </div>
+                      ) : null}
+                      {uiImages.length > 1 ? (
                         <span className="catalog-image-nav-status">
                           {displayIndex + 1} / {uiImages.length}
                         </span>
-                        <button
-                          className="catalog-image-nav-btn"
-                          type="button"
-                          onClick={() => handleShiftPlantImage(plantKey, uiImages, 1)}
-                          aria-label={`${plant.name} 다음 사진`}
-                        >
-                          ›
-                        </button>
-                      </div>
-                    ) : null}
-                    {uiImages.length > 1 ? (
-                      <div className="catalog-image-dots">
-                        {uiImages.map((url, index) => (
-                          <button
-                            className={`catalog-image-dot${
-                              url === displayImage ? ' is-active' : ''
-                            }`}
-                            type="button"
-                            key={`${plantKey}-dot-${index}`}
-                            onClick={() =>
-                              setSelectedImageByPlant((prev) => ({
-                                ...prev,
-                                [plantKey]: url,
-                              }))
-                            }
-                            aria-label={`${plant.name} 사진 ${index + 1}`}
-                            disabled={imageFailures[url]}
-                          >
-                          </button>
-                        ))}
-                      </div>
-                    ) : null}
+                      ) : null}
+                      {uiImages.length > 1 ? (
+                        <div className="catalog-image-dots">
+                          {uiImages.map((url, index) => (
+                            <button
+                              className={`catalog-image-dot${
+                                url === displayImage ? ' is-active' : ''
+                              }`}
+                              type="button"
+                              key={`${plantKey}-dot-${index}`}
+                              onClick={() =>
+                                setSelectedImageByPlant((prev) => ({
+                                  ...prev,
+                                  [plantKey]: url,
+                                }))
+                              }
+                              aria-label={`${plant.name} 사진 ${index + 1}`}
+                              disabled={imageFailures[url]}
+                            >
+                            </button>
+                          ))}
+                        </div>
+                      ) : null}
+                    </div>
                   </div>
                 );
               })()}
@@ -510,6 +571,7 @@ const PlantData = () => {
               </div>
               <div className="catalog-details">
                 <p>관리 난이도: {plant.care || '정보 없음'}</p>
+                <p>관리 요구도: {plant.care_effort || plant?.attrs?.care_requirement || '정보 없음'}</p>
                 <p>알러지: {plant.allergy || '정보 없음'}</p>
                 {plant.type ? <span className="catalog-chip">{plant.type}</span> : null}
               </div>
@@ -572,6 +634,69 @@ const PlantData = () => {
         </div>
         ) : null}
       </div>
+      {lightbox ? (
+        <div
+          className="plantdata-lightbox"
+          role="dialog"
+          aria-modal="true"
+          aria-label="식물 이미지 크게 보기"
+          onClick={closeLightbox}
+        >
+          <div className="plantdata-lightbox-panel" onClick={(event) => event.stopPropagation()}>
+            {Array.isArray(lightbox.images) && lightbox.images.length > 1 ? (
+              <button
+                type="button"
+                className="plantdata-lightbox-nav is-prev"
+                onClick={() => shiftLightbox(-1)}
+                aria-label="이전 이미지"
+              >
+                ‹
+              </button>
+            ) : null}
+            {Array.isArray(lightbox.images) && lightbox.images.length > 1 ? (
+              <button
+                type="button"
+                className="plantdata-lightbox-nav is-next"
+                onClick={() => shiftLightbox(1)}
+                aria-label="다음 이미지"
+              >
+                ›
+              </button>
+            ) : null}
+            <button
+              type="button"
+              className="plantdata-lightbox-close"
+              onClick={closeLightbox}
+              aria-label="이미지 닫기"
+            >
+              ×
+            </button>
+            <img
+              className="plantdata-lightbox-image"
+              src={lightbox.images?.[lightbox.index] || ''}
+              alt={lightbox.alt}
+            />
+            {Array.isArray(lightbox.images) && lightbox.images.length > 1 ? (
+              <span className="plantdata-lightbox-count">
+                {lightbox.index + 1} / {lightbox.images.length}
+              </span>
+            ) : null}
+            {Array.isArray(lightbox.images) && lightbox.images.length > 1 ? (
+              <div className="plantdata-lightbox-dots">
+                {lightbox.images.map((url, index) => (
+                  <button
+                    type="button"
+                    key={`lightbox-dot-${index}`}
+                    className={`plantdata-lightbox-dot${index === lightbox.index ? ' is-active' : ''}`}
+                    onClick={() => selectLightboxIndex(index)}
+                    aria-label={`이미지 ${index + 1}`}
+                  />
+                ))}
+              </div>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 };
