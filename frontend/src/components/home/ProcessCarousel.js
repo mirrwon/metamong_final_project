@@ -7,8 +7,7 @@ import "swiper/css/pagination";
 
 
  // ProcessCarousel (Before / After)
-
-export default function ProcessCarousel() {
+export default function ProcessCarousel({ autoplayDelay = 2500 }) {
 
   const sets = useMemo(
     () => [
@@ -36,7 +35,7 @@ export default function ProcessCarousel() {
       <Swiper
         modules={[Autoplay, Pagination]}
         loop
-        autoplay={{ delay: 2600, disableOnInteraction: false }}
+        autoplay={{ delay: autoplayDelay, disableOnInteraction: false }}
         pagination={{ clickable: true }}
         spaceBetween={16}
         slidesPerView={1} //  한 슬라이드에 "세트 1개(비포/애프터 2장)"

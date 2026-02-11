@@ -12,12 +12,14 @@ const buildImageUrl = (baseUrl, url) => {
   return `${baseUrl}${url}`;
 };
 
-const PlantPreview = () => {
+const PlantPreview = ({ autoplayDelay = 2500 }) => {
   const [items, setItems] = useState([]);
   const [error, setError] = useState("");
   const [imageFallbackIndex, setImageFallbackIndex] = useState({});
+  const maxSlidesPerView = 6;
 
   const baseUrl = useMemo(() => api.defaults.baseURL || "", []);
+  const canLoop = items.length > maxSlidesPerView;
 
   useEffect(() => {
     const cacheKey = "plantPreviewCache_v1";
@@ -84,15 +86,16 @@ const PlantPreview = () => {
         modules={[Autoplay]}
         spaceBetween={12} /* Tighter spacing for more items */
         slidesPerView={3}
+        slidesPerGroup={2}
         breakpoints={{
           600: { slidesPerView: 3 },
           900: { slidesPerView: 4 },
           1200: { slidesPerView: 5 },
-          1600: { slidesPerView: 6 },
+          1600: { slidesPerView: maxSlidesPerView },
         }}
-        loop={true}
+        loop={canLoop}
         autoplay={{
-          delay: 2500,
+          delay: autoplayDelay,
           disableOnInteraction: false,
         }}
         className="plant-preview-swiper"
