@@ -3,34 +3,32 @@
    ========================= */
 
 .home {
+  padding: 0 var(--s-4);
   padding-bottom: var(--s-7);
 }
 
-/* ✅ 섹션 기본 간격 */
 .home-section {
-  margin-top: var(--s-8);
+  margin-top: 120px;
 }
 
 .home-section:first-child {
   margin-top: 0;
 }
 
-/* ✅ Carousel → PlantPreview 간격 살짝 줄임 (120px -> 80px) */
+
 .home-section+.home-plants {
-  margin-top: 80px;
+  margin-top: 120px;
 }
 
-/* ✅ PlantPreview → FAQ 간격 살짝 줄임 (120px -> 80px) */
+
 .home-plants+.home-section {
-  margin-top: 80px;
+  margin-top: 120px;
 }
 
-/* ✅ PlantPreview 섹션을 “덩어리”로 보이게 */
-/* ✅ PlantPreview 섹션을 “덩어리”로 보이게 */
+
 .home-plants {
-  padding-top: var(--s-6);
+  padding-top: 48px;
   border-top: none;
-  /* Removed top border */
 }
 
 
@@ -39,7 +37,7 @@
    ========================= */
 
 .home-carousel {
-  margin-top: var(--s-4);
+  margin-top: var(--s-2);
 }
 
 .process-card {
@@ -57,7 +55,6 @@
   justify-items: center;
 }
 
-/* ✅ 너무 고정 700x700이면 화면에 따라 터질 수 있어서 min()로 안전하게 */
 .ba-item {
   position: relative;
   width: min(700px, 42vw);
@@ -82,7 +79,7 @@
   bottom: 10px;
   padding: 4px 8px;
   font-size: var(--fs-2);
-  font-weight: 700;
+  font-weight: 600;
   color: var(--c-surface);
   background: rgba(43, 61, 26, 0.85);
   border-radius: var(--r-sm);
@@ -123,27 +120,71 @@
    Home - PlantPreview (NEW)
    ========================= */
 
-/* ✅ PlantPreview를 섹션처럼 보이게 */
 .home-plants {
-  /* 캐러셀 다음 섹션으로 자연스럽게 */
   margin-top: var(--s-7);
 }
 
-/* PlantPreview 내부 그리드 (PlantPreview.css로 빼도 됨) */
+/* Catalog Header */
+.catalog-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--s-3);
+}
+
+.catalog-header__left {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.catalog-kicker {
+  font-size: 0.75rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--c-muted);
+}
+
+.catalog-title {
+  font-size: 2.2rem;
+  font-weight: 600;
+  color: var(--c-text);
+  letter-spacing: -0.02em;
+  margin: 0;
+}
+
+.catalog-more {
+  border: none;
+  background: transparent;
+  font-size: 0.85rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--c-text);
+  font-weight: 500;
+  padding: 3px 0;
+  cursor: pointer;
+}
+
+.catalog-more:hover {
+  opacity: 0.7;
+}
+
+.catalog-divider {
+  margin: 12px 0 18px;
+  height: 1px;
+  background: rgba(43, 61, 26, 0.2);
+}
+
 .plant-preview-marquee {
-  margin-top: var(--s-4);
+  margin-top: var(--s-5);
   position: relative;
   overflow: hidden;
-  padding: var(--s-3) 0;
-  border-radius: 18px;
-  /* Removed border and shadow for a cleaner, flatter look */
+  padding: 10px 0 6px;
   border: none;
   background: transparent;
   box-shadow: none;
-  padding: var(--s-3) 0;
 }
 
-/* Removed .plant-preview-track styles as we use Swiper now */
 
 .plant-preview-marquee:hover .plant-preview-track {
   animation-play-state: paused;
@@ -151,13 +192,12 @@
 
 .plant-preview-card {
   width: 100%;
-  /* Fill swiper slide */
   background: transparent;
   border: none;
   border-radius: 0;
-  /* Reduced radius */
   overflow: visible;
   box-shadow: none;
+  padding: 0;
   transition: transform 0.3s ease;
   text-align: center;
 }
@@ -171,46 +211,38 @@
   aspect-ratio: 1 / 1;
   object-fit: cover;
   display: block;
-  border-radius: 12px;
-  /* Softer, rounder corners */
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  border-radius: 5px;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.12);
   margin-bottom: 10px;
-  filter: saturate(0.9);
-  /* Slightly calmer colors */
+  filter: saturate(0.92);
   transition: all 0.3s ease;
 }
 
 .plant-preview-card:hover .plant-preview-image {
   transform: translateY(-5px) scale(1.02);
-  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.12);
+  box-shadow: 0 10px 20px rgba(0, 0, 0, 0.16);
   filter: saturate(1.1);
-  /* Pop color on hover */
 }
 
 .plant-preview-name {
   display: inline-block;
   margin-top: 8px;
-  padding: 6px 14px;
-  background: rgba(255, 255, 255, 0.363);
-  /* Glassy white */
-  border: 1px solid rgba(0, 0, 0, 0.08);
-
-  /* Pill shape */
+  padding: 4px 10px;
+  background: transparent;
+  border: none;
   font-size: 0.9rem;
-  font-weight: 700;
-  color: #2F3E46;
-  /* Strong dark green/grey */
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
-  /* Subtle lift */
+  font-weight: 500;
+  color: #2f3e46;
+  box-shadow: none;
   transition: all 0.3s ease;
 }
 
 .plant-preview-card:hover .plant-preview-name {
-  background: #2F3E46;
-  color: #fff;
+  background: transparent;
+  color: #2f3e46;
   /* Invert on hover */
   transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(47, 62, 70, 0.2);
+  box-shadow: none;
 }
 
 @keyframes plantMarquee {
@@ -237,52 +269,174 @@
   margin-top: var(--s-7);
   padding-top: var(--s-5);
   border: none;
-  /* Removed all borders */
-  padding-bottom: 0;
-
-  max-width: var(--w-content, 760px);
-  margin-left: auto;
-  margin-right: auto;
+  padding-bottom: 80px;
+  max-width: none;
 }
 
-/* ✅ 음수 이동 제거 (PlantPreview 들어오면 꼬이기 쉬움) */
-/* Unify Title Sizes */
-.home-plants .typo-title,
 .faq__title {
   font-size: 2rem;
-  /* Unified large size */
-  font-weight: 700;
+  font-weight: 600;
   color: var(--c-text);
-  text-align: center;
-  /* Center align both for consistency */
+  text-align: left;
   letter-spacing: -0.02em;
-  margin-bottom: 30px;
-}
-
-.faq__title {
-  /* text-align: left; <-- Removed to match center alignment request implicit in "unify" or just safe default */
-  text-align: center;
+  margin: 0;
 }
 
 .faq__list {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  column-gap: 32px;
+  text-align: left;
+  margin-top: 36px;
+  row-gap: 0;
+  list-style: none;
+  padding-left: 0;
+  width: 100%;
+  justify-items: stretch;
+}
+
+/* FAQ Modal */
+.faq-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.faq-modal__backdrop {
+  position: absolute;
+  inset: 0;
+  border: none;
+  background: rgba(0, 0, 0, 0.35);
+  cursor: pointer;
+}
+
+.faq-modal__panel {
+  position: relative;
+  width: min(820px, 92vw);
+  max-height: 80vh;
+  overflow: auto;
+  background: #ffffff;
+  border-radius: 3px;
+  padding: 18px 20px 20px;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.18);
+  z-index: 1;
+}
+
+.faq-modal__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+.faq-modal__title {
+  font-size: 1.2rem;
+  font-weight: 600;
+  margin: 0;
+}
+
+.faq-modal__close {
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  background: #fff;
+  padding: 6px 10px;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.faq-modal__list {
   display: flex;
   flex-direction: column;
-  gap: var(--s-3);
-  text-align: left;
-  margin-top: 40px;
-  /* Added breathing room below the line */
+  gap: 14px;
+}
+
+.faq-modal__item {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.faq-modal__item:last-child {
+  border-bottom: none;
+}
+
+.faq-modal__number {
+  font-size: 0.95rem;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  color: var(--c-muted);
+  text-transform: uppercase;
+}
+
+.faq-modal__content {
+  display: grid;
+  gap: 12px;
+}
+
+.faq-modal__question {
+  margin: 0;
+  font-size: 0.98rem;
+  font-weight: 600;
+  color: var(--c-text);
+}
+
+.faq-modal__answer {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--c-text-sub);
+  opacity: 0.9;
 }
 
 .faq__item {
-  padding-bottom: var(--s-3);
-  border-bottom: 1px solid var(--c-line-light);
+  flex: none;
+  min-width: 0;
+  width: 100%;
+  padding-bottom: 0;
+  border-bottom: none;
+  padding-right: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-areas:
+    "num question"
+    "answer answer";
+  column-gap: 8px;
+  row-gap: 6px;
+  align-items: start;
+}
+
+.faq__item:nth-child(2) {
+  transform: translateX(-8px);
+}
+
+
+.faq__number {
+  font-size: 0.95rem;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  color: var(--c-muted);
+  text-transform: uppercase;
+  grid-area: num;
+}
+
+.faq__question {
+  min-height: 3.2em;
 }
 
 .faq__question {
   font-size: var(--fs-3);
-  font-weight: 700;
+  font-weight: 600;
   line-height: 1.45;
   color: var(--c-text);
+  grid-area: question;
+  text-align: left;
 }
 
 .faq__answer {
@@ -291,4 +445,10 @@
   line-height: 1.65;
   color: var(--c-text-sub);
   opacity: 0.9;
+  grid-area: answer;
+  text-align: left;
+}
+
+.faq__item:nth-child(3) .faq__answer {
+  padding-left: 12px;
 }

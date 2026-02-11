@@ -129,10 +129,6 @@ const DiaryDetail = ({ id, onGoList, onEdit, onDeleteSuccess }) => {
 
   return (
     <div className="diary-detail">
-      <div className="diary-detail__head">
-        <h1 className="diary-detail__title">DIARY VIEW</h1>
-      </div>
-
       <div className="diary-detail__body">
         <div className="diary-detail__photo-card">
           <button
@@ -148,7 +144,7 @@ const DiaryDetail = ({ id, onGoList, onEdit, onDeleteSuccess }) => {
               />
             ) : (
               <div className="diary-detail__empty">
-                No photo available
+                사진이 없습니다
               </div>
             )}
           </button>
@@ -156,11 +152,11 @@ const DiaryDetail = ({ id, onGoList, onEdit, onDeleteSuccess }) => {
 
         <div className="diary-detail__text-card">
           <div className="diary-detail__date">
-            {dateLabel || "No date"}
+            {dateLabel || "날짜 없음"}
           </div>
           <h2 className="diary-detail__postTitle">{title}</h2>
           <p className="diary-detail__content">
-            {content || "No content provided."}
+            {content || "내용 없음"}
           </p>
         </div>
       </div>
@@ -168,17 +164,17 @@ const DiaryDetail = ({ id, onGoList, onEdit, onDeleteSuccess }) => {
       <div className="diary-detail__actions">
         <div className="diary-detail__actions-row">
           <button className="diary-detail-btn" onClick={handleGoList}>
-            <span>📋</span> 목록
+            목록
           </button>
           <button className="diary-detail-btn" onClick={handleEdit}>
-            <span>✏️</span> 수정
+            수정
           </button>
           <button
             className="diary-detail-btn diary-detail-btn--danger"
             onClick={handleDelete}
             disabled={isDeleting}
           >
-            <span>🗑️</span> {isDeleting ? "삭제중..." : "삭제"}
+            {isDeleting ? "삭제중..." : "삭제"}
           </button>
         </div>
       </div>

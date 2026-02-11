@@ -1,17 +1,35 @@
-import os
+﻿import os
 import json
 import time
 import base64
 import uuid
 import re
-from typing import List, Optional
+import hashlib
+from typing import List, Optional, Dict, Any
+from urllib.parse import urlparse
+from urllib.request import Request, urlopen
+
+from app.llm.gemini.gemini_image_edit import gemini_edit_image
 from app.config import PLANTS_DIR
 
-# ✅ Conflict-free independent storage path
+# 충돌 없는 독립 저장 경로
 # Using 'plantboard_store' to avoid collision with other team members' 'data' folders
 STORE_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "plantboard_store")
 PLANTS_FILE = os.path.join(STORE_DIR, "user_plants.json")
 LOGS_FILE = os.path.join(STORE_DIR, "plant_logs.json")
+
+TAMAGOTCHI_PIXEL_PROMPT = (
+    "Transform this interior photo into 1990s tamagotchi-style pixel art. "
+    "Moderate pixelation with visible 6-10px pixel blocks (not overly chunky). "
+    "Limited palette (8-14 colors). "
+    "Muted pastel colors with reduced saturation (low to medium saturation). "
+    "Soft, slightly desaturated tones - avoid bright or neon colors. "
+    "Clean 1-2px outlines, simplified shapes, minimal texture. "
+    "Subtle light/shadow blocks (no gradients). "
+    "Cute cozy room vibe, soft nostalgic 90s digital aesthetic. "
+    "No blur, no gradients, no noise, no halftone, no dithering."
+)
+
 
 # Ensure directory exists
 os.makedirs(STORE_DIR, exist_ok=True)
@@ -35,7 +53,7 @@ def _save_json(filepath: str, data: any):
 def _process_base64_image(image_data: str, prefix: str = "img") -> str:
     """
     Base64 이미지를 파일로 저장하고 접근 가능한 URL을 반환합니다.
-    이미 URL 형태이거나 비어있는 경우 그대로 반환합니다.
+    이미 URL 형태일 경우 그대로 반환합니다.
     """
     if not image_data or not isinstance(image_data, str):
         return image_data
@@ -57,18 +75,139 @@ def _process_base64_image(image_data: str, prefix: str = "img") -> str:
         filename = f"{prefix}_{uuid.uuid4().hex}.{ext}"
         filepath = os.path.join(PLANTS_DIR, filename)
         
-        # 디렉토리 보장
+        # 디렉터리 보장
         os.makedirs(PLANTS_DIR, exist_ok=True)
         
-        # 디코딩 및 저장
+        # 파일로 저장
         with open(filepath, "wb") as f:
             f.write(base64.b64decode(base64_str))
             
-        # 프론트엔드에서 접근 가능한 정적 경로 반환
+        # 프론트엔드에서 접근 가능한 절대 경로 반환
         return f"/plants/{filename}"
     except Exception as e:
         print(f"[PlantBoard] Image Process Error: {e}")
         return image_data
+
+def _save_base64_to_file(image_data: str, prefix: str = "img") -> Optional[str]:
+    if not image_data or not isinstance(image_data, str):
+        return None
+    match = re.match(r"data:image/(\w+);base64,(.*)", image_data)
+    if not match:
+        return None
+    ext = match.group(1)
+    base64_str = match.group(2)
+    try:
+        filename = f"{prefix}_{uuid.uuid4().hex}.{ext}"
+        filepath = os.path.join(PLANTS_DIR, filename)
+        os.makedirs(PLANTS_DIR, exist_ok=True)
+        with open(filepath, "wb") as f:
+            f.write(base64.b64decode(base64_str))
+        return filepath
+    except Exception as e:
+        print(f"[PlantBoard] Base64 Save Error: {e}")
+        return None
+
+def _download_image_to_file(image_url: str, prefix: str = "room") -> Optional[str]:
+    try:
+        parsed = urlparse(image_url)
+        ext = os.path.splitext(parsed.path)[1] or ".png"
+        url_hash = hashlib.sha1(image_url.encode("utf-8")).hexdigest()[:12]
+        filename = f"{prefix}_{url_hash}{ext}"
+        filepath = os.path.join(PLANTS_DIR, filename)
+        if os.path.exists(filepath):
+            return filepath
+        os.makedirs(PLANTS_DIR, exist_ok=True)
+        req = Request(image_url, headers={"User-Agent": "Mozilla/5.0"})
+        with urlopen(req, timeout=10) as resp, open(filepath, "wb") as out:
+            out.write(resp.read())
+        return filepath
+    except Exception as e:
+        print(f"[PlantBoard] Download Error: {e}")
+        return None
+
+def _generate_pixel_image_from_url(image_url: str) -> Dict[str, str]:
+    if not image_url:
+        return {"ok": False, "reason": "image_url missing"}
+
+    input_path = None
+    if image_url.startswith("data:image/"):
+        input_path = _save_base64_to_file(image_url, "room")
+    elif image_url.startswith(("http://", "https://")):
+        input_path = _download_image_to_file(image_url, "room")
+    elif image_url.startswith(("/plants/", "/uploads/", "/results/")):
+        input_path = os.path.join(PLANTS_DIR, os.path.basename(image_url))
+    else:
+        input_path = image_url if os.path.exists(image_url) else None
+
+    if not input_path or not os.path.exists(input_path):
+        return {"ok": False, "reason": "input image not found"}
+
+    base = os.path.splitext(os.path.basename(input_path))[0]
+    out_filename = f"{base}_pixel.png"
+    out_path = os.path.join(PLANTS_DIR, out_filename)
+
+    res = gemini_edit_image(
+        input_image_path=input_path,
+        prompt=TAMAGOTCHI_PIXEL_PROMPT,
+        out_path=out_path,
+    )
+
+    if not res.get("ok"):
+        return {"ok": False, "reason": res.get("reason", "gemini failed")}
+
+    return {"ok": True, "url": f"/plants/{out_filename}"}
+
+
+def generate_tamagotchi_room_pixel_image(username: str, image_url: str, plant_id: Optional[str] = None) -> Dict[str, str]:
+    res = _generate_pixel_image_from_url(image_url)
+    if not res.get("ok"):
+        return res
+
+    pixel_url = res["url"]
+    if plant_id and username:
+        try:
+            all_data = _load_json(PLANTS_FILE, {})
+            user_list = all_data.get(username, [])
+            updated = None
+            for p in user_list:
+                if p.get("id") == plant_id:
+                    p["roomImagePixelUrl"] = pixel_url
+                    updated = p
+                    break
+            all_data[username] = user_list
+            _save_json(PLANTS_FILE, all_data)
+            return {"ok": True, "url": pixel_url, "plant": updated}
+        except Exception as e:
+            print(f"[PlantBoard] Save Pixel Error: {e}")
+
+    return {"ok": True, "url": pixel_url}
+
+
+def generate_tamagotchi_room_pixel_images_for_user(username: str, force: bool = False) -> Dict[str, Any]:
+    all_data = _load_json(PLANTS_FILE, {})
+    user_list = all_data.get(username, [])
+    updated_list = []
+    failures = []
+
+    for p in user_list:
+        room_url = p.get("roomImageUrl")
+        if not room_url:
+            continue
+        if p.get("roomImagePixelUrl") and not force:
+            updated_list.append(p)
+            continue
+
+        res = _generate_pixel_image_from_url(room_url)
+        if res.get("ok"):
+            p["roomImagePixelUrl"] = res["url"]
+            updated_list.append(p)
+        else:
+            failures.append({"id": p.get("id"), "reason": res.get("reason")})
+
+    all_data[username] = user_list
+    _save_json(PLANTS_FILE, all_data)
+
+    return {"ok": True, "items": user_list, "failures": failures}
 
 # --- Plants ---
 

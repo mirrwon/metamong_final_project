@@ -53,6 +53,8 @@ const DiaryList = ({ onViewDetail, onNewPost }) => {
   const [status, setStatus] = useState("loading"); // loading | ready | error
   const [sortOrder, setSortOrder] = useState("desc"); // asc | desc
   const [search, setSearch] = useState("");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
 
   useEffect(() => {
     const fetchDiary = async () => {
@@ -83,6 +85,8 @@ const DiaryList = ({ onViewDetail, onNewPost }) => {
 
   const filteredItems = useMemo(() => {
     const keyword = search.trim().toLowerCase();
+    const fromTs = dateFrom ? new Date(`${dateFrom}T00:00:00`).getTime() : null;
+    const toTs = dateTo ? new Date(`${dateTo}T23:59:59`).getTime() : null;
 
     return items
       .filter((item) => {
@@ -91,12 +95,20 @@ const DiaryList = ({ onViewDetail, onNewPost }) => {
         const content = (item?.content || item?.body || "").toLowerCase();
         return title.includes(keyword) || content.includes(keyword);
       })
+      .filter((item) => {
+        if (!fromTs && !toTs) return true;
+        const ts = new Date(getItemDateValue(item) || 0).getTime();
+        if (Number.isNaN(ts)) return false;
+        if (fromTs && ts < fromTs) return false;
+        if (toTs && ts > toTs) return false;
+        return true;
+      })
       .sort((a, b) => {
         const aDate = new Date(getItemDateValue(a) || 0).getTime();
         const bDate = new Date(getItemDateValue(b) || 0).getTime();
         return sortOrder === "asc" ? aDate - bDate : bDate - aDate;
       });
-  }, [items, search, sortOrder]);
+  }, [items, search, sortOrder, dateFrom, dateTo]);
 
   const handleSortToggle = () => {
     setSortOrder((prev) => (prev === "asc" ? "desc" : "asc"));
@@ -107,12 +119,11 @@ const DiaryList = ({ onViewDetail, onNewPost }) => {
     if (onViewDetail) onViewDetail(itemId);
   };
 
+  const latestItems = filteredItems.slice(0, 2);
+  const streamItems = filteredItems.slice(2);
+
   return (
     <div className="diary-list">
-      <div className="diary-list__head">
-        <h1 className="diary-list__title">PLANT DIARY</h1>
-      </div>
-
       <div className="diary-list__body">
         <div className="diary-list__controls">
           <button
@@ -120,8 +131,24 @@ const DiaryList = ({ onViewDetail, onNewPost }) => {
             className="diary-list__sort"
             onClick={handleSortToggle}
           >
-            {sortOrder === 'asc' ? '날짜 오래된순' : '날짜 최신순'}
+            {sortOrder === "asc" ? "날짜 오래된순" : "날짜 최신순"}
           </button>
+
+          <div className="diary-list__date-filter">
+            <input
+              className="diary-list__date"
+              type="date"
+              value={dateFrom}
+              onChange={(e) => setDateFrom(e.target.value)}
+            />
+            <span className="diary-list__date-sep">~</span>
+            <input
+              className="diary-list__date"
+              type="date"
+              value={dateTo}
+              onChange={(e) => setDateTo(e.target.value)}
+            />
+          </div>
 
           <input
             className="diary-list__search"
@@ -134,25 +161,83 @@ const DiaryList = ({ onViewDetail, onNewPost }) => {
 
         {status === "loading" && (
           <div className="diary-list__state">
-            Loading diary entries...
+            다이어리를 불러오는 중입니다.
           </div>
         )}
 
         {status === "error" && (
           <div className="diary-list__state">
-            Failed to load diary data.
+            다이어리를 불러오지 못했습니다.
           </div>
         )}
 
         {status === "ready" && filteredItems.length === 0 && (
           <div className="diary-list__state">
-            No diary entries found.
+            다이어리 글이 없습니다.
           </div>
         )}
 
-        {filteredItems.length > 0 && (
-          <div className="diary-list__items">
-            {filteredItems.map((item, index) => {
+        {latestItems.length > 0 && (
+          <section className="diary-featured">
+            <div className="diary-section__head">
+              <div className="diary-section__title">
+                최신글
+                <span className="diary-section__sub">최근 작성</span>
+              </div>
+              <button type="button" className="diary-section__more">
+                더보기
+              </button>
+            </div>
+            <div className="diary-featured__grid">
+              {latestItems.map((item, index) => {
+                const imageUrl = resolveImageUrl(item);
+                const cacheBustedImageUrl = imageUrl
+                  ? `${imageUrl}?t=${Date.now()}`
+                  : "";
+                const dateLabel = formatDateLabel(getItemDateValue(item));
+                const title = item?.title || "제목 없음";
+                const content = item?.content || item?.body || "";
+                const itemId = item?.id || item?._id || "";
+                const key = itemId || `${title}-${index}`;
+
+                return (
+                  <article
+                    key={key}
+                    className="diary-featured__card"
+                    onClick={() => handleOpenPost(itemId)}
+                  >
+                    <div className="diary-featured__thumb">
+                      {imageUrl ? (
+                        <img
+                          className="diary-featured__img"
+                          src={cacheBustedImageUrl}
+                          alt={title}
+                        />
+                      ) : (
+                        <div className="diary-featured__empty">
+                          사진 없음
+                        </div>
+                      )}
+                    </div>
+                    <div className="diary-featured__meta">
+                      <h3 className="diary-featured__title">{title}</h3>
+                      <p className="diary-featured__excerpt">
+                        {content || "내용 없음"}
+                      </p>
+                      <div className="diary-featured__date">
+                        {dateLabel || "날짜 없음"}
+                      </div>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          </section>
+        )}
+
+        {streamItems.length > 0 && (
+          <div className="diary-stream">
+            {streamItems.map((item, index) => {
               const imageUrl = resolveImageUrl(item);
               const cacheBustedImageUrl = imageUrl
                 ? `${imageUrl}?t=${Date.now()}`
@@ -161,36 +246,37 @@ const DiaryList = ({ onViewDetail, onNewPost }) => {
               const title = item?.title || "제목 없음";
               const content = item?.content || item?.body || "";
               const itemId = item?.id || item?._id || "";
-              const key = itemId || `${title}-${index}`;
+              const key = itemId || `${title}-${index}-stream`;
 
               return (
                 <article
                   key={key}
-                  className="diary-card"
+                  className="diary-stream__item"
                   onClick={() => handleOpenPost(itemId)}
                 >
-                  <div className="diary-card__thumb">
+                  <div className="diary-stream__thumb">
                     {imageUrl ? (
                       <img
-                        className="diary-card__img"
+                        className="diary-stream__img"
                         src={cacheBustedImageUrl}
                         alt={title}
                       />
                     ) : (
-                      <div className="diary-card__empty">
-                        No photo
+                      <div className="diary-stream__empty">
+                        사진 없음
                       </div>
                     )}
                   </div>
-
-                  <div className="diary-card__meta">
-                    <div className="diary-card__date">
-                      {dateLabel || "No date"}
-                    </div>
-                    <h3 className="diary-card__title">{title}</h3>
-                    <p className="diary-card__excerpt">
-                      {content || "No content provided."}
+                  <div className="diary-stream__content">
+                    <h3 className="diary-stream__title">{title}</h3>
+                    <p className="diary-stream__excerpt">
+                      {content || "내용 없음"}
                     </p>
+                    <div className="diary-stream__meta">
+                      <span className="diary-stream__date">
+                        {dateLabel || "날짜 없음"}
+                      </span>
+                    </div>
                   </div>
                 </article>
               );
@@ -206,7 +292,7 @@ const DiaryList = ({ onViewDetail, onNewPost }) => {
             className="diary-new-btn"
             onClick={onNewPost}
           >
-            <span>✍️</span> 새 일기 작성
+            새 글 작성
           </button>
         </div>
       </div>

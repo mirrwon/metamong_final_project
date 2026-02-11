@@ -38,3 +38,18 @@ def delete_log(log_id: str, current_user: dict = Depends(get_current_user)):
     user = current_user["user_name"]
     success = plantboard_service.delete_plant_log(user, log_id)
     return {"ok": success}
+
+@router.post("/room_pixel")
+def build_room_pixel(payload: dict = Body(...), current_user: dict = Depends(get_current_user)):
+    image_url = payload.get("imageUrl")
+    plant_id = payload.get("plantId")
+    user = current_user["user_name"]
+    result = plantboard_service.generate_tamagotchi_room_pixel_image(user, image_url, plant_id)
+    return result
+
+@router.post("/room_pixel_all")
+def build_room_pixel_all(payload: dict = Body(default_factory=dict), current_user: dict = Depends(get_current_user)):
+    user = current_user["user_name"]
+    force = bool(payload.get("force", False))
+    result = plantboard_service.generate_tamagotchi_room_pixel_images_for_user(user, force=force)
+    return result

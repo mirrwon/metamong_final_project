@@ -33,6 +33,7 @@ const MapPage = () => {
   const [error, setError] = useState("");
   const [mapError, setMapError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [selectedShop, setSelectedShop] = useState(null);
 
   const storedUser = useMemo(() => readStoredUser(), []);
   const kakaoKey = useMemo(() => process.env.REACT_APP_KAKAO_JS_KEY || "", []);
@@ -71,7 +72,9 @@ const MapPage = () => {
             reject(new Error("kakao_sdk_unavailable"));
           }
         });
-        existing.addEventListener("error", () => reject(new Error("kakao_sdk_load_failed")));
+        existing.addEventListener("error", () =>
+          reject(new Error("kakao_sdk_load_failed"))
+        );
         return;
       }
 
@@ -95,7 +98,7 @@ const MapPage = () => {
 
   const fetchShops = useCallback(async () => {
     if (!storedUser) {
-      setError("로그인 정보를 찾을 수 없어요.");
+      setError("로그인 정보가 필요합니다.");
       setShops([]);
       setAddress("");
       setCoord(null);
@@ -118,7 +121,12 @@ const MapPage = () => {
         return;
       }
 
-      setShops(Array.isArray(payload.items) ? payload.items : []);
+      const nextItems = Array.isArray(payload.items) ? payload.items : [];
+      setShops(nextItems);
+      if (nextItems.length > 0) {
+        setSelectedShop((prev) => prev || nextItems[0]);
+      }
+
       setAddress(payload.address || "");
       if (payload?.coord?.x && payload?.coord?.y) {
         setCoord({
@@ -165,11 +173,11 @@ const MapPage = () => {
           map.panTo(position);
 
           const name = entryShop?.name || "꽃집";
-          const address = entryShop?.road_address || entryShop?.address || "";
+          const addr = entryShop?.road_address || entryShop?.address || "";
           const content = `
             <div style="padding:6px 8px;font-size:12px;line-height:1.4;">
               <strong>${name}</strong><br />
-              ${address}
+              ${addr}
             </div>
           `;
 
@@ -224,7 +232,7 @@ const MapPage = () => {
         const homeMarker = new kakao.maps.Marker({
           position: center,
           map: mapRef.current,
-          title: "내 위치",
+          title: "현재 위치",
         });
         markersRef.current.push(homeMarker);
 
@@ -248,15 +256,16 @@ const MapPage = () => {
 
           kakao.maps.event.addListener(marker, "click", () => {
             const name = shop?.name || "꽃집";
-            const address = shop?.road_address || shop?.address || "";
+            const addr = shop?.road_address || shop?.address || "";
             const content = `
               <div style="padding:6px 8px;font-size:12px;line-height:1.4;">
                 <strong>${name}</strong><br />
-                ${address}
+                ${addr}
               </div>
             `;
             infoWindowRef.current?.setContent(content);
             infoWindowRef.current?.open(mapRef.current, marker);
+            setSelectedShop(shop);
           });
 
           markersRef.current.push(marker);
@@ -273,7 +282,7 @@ const MapPage = () => {
       .catch((err) => {
         if (cancelled) return;
         if (err?.message === "missing_kakao_key") {
-          setMapError("Kakao 지도 키가 필요합니다. 프론트엔드 .env에 설정해주세요.");
+          setMapError("Kakao 지도 키가 필요합니다. .env를 확인해주세요.");
         } else {
           setMapError("Kakao 지도를 불러오지 못했어요.");
         }
@@ -282,21 +291,21 @@ const MapPage = () => {
     return () => {
       cancelled = true;
     };
-  }, [coord, loadKakaoSdk, shops]);
+  }, [coord, loadKakaoSdk, shops, getShopKey]);
 
   return (
     <div className="l-cover map-page">
       <div className="l-cover-center map-center">
-        <h1 className="map-title typo-title">내 주변 꽃집</h1>
-        <div className="ui-line map-divider" />
+        <h1 className="map-title">Store</h1>
+        <div className="map-divider" />
 
         <section className="map-panel">
           <div className="map-info">
-            <p className="map-label">기준 주소</p>
+            <p className="map-label">현재 위치</p>
             <p className="map-address">
-              {address || "주소를 불러오고 있습니다."}
+              {address || "위치 정보를 불러오는 중입니다."}
             </p>
-            <p className="map-radius">검색 범위: 반경 3km</p>
+            <p className="map-radius">검색 반경: 3km</p>
           </div>
           <div className="map-actions">
             <button
@@ -310,68 +319,61 @@ const MapPage = () => {
           </div>
         </section>
 
-        <section className="map-canvas-wrap">
-          {mapError ? <p className="map-error">{mapError}</p> : null}
-          {!coord && !error ? (
-            <p className="map-status">잠시만 기다려주세요.</p>
-          ) : null}
-          <div ref={mapContainerRef} className="map-canvas" />
+        <section className="map-layout">
+          <aside className="map-sidebar">
+            <p className="map-sidebar__title">내 주변 꽃집</p>
+            <ul className="map-sidebar__list">
+              {shops.map((shop) => (
+                <li key={getShopKey(shop)}>
+                  <button
+                    type="button"
+                    className={`map-sidebar__item ${
+                      selectedShop === shop ? "active" : ""
+                    }`}
+                    onClick={() => {
+                      setSelectedShop(shop);
+                      focusShopOnMap(shop);
+                    }}
+                  >
+                    {shop?.name || "꽃집"}
+                  </button>
+                </li>
+              ))}
+            </ul>
+            <div className="map-detail">
+              <div className="map-detail__body">
+                <h2 className="map-detail__title">
+                  {selectedShop?.name || "꽃집을 선택하세요"}
+                </h2>
+                <p className="map-detail__address">
+                  {selectedShop?.road_address || selectedShop?.address || "-"}
+                </p>
+                {selectedShop?.phone ? (
+                  <p className="map-detail__meta">{selectedShop.phone}</p>
+                ) : null}
+                {selectedShop?.distance ? (
+                  <p className="map-detail__meta">
+                    거리: {formatDistance(selectedShop.distance)}
+                  </p>
+                ) : null}
+              </div>
+            </div>
+          </aside>
+
+          <div className="map-canvas-wrap">
+            {mapError ? <p className="map-error">{mapError}</p> : null}
+            {!coord && !error ? (
+              <p className="map-status">잠시만 기다려주세요.</p>
+            ) : null}
+            <div ref={mapContainerRef} className="map-canvas" />
+          </div>
         </section>
 
-        {loading ? <p className="map-status">불러오는 중...</p> : null}
+        {loading ? <p className="map-status">불러오는 중..</p> : null}
         {error ? <p className="map-error">{error}</p> : null}
         {!loading && !error && shops.length === 0 ? (
-          <p className="map-status">주변에서 꽃집을 찾지 못했어요.</p>
+          <p className="map-status">주변 꽃집을 찾지 못했어요.</p>
         ) : null}
-
-        <div className="map-grid">
-          {shops.map((shop) => {
-            const distanceLabel = formatDistance(shop?.distance);
-            const primaryAddress = shop?.road_address || shop?.address || "";
-            const parking = shop?.parking;
-            const parkingName = parking?.name || "정보 없음";
-            const parkingDistance = parking?.distance
-              ? formatDistance(parking.distance)
-              : "정보 없음";
-            const parkingAddress =
-              parking?.road_address || parking?.address || "";
-            return (
-              <article
-                className="map-card"
-                key={getShopKey(shop)}
-                role="button"
-                tabIndex={0}
-                onClick={() => focusShopOnMap(shop)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" || event.key === " ") {
-                    event.preventDefault();
-                    focusShopOnMap(shop);
-                  }
-                }}
-              >
-                <header className="map-card__header">
-                  <h2 className="map-card__title">{shop?.name}</h2>
-                  {distanceLabel ? (
-                    <span className="map-card__distance">{distanceLabel}</span>
-                  ) : null}
-                </header>
-                {primaryAddress ? (
-                  <p className="map-card__address">{primaryAddress}</p>
-                ) : null}
-                {shop?.phone ? (
-                  <p className="map-card__meta">전화: {shop.phone}</p>
-                ) : null}
-                <p className="map-card__meta">인근 주차장: {parkingName}</p>
-                <p className="map-card__meta">
-                  주차장부터의 거리: {parkingDistance}
-                </p>
-                {parkingAddress ? (
-                  <p className="map-card__meta">주차장 주소: {parkingAddress}</p>
-                ) : null}
-              </article>
-            );
-          })}
-        </div>
       </div>
     </div>
   );

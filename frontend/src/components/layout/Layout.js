@@ -1,5 +1,6 @@
 import { useLocation } from "react-router-dom";
 import Header from "./Header";
+import Footer from "./Footer";
 import { ROUTES } from "../../constants/routes";
 
 const Layout = ({ user, children, onLogout }) => {
@@ -20,6 +21,9 @@ const Layout = ({ user, children, onLogout }) => {
     <main className="l-cover">
       <div className="l-cover-center">{children}</div>
     </main>
+    <div className="l-cover-center">
+      <Footer />
+    </div>
   </>
 );
 

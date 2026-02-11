@@ -15,6 +15,7 @@ const PlantData = () => {
   const [loading, setLoading] = useState(false);
   const [pageIndex, setPageIndex] = useState(0);
   const [imageFailures, setImageFailures] = useState({});
+  const [imageFallbackIndex, setImageFallbackIndex] = useState({});
   const [selectedImageByPlant, setSelectedImageByPlant] = useState({});
   const [query, setQuery] = useState('');
   const [filterType, setFilterType] = useState('');
@@ -41,10 +42,53 @@ const PlantData = () => {
     [baseUrl]
   );
 
+  const getImageCandidates = useCallback((url) => {
+    if (!url) return [];
+    const [basePart, queryPart] = url.split('?');
+    const query = queryPart ? `?${queryPart}` : '';
+    const match = basePart.match(/^(.*?)(\.[a-z0-9]+)$/i);
+    if (!match) return [url];
+    const stem = match[1];
+    const ext = match[2].toLowerCase();
+    const candidates = [
+      url,
+      `${stem}.gif${query}`,
+      `${stem}.jpg${query}`,
+      `${stem}.png${query}`,
+      `${stem}.jpeg${query}`,
+    ];
+    return Array.from(new Set(candidates.filter(Boolean))).filter((item) => item !== url || ext);
+  }, []);
+
+  const resolveImageUrl = useCallback(
+    (url) => {
+      const candidates = getImageCandidates(url);
+      const idx = imageFallbackIndex[url] || 0;
+      return {
+        candidates,
+        url: candidates[idx] || candidates[0] || '',
+      };
+    },
+    [getImageCandidates, imageFallbackIndex]
+  );
+
   const handleImageError = useCallback((url) => {
     if (!url) return;
-    setImageFailures((prev) => (prev[url] ? prev : { ...prev, [url]: true }));
-  }, []);
+    const candidates = getImageCandidates(url);
+    if (candidates.length <= 1) {
+      setImageFailures((prev) => (prev[url] ? prev : { ...prev, [url]: true }));
+      return;
+    }
+    setImageFallbackIndex((prev) => {
+      const current = prev[url] || 0;
+      const next = current + 1;
+      if (next >= candidates.length) {
+        setImageFailures((failPrev) => (failPrev[url] ? failPrev : { ...failPrev, [url]: true }));
+        return prev;
+      }
+      return { ...prev, [url]: next };
+    });
+  }, [getImageCandidates]);
 
   const loadAllPlants = useCallback(async () => {
     if (inFlightRef.current) return;
@@ -52,65 +96,24 @@ const PlantData = () => {
     setLoading(true);
     setError('');
     try {
-      const cacheKey = 'plantDataCache_v1';
-      const cacheTtlMs = 1000 * 60 * 10;
-      const readCache = () => {
-        try {
-          const raw = window.localStorage.getItem(cacheKey);
-          if (!raw) return null;
-          const parsed = JSON.parse(raw);
-          if (!parsed?.ts || !Array.isArray(parsed?.items)) return null;
-          if (Date.now() - parsed.ts > cacheTtlMs) return null;
-          return parsed.items;
-        } catch {
-          return null;
-        }
-      };
-      const writeCache = (items) => {
-        try {
-          window.localStorage.setItem(
-            cacheKey,
-            JSON.stringify({ ts: Date.now(), items })
-          );
-        } catch {
-          // ignore storage errors
-        }
-      };
-
-      const cached = readCache();
-      if (cached && cached.length) {
-        setAllItems(cached);
-      }
-
       const limit = 100;
-      const firstResponse = await api.get('/api/plants', {
-        params: { offset: 0, limit },
-      });
-      const firstItems = Array.isArray(firstResponse?.data?.items) ? firstResponse.data.items : [];
-      const total = Number.isInteger(firstResponse?.data?.total)
-        ? firstResponse.data.total
-        : firstItems.length;
-
-      let merged = [...firstItems];
-      if (total > limit) {
-        const offsets = [];
-        for (let offset = limit; offset < total; offset += limit) {
-          offsets.push(offset);
-        }
-        const chunkResponses = await Promise.all(
-          offsets.map((offset) =>
-            api.get('/api/plants', {
-              params: { offset, limit },
-            })
-          )
-        );
-        chunkResponses.forEach((response) => {
-          const nextItems = Array.isArray(response?.data?.items) ? response.data.items : [];
-          merged = [...merged, ...nextItems];
+      let offset = 0;
+      let total = null;
+      let merged = [];
+      while (true) {
+        const response = await api.get('/api/plants', {
+          params: { offset, limit },
         });
+        const nextItems = Array.isArray(response?.data?.items) ? response.data.items : [];
+        merged = [...merged, ...nextItems];
+        if (Number.isInteger(response?.data?.total)) {
+          total = response.data.total;
+        }
+        if (nextItems.length < limit) break;
+        if (total !== null && merged.length >= total) break;
+        offset += limit;
       }
       setAllItems(merged);
-      writeCache(merged);
     } catch (err) {
       setError('Failed to load plant data.');
       setAllItems([]);
@@ -342,6 +345,7 @@ const PlantData = () => {
                 const displayImage = visibleImages.includes(selected)
                   ? selected
                   : visibleImages[0];
+                const resolvedMain = resolveImageUrl(displayImage);
 
                 if (!displayImage) {
                   return <div className="catalog-image catalog-image--placeholder" />;
@@ -351,7 +355,7 @@ const PlantData = () => {
                   <div className="catalog-image-stack">
                     <img
                       className="catalog-image"
-                      src={displayImage}
+                      src={resolvedMain.url}
                       alt={plant.name}
                       loading="lazy"
                       onError={() => handleImageError(displayImage)}
@@ -359,6 +363,7 @@ const PlantData = () => {
                     {visibleImages.length > 1 ? (
                       <div className="catalog-thumbs">
                         {visibleImages.map((url, index) => {
+                          const resolvedThumb = resolveImageUrl(url);
                           return (
                           <button
                             className={`catalog-thumb${
@@ -374,7 +379,7 @@ const PlantData = () => {
                             }
                           >
                             <img
-                              src={url}
+                              src={resolvedThumb.url}
                               alt={`${plant.name} thumbnail ${index + 1}`}
                               loading="lazy"
                               onError={() => handleImageError(url)}

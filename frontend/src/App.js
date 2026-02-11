@@ -141,16 +141,7 @@ function App() {
   };
 
   //이미지 배경으로 설정
-  useEffect(() => {
-    document.documentElement.style.setProperty(
-      "--bg-image",
-      `url(${process.env.PUBLIC_URL}/images/cover.jpg)`
-    );
-
-    return () => {
-      document.documentElement.style.removeProperty("--bg-image");
-    };
-  }, []);
+  // cover background removed
 
   useEffect(() => {
     const handleSessionExpired = () => {

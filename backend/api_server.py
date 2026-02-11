@@ -292,98 +292,85 @@ def _s3_presign_value(value: str, base_url: str, prefix_path: str) -> str:
     return get_presigned_url(key) or value
 
 
-def _get_plant_image_ext_list() -> list[str]:
-    exts = os.getenv("S3_PLANT_IMAGE_EXTS", "").strip()
-    ext_list = [ext.strip() for ext in exts.split(",") if ext.strip()] or [".jpg", ".JPG"]
-    normalized = []
-    for ext in ext_list:
-        if not ext.startswith("."):
-            ext = f".{ext}"
-        normalized.append(ext)
-    return normalized
-
-
-def _build_filenames_for_index(plant_id: str, idx: int) -> list[str]:
-    return [f"plant_{plant_id}_{idx}{ext}" for ext in _get_plant_image_ext_list()]
-
-
-def _build_s3_candidate_keys(prefix_path: str, candidates: list[str]) -> list[str]:
-    return [f"{prefix_path}/{name}" for name in candidates]
-
-
-def _presign_candidate_keys(candidate_keys: list[str], include_all_fallbacks: bool = False) -> list[str]:
-    if not candidate_keys:
-        return []
-    # Performance-first: skip S3 existence probes and sign directly.
-    # Frontend already falls back across candidate URLs on image load errors.
-    if include_all_fallbacks:
-        signed = [get_presigned_url(key_path) for key_path in candidate_keys]
-        return [url for url in signed if url]
-
-    fallback = get_presigned_url(candidate_keys[0])
-    return [fallback] if fallback else []
-
-
-def _resolve_explicit_image_value(image: str, base_url: str, use_presigned: bool, prefix_path: str) -> str:
-    if use_presigned:
-        return _s3_presign_value(image, base_url, prefix_path)
-    if image.lower().startswith(("http://", "https://")):
-        return image
-    if not base_url:
-        return image
-
-    prefix_token = f"{prefix_path.lower()}/"
-    if image.lower().startswith(prefix_token) and base_url.lower().endswith(prefix_path.lower()):
-        image = image[len(prefix_path) + 1 :]
-    image = image.lstrip("/")
-    return f"{base_url}/{image}"
-
-
-def _resolve_plant_image(raw: dict, key: str, prefix: str, attrs: dict | None = None):
+def _resolve_plant_image(raw: dict, key: str, prefix: str):
     image = raw.get("image") or raw.get("이미지")
     base_url, use_presigned, prefix_path = _get_s3_settings()
 
     if isinstance(image, str) and image.strip():
         image = image.strip()
-        return _resolve_explicit_image_value(image, base_url, use_presigned, prefix_path)
+        if use_presigned:
+            return _s3_presign_value(image, base_url, prefix_path)
+        if image.lower().startswith(("http://", "https://")):
+            return image
+
+        if not base_url:
+            return image
+
+        prefix_token = f"{prefix_path.lower()}/"
+        if image.lower().startswith(prefix_token) and base_url.lower().endswith(prefix_path.lower()):
+            image = image[len(prefix_path) + 1 :]
+        image = image.lstrip("/")
+        return f"{base_url}/{image}"
 
     if not base_url and not use_presigned:
         return None
+
+    exts = os.getenv("S3_PLANT_IMAGE_EXTS", "").strip()
+    ext_list = [ext.strip() for ext in exts.split(",") if ext.strip()] or [".jpg"]
+    ext = ext_list[0]
+    if not ext.startswith("."):
+        ext = f".{ext}"
 
     plant_id = _normalize_plant_id(key, prefix)
     if not plant_id:
         return None
-    candidates = _build_filenames_for_index(plant_id, 1)
+    filename = f"plant_{plant_id}_1{ext}"
     if use_presigned:
-        key_candidates = _build_s3_candidate_keys(prefix_path, candidates)
-        urls = _presign_candidate_keys(key_candidates, include_all_fallbacks=False)
-        return urls[0] if urls else None
-    filename = candidates[0]
+        key_path = f"{prefix_path}/{filename}"
+        return get_presigned_url(key_path)
+    return f"{base_url}/{filename}"
+
+    if isinstance(image, str) and image.strip():
+        image = image.strip()
+        if use_presigned:
+            return _s3_presign_value(image, base_url, prefix_path)
+        if image.lower().startswith(("http://", "https://")):
+            return image
+
+        if not base_url:
+            return image
+
+        prefix_token = f"{prefix_path.lower()}/"
+        if image.lower().startswith(prefix_token) and base_url.lower().endswith(prefix_path.lower()):
+            image = image[len(prefix_path) + 1 :]
+        image = image.lstrip("/")
+        return f"{base_url}/{image}"
+
+    if not base_url and not use_presigned:
+        return None
+
+    exts = os.getenv("S3_PLANT_IMAGE_EXTS", "").strip()
+    ext_list = [ext.strip() for ext in exts.split(",") if ext.strip()] or [".jpg"]
+    ext = ext_list[0]
+    if not ext.startswith("."):
+        ext = f".{ext}"
+
+    plant_id = _normalize_plant_id(key, prefix)
+    if not plant_id:
+        return None
+    filename = f"plant_{plant_id}_1{ext}"
+    if use_presigned:
+        key_path = f"{prefix_path}/{filename}"
+        return get_presigned_url(key_path)
     return f"{base_url}/{filename}"
 
 
-def _resolve_images_from_payload(images_raw, base_url: str, use_presigned: bool, prefix_path: str) -> list[str]:
-    if not isinstance(images_raw, list):
-        return []
-
-    resolved = []
-    for item in images_raw:
-        if not isinstance(item, str) or not item.strip():
-            continue
-        item = item.strip()
-        resolved.append(_resolve_explicit_image_value(item, base_url, use_presigned, prefix_path))
-    return resolved
-
-
-def _resolve_plant_images(raw: dict, key: str, prefix: str, attrs: dict | None = None) -> list:
+def _resolve_plant_images(raw: dict, key: str, prefix: str) -> list:
     base_url, use_presigned, prefix_path = _get_s3_settings()
     if not base_url and not use_presigned:
         return []
 
-    if attrs is None:
-        attrs = _build_attrs(raw)
-
-    image_count = attrs.get("photo_count")
+    image_count = raw.get("사진_갯수")
     try:
         image_count = int(image_count)
         if image_count < 1:
@@ -392,9 +379,58 @@ def _resolve_plant_images(raw: dict, key: str, prefix: str, attrs: dict | None =
         image_count = None
 
     images_raw = raw.get("images") or raw.get("이미지들")
-    resolved_from_payload = _resolve_images_from_payload(images_raw, base_url, use_presigned, prefix_path)
-    if resolved_from_payload:
-        return resolved_from_payload
+    if isinstance(images_raw, list):
+        resolved = []
+        for item in images_raw:
+            if not isinstance(item, str) or not item.strip():
+                continue
+            item = item.strip()
+            if use_presigned:
+                resolved.append(_s3_presign_value(item, base_url, prefix_path))
+                continue
+            if item.lower().startswith(("http://", "https://")):
+                resolved.append(item)
+                continue
+            prefix_token = f"{prefix_path.lower()}/"
+            if item.lower().startswith(prefix_token) and base_url.lower().endswith(prefix_path.lower()):
+                item = item[len(prefix_path) + 1 :]
+            item = item.lstrip("/")
+            resolved.append(f"{base_url}/{item}")
+        return resolved
+
+    image_count = raw.get("사진_갯수")
+    try:
+        image_count = int(image_count)
+        if image_count < 1:
+            image_count = None
+    except Exception:
+        image_count = None
+
+    images_raw = raw.get("images") or raw.get("이미지들")
+    if isinstance(images_raw, list):
+        resolved = []
+        for item in images_raw:
+            if not isinstance(item, str) or not item.strip():
+                continue
+            item = item.strip()
+            if use_presigned:
+                resolved.append(_s3_presign_value(item, base_url, prefix_path))
+                continue
+            if item.lower().startswith(("http://", "https://")):
+                resolved.append(item)
+                continue
+            prefix_token = f"{prefix_path.lower()}/"
+            if item.lower().startswith(prefix_token) and base_url.lower().endswith(prefix_path.lower()):
+                item = item[len(prefix_path) + 1 :]
+            item = item.lstrip("/")
+            resolved.append(f"{base_url}/{item}")
+        return resolved
+
+    exts = os.getenv("S3_PLANT_IMAGE_EXTS", "").strip()
+    ext_list = [ext.strip() for ext in exts.split(",") if ext.strip()] or [".jpg"]
+    ext = ext_list[0]
+    if not ext.startswith("."):
+        ext = f".{ext}"
 
     max_images_raw = os.getenv("S3_PLANT_IMAGE_MAX", "").strip()
     try:
@@ -408,22 +444,10 @@ def _resolve_plant_images(raw: dict, key: str, prefix: str, attrs: dict | None =
     if not plant_id:
         return []
 
-    if use_presigned:
-        signed = []
-        for idx in range(1, max_images + 1):
-            candidates = _build_filenames_for_index(plant_id, idx)
-            key_candidates = _build_s3_candidate_keys(prefix_path, candidates)
-            signed.extend(_presign_candidate_keys(key_candidates, include_all_fallbacks=True))
-        deduped = []
-        seen = set()
-        for url in signed:
-            if url in seen:
-                continue
-            seen.add(url)
-            deduped.append(url)
-        return deduped
-    ext = _get_plant_image_ext_list()[0]
     filenames = [f"plant_{plant_id}_{idx}{ext}" for idx in range(1, max_images + 1)]
+    if use_presigned:
+        signed = [get_presigned_url(f"{prefix_path}/{name}") for name in filenames]
+        return [url for url in signed if url]
     return [f"{base_url}/{name}" for name in filenames]
 
 
@@ -472,8 +496,8 @@ def _normalize_plant_payload(raw, key: str, prefix: str) -> dict:
     placement = attrs.get("placement")
     placement = _join_list(placement)
 
-    image = _resolve_plant_image(raw, key, prefix, attrs=attrs)
-    images = _resolve_plant_images(raw, key, prefix, attrs=attrs)
+    image = _resolve_plant_image(raw, key, prefix)
+    images = _resolve_plant_images(raw, key, prefix)
     if image:
         if image not in images:
             images = [image, *images]

@@ -1,69 +1,184 @@
 {
-  "test_user_storage_test": [
+  "eeee": [
     {
-      "plantId": "plant_1769970739_0",
-      "type": "photo",
-      "imageUrl": "/plants/log_902ae988926741d894e38e24c3ad7fef.png",
-      "id": "log_1769970739_0",
-      "date": "2026-02-02"
-    }
-  ],
-  "test_user": [
-    {
-      "type": "repot",
-      "date": "2026-02-02",
-      "time": "03:33",
-      "plantId": "plant_1769970784_0",
-      "plantName": "장미",
-      "title": "분갈이",
-      "detail": "분갈이 완료",
-      "id": "log_1769970834_4"
+      "type": "clean",
+      "date": "2026-02-11",
+      "time": "14:54",
+      "plantId": "p_5",
+      "plantName": "아레카야자",
+      "title": "잎 닦기",
+      "detail": "가벼운 케어",
+      "id": "log_1770789278_17"
     },
     {
       "type": "fertilizer",
-      "date": "2026-02-02",
-      "time": "03:33",
-      "plantId": "plant_1769970784_0",
-      "plantName": "장미",
+      "date": "2026-02-11",
+      "time": "12:50",
+      "plantId": "p_2",
+      "plantName": "스투키",
       "title": "비료 줌",
-      "detail": "장미",
-      "id": "log_1769970832_3"
+      "detail": "스투키",
+      "id": "log_1770781830_16"
     },
     {
       "type": "water",
-      "date": "2026-02-02",
-      "time": "03:33",
-      "plantId": "plant_1769970784_0",
-      "plantName": "장미",
-      "title": "물 줌",
-      "detail": "장미",
-      "id": "log_1769970831_2"
+      "date": "2026-02-11",
+      "time": "12:50",
+      "plantId": "p_2",
+      "plantName": "스투키",
+      "title": "물 주기",
+      "detail": "스투키",
+      "id": "log_1770781829_15"
     },
     {
-      "type": "photo",
-      "date": "2026-02-02",
-      "time": "03:33",
-      "plantId": "plant_1769970784_0",
-      "plantName": "장미",
-      "title": "배치 사진 저장",
-      "detail": "직접 업로드한 사진",
-      "imageUrl": "/plants/log_985843d6b2ad4c9b823d52a9e8bc53f1.png",
-      "meta": {
-        "source": "upload",
-        "filename": "스크린샷 2026-01-05 231743.png"
-      },
-      "id": "log_1769970805_1"
+      "type": "fertilizer",
+      "date": "2026-02-11",
+      "time": "12:22",
+      "plantId": "p_1",
+      "plantName": "금스타티라",
+      "title": "비료 줌",
+      "detail": "금스타티라",
+      "id": "log_1770780126_14"
     },
     {
-      "type": "new",
-      "date": "2026-02-02",
-      "time": "03:33",
-      "plantId": "plant_1769970784_0",
-      "plantName": "장미",
-      "title": "새 식물 등록",
-      "detail": "수동으로 추가한 식물",
-      "imageUrl": "/plants/log_5711205cbd0b4bf9ac563097cd7aa719.png",
-      "id": "log_1769970784_0"
+      "type": "water",
+      "date": "2026-02-11",
+      "time": "12:22",
+      "plantId": "p_1",
+      "plantName": "금스타티라",
+      "title": "물 주기",
+      "detail": "금스타티라",
+      "id": "log_1770780125_13"
+    },
+    {
+      "type": "water",
+      "date": "2026-02-10",
+      "time": "19:45",
+      "plantId": "p_5",
+      "plantName": "아레카야자",
+      "title": "물 주기",
+      "detail": "아레카야자",
+      "id": "log_1770720326_12"
+    },
+    {
+      "type": "move",
+      "date": "2026-02-10",
+      "time": "19:45",
+      "plantId": "p_5",
+      "plantName": "아레카야자",
+      "title": "자리 이동",
+      "detail": "광 조건: 조정",
+      "id": "log_1770720323_11"
+    },
+    {
+      "type": "fertilizer",
+      "date": "2026-02-10",
+      "time": "19:45",
+      "plantId": "p_5",
+      "plantName": "아레카야자",
+      "title": "비료 줌",
+      "detail": "아레카야자",
+      "id": "log_1770720320_10"
+    },
+    {
+      "type": "water",
+      "date": "2026-02-10",
+      "time": "19:06",
+      "plantId": "p_2",
+      "plantName": "스투키",
+      "title": "물 주기",
+      "detail": "스투키",
+      "id": "log_1770717982_9"
+    },
+    {
+      "type": "fertilizer",
+      "date": "2026-02-10",
+      "time": "18:42",
+      "plantId": "p_5",
+      "plantName": "아레카야자",
+      "title": "비료 줌",
+      "detail": "아레카야자",
+      "id": "log_1770716524_8"
+    },
+    {
+      "type": "water",
+      "date": "2026-02-10",
+      "time": "01:49",
+      "plantId": "p_3",
+      "plantName": "테이블야자",
+      "title": "물 주기",
+      "detail": "테이블야자",
+      "id": "log_1770655750_7"
+    },
+    {
+      "type": "fertilizer",
+      "date": "2026-02-10",
+      "time": "01:49",
+      "plantId": "p_3",
+      "plantName": "테이블야자",
+      "title": "비료 줌",
+      "detail": "테이블야자",
+      "id": "log_1770655750_6"
+    },
+    {
+      "type": "mist",
+      "date": "2026-02-10",
+      "time": "01:49",
+      "plantId": "p_3",
+      "plantName": "테이블야자",
+      "title": "분무",
+      "detail": "습도 케어",
+      "id": "log_1770655749_5"
+    },
+    {
+      "type": "move",
+      "date": "2026-02-10",
+      "time": "01:49",
+      "plantId": "p_3",
+      "plantName": "테이블야자",
+      "title": "자리 이동",
+      "detail": "광 조건: 조정",
+      "id": "log_1770655749_4"
+    },
+    {
+      "type": "move",
+      "date": "2026-02-10",
+      "time": "01:13",
+      "plantId": "p_2",
+      "plantName": "스투키",
+      "title": "자리 이동",
+      "detail": "광 조건: 조정",
+      "id": "log_1770653598_3"
+    },
+    {
+      "type": "move",
+      "date": "2026-02-10",
+      "time": "00:55",
+      "plantId": "p_4",
+      "plantName": "몬스테라",
+      "title": "자리 이동",
+      "detail": "광 조건: 조정",
+      "id": "log_1770652519_2"
+    },
+    {
+      "type": "fertilizer",
+      "date": "2026-02-10",
+      "time": "00:55",
+      "plantId": "p_4",
+      "plantName": "몬스테라",
+      "title": "비료 줌",
+      "detail": "몬스테라",
+      "id": "log_1770652518_1"
+    },
+    {
+      "type": "water",
+      "date": "2026-02-10",
+      "time": "00:52",
+      "plantId": "p_1",
+      "plantName": "금스타티라",
+      "title": "물 주기",
+      "detail": "금스타티라",
+      "id": "log_1770652356_0"
     }
   ]
 }
