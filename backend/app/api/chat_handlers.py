@@ -19,6 +19,10 @@ from .chat_utils import cache_bust_url, to_results_url, extract_best_point, safe
 
 from typing import TYPE_CHECKING
 
+if TYPE_CHECKING:
+    from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageEnhance
+
+
 load_dotenv()
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 os.makedirs(RESULT_DIR, exist_ok=True)
