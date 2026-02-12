@@ -6,11 +6,11 @@ import "./PlantBoard.css";
 import DecorateContainer from "../../components/decorate/DecorateContainer";
 import DiaryMiniPreview from "../../components/diary/DiaryMiniPreview";
 import { fetchWithSession } from "../../services/session";
-import icon1 from "../../assets/tamagotchi/plant_icons/plant_icon_1.png";
-import icon2 from "../../assets/tamagotchi/plant_icons/plant_icon_2.png";
-import icon3 from "../../assets/tamagotchi/plant_icons/plant_icon_3.png";
-import icon4 from "../../assets/tamagotchi/plant_icons/plant_icon_4.png";
-import icon5 from "../../assets/tamagotchi/plant_icons/plant_icon_5.png";
+import iconTt from "../../assets/tamagotchi/plant_icons/튼튼이.png";
+import iconStar from "../../assets/tamagotchi/plant_icons/별꽃이.png";
+import iconLong from "../../assets/tamagotchi/plant_icons/쭉쭉이.png";
+import iconFluffy from "../../assets/tamagotchi/plant_icons/복실이.png";
+import iconVine from "../../assets/tamagotchi/plant_icons/꼬불이.png";
 import emoteAnnoyed from "../../assets/tamagotchi/emotes/EMOTE_ANNOYED.png";
 import emoteCalm from "../../assets/tamagotchi/emotes/EMOTE_CALM.png";
 import emoteHappy from "../../assets/tamagotchi/emotes/EMOTE_HAPPY.png";
@@ -174,21 +174,28 @@ const PlantBoard = () => {
       "";
     const key = String(raw).toLowerCase();
     const map = {
-      plant_icon_1: icon1,
-      icon1: icon1,
-      "1": icon1,
-      plant_icon_2: icon2,
-      icon2: icon2,
-      "2": icon2,
-      plant_icon_3: icon3,
-      icon3: icon3,
-      "3": icon3,
-      plant_icon_4: icon4,
-      icon4: icon4,
-      "4": icon4,
-      plant_icon_5: icon5,
-      icon5: icon5,
-      "5": icon5,
+      // New asset names (Korean character names)
+      "튼튼이": iconTt,
+      "별꽃이": iconStar,
+      "쭉쭉이": iconLong,
+      "복실이": iconFluffy,
+      "꼬불이": iconVine,
+      // Legacy keys (keep backward compatibility)
+      plant_icon_1: iconTt,
+      icon1: iconTt,
+      "1": iconTt,
+      plant_icon_2: iconStar,
+      icon2: iconStar,
+      "2": iconStar,
+      plant_icon_3: iconLong,
+      icon3: iconLong,
+      "3": iconLong,
+      plant_icon_4: iconFluffy,
+      icon4: iconFluffy,
+      "4": iconFluffy,
+      plant_icon_5: iconVine,
+      icon5: iconVine,
+      "5": iconVine,
     };
     return map[key] || null;
   };
