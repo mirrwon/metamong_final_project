@@ -104,6 +104,53 @@
       "window_distance_max_cm": 170,
       "direct_sun_risk_level": 2,
       "roomImagePixelUrl": "/plants/room_daa199861efa_pixel.png"
+    },
+    {
+      "name": "크로톤",
+      "sourcePlantId": "168",
+      "sourcePlantName": "크로톤",
+      "image": "https://metamong-ap-920671455199.s3-accesspoint.ap-northeast-2.amazonaws.com/plant_img/plant_168_1.jpg?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIA5MXCLQ7PTNF4GHPO%2F20260212%2Fap-northeast-2%2Fs3%2Faws4_request&X-Amz-Date=20260212T065258Z&X-Amz-Expires=900&X-Amz-SignedHeaders=host&X-Amz-Signature=c696718a75c0669554943307d936b0945f183b9750005c25309647a7bc868fbd",
+      "roomImageUrl": null,
+      "characterName": null,
+      "personality": null,
+      "id": "plant_1770880010_5",
+      "created_at": "2026-02-12 16:06:50"
+    },
+    {
+      "name": "포인세티아",
+      "sourcePlantId": "186",
+      "sourcePlantName": "포인세티아",
+      "image": "https://metamong-ap-920671455199.s3-accesspoint.ap-northeast-2.amazonaws.com/plant_img/plant_186_1.jpg?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIA5MXCLQ7PTNF4GHPO%2F20260212%2Fap-northeast-2%2Fs3%2Faws4_request&X-Amz-Date=20260212T071210Z&X-Amz-Expires=900&X-Amz-SignedHeaders=host&X-Amz-Signature=1f7d21d924704b5efcd847afe429a41c9ca5cba7d7304a299b3c2b31a0372acf",
+      "roomImageUrl": "http://localhost:8000/uploads/866c3c61d6af462680d7a24cbca3b95b.jpg",
+      "characterName": "쭉쭉이",
+      "personality": "투덜이",
+      "id": "plant_1770880366_6",
+      "created_at": "2026-02-12 16:12:46",
+      "roomImagePixelUrl": "/plants/room_4e81399d0ad2_pixel.png"
+    },
+    {
+      "name": "움벨라타 고무나무",
+      "sourcePlantId": "143",
+      "sourcePlantName": "움벨라타 고무나무",
+      "image": "https://metamong-ap-920671455199.s3-accesspoint.ap-northeast-2.amazonaws.com/plant_img/plant_143_1.jpg?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIA5MXCLQ7PTNF4GHPO%2F20260212%2Fap-northeast-2%2Fs3%2Faws4_request&X-Amz-Date=20260212T072403Z&X-Amz-Expires=900&X-Amz-SignedHeaders=host&X-Amz-Signature=db2116c000c3329d8569b6a7f8937453a3bb131613902d2500e58abd1382ca8e",
+      "roomImageUrl": "http://localhost:8000/uploads/786ecf1225154e0791a190628778f624.jpg",
+      "characterName": "튼튼이",
+      "personality": "평온이",
+      "id": "plant_1770881229_7",
+      "created_at": "2026-02-12 16:27:09",
+      "roomImagePixelUrl": "/plants/room_9a041ef006e3_pixel.png"
+    },
+    {
+      "name": "무늬접란",
+      "sourcePlantId": "71",
+      "sourcePlantName": "무늬접란",
+      "image": "https://metamong-ap-920671455199.s3-accesspoint.ap-northeast-2.amazonaws.com/plant_img/plant_71_1.jpg?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIA5MXCLQ7PTNF4GHPO%2F20260212%2Fap-northeast-2%2Fs3%2Faws4_request&X-Amz-Date=20260212T072845Z&X-Amz-Expires=900&X-Amz-SignedHeaders=host&X-Amz-Signature=47a180a0d83aaa9790992138f2928e3a9535e53db01daa82fe2575d77d996312",
+      "roomImageUrl": "http://localhost:8000/uploads/786ecf1225154e0791a190628778f624.jpg",
+      "characterName": "별꽃이",
+      "personality": "댕댕이",
+      "id": "plant_1770881357_8",
+      "created_at": "2026-02-12 16:29:17",
+      "roomImagePixelUrl": "/plants/room_9a041ef006e3_pixel.png"
     }
   ]
 }

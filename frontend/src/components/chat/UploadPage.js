@@ -5,6 +5,7 @@ import { ROUTES } from "../../constants/routes";
 import "./Survey.css"; // 기존스타일 재사용
 
 const API_BASE = "http://localhost:8000/api/chat";
+const API_ROOT = API_BASE.replace(/\/api\/chat$/, "");
 const CHAT_IMAGE_API = `${API_BASE}/image`;
 
 export default function UploadPage() {
@@ -71,6 +72,19 @@ export default function UploadPage() {
     nav(ROUTES?.SURVEY || "/survey");
   };
 
+  const saveRoomImage = (serverPayload) => {
+    const savedImage =
+      serverPayload?.saved_image ||
+      serverPayload?.data?.saved_image ||
+      serverPayload?.payload?.saved_image ||
+      null;
+    if (!savedImage) return;
+
+    const roomImageUrl = `${API_ROOT}/uploads/${savedImage}`;
+    sessionStorage.setItem("room_image_url", roomImageUrl);
+    sessionStorage.setItem("room_image_filename", savedImage);
+  };
+
   const handleUploadSubmit = async (event) => {
     event.preventDefault();
     if (uploadFiles.length === 0 || uploadStatus === "uploading") return;
@@ -94,6 +108,7 @@ export default function UploadPage() {
       setNeedRoomType(false);
       setUploadStatus("done");
 
+      saveRoomImage(data);
       finishAndGoSurvey(data, "");
     } catch (e) {
       setUploadStatus("idle");
@@ -119,6 +134,7 @@ export default function UploadPage() {
       setNeedRoomType(false);
       setUploadStatus("done");
 
+      saveRoomImage(data2);
       finishAndGoSurvey(data2, rt);
     } catch (e) {
       setUploadStatus("idle");

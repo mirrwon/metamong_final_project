@@ -27,7 +27,7 @@ export default function TimeLogPage({
   const [activeTab, setActiveTab] = useState("all");
   const [activePlantId, setActivePlantId] = useState(initialActivePlantId || "");
 
-  const { plants, logs, createLog, createPlant, deleteLog } = useTimeLogData({ useMockCreate: false, useMockData: false });
+  const { plants, logs, createLog, createPlant, deleteLog } = useTimeLogData();
   const activePlant = useMemo(() => plants.find((p) => p.id === activePlantId) || null, [plants, activePlantId]);
 
   // If a stored plant exists and user hasn't picked yet, hydrate the selection.

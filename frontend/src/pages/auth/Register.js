@@ -26,7 +26,7 @@ const Register = () => {
 
       if (isOauth) {
         storeUser(response.data);
-        window.location.replace("/home");
+        window.location.replace("/");
         return;
       }
 
