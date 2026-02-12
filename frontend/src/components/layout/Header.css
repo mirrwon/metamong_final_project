@@ -114,7 +114,17 @@
 
 .header-link:disabled {
   opacity: 0.35;
-  cursor: not-allowed;
+  cursor: default;
+}
+
+.header-link[aria-disabled="true"] {
+  color: rgba(0, 0, 0, 0.4);
+  opacity: 0.45;
+  cursor: default;
+}
+
+.header-link[aria-disabled="true"]:hover {
+  opacity: 0.45;
 }
 
 .loading-overlay {

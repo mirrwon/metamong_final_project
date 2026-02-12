@@ -1,6 +1,27 @@
 import axios from 'axios';
 import { expireSession, isSessionExpired, touchActivity } from './session';
 
+const AUTH_401_DETAILS = new Set([
+  'Could not validate credentials',
+  'Invalid token',
+  'Not authenticated',
+]);
+
+const shouldExpireSessionFor401 = (error) => {
+  if (error?.response?.status !== 401) return false;
+
+  const wwwAuthenticate = String(
+    error?.response?.headers?.['www-authenticate'] || ''
+  ).toLowerCase();
+  if (wwwAuthenticate.includes('bearer')) return true;
+
+  const detail = error?.response?.data?.detail;
+  if (typeof detail === 'string' && AUTH_401_DETAILS.has(detail.trim())) {
+    return true;
+  }
+  return false;
+};
+
 const api = axios.create({
   baseURL: 'http://localhost:8000',
   withCredentials: true,
@@ -23,7 +44,7 @@ api.interceptors.response.use(
     return response;
   },
   (error) => {
-    if (error?.response?.status === 401) {
+    if (shouldExpireSessionFor401(error)) {
       expireSession();
     }
     return Promise.reject(error);

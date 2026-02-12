@@ -141,7 +141,9 @@ const Header = ({ user, onLogout }) => {
         <a
           className="header-link"
           href={ROUTES.MAP}
-          onClick={handleNavClick(ROUTES.MAP)}
+          aria-disabled={!user}
+          tabIndex={user ? 0 : -1}
+          onClick={handleNavClick(ROUTES.MAP, undefined, !!user)}
         >
           Map
         </a>
