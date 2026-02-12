@@ -7,11 +7,17 @@ import "./Home.css";
 
 const Home = () => {
   const nav = useNavigate();
+  const sharedAutoplayDelay = 2500;
+  // const nav = useNavigate();
+
+  // const goChat = () => {
+  //   nav(ROUTES.CHAT)
+  // }
 
   return (
     <div className="home">
       <section className="home-section">
-        <ProcessCarousel />
+        <ProcessCarousel autoplayDelay={sharedAutoplayDelay} />
       </section>
 
       <section className="home-section home-plants">
@@ -29,6 +35,9 @@ const Home = () => {
         </div>
         <div className="catalog-divider" />
         <PlantPreview />
+        <h2 className="typo-title">Plant Catalog</h2>
+        <div className="ui-line" />
+        <PlantPreview autoplayDelay={sharedAutoplayDelay} />
       </section>
 
       <section className="home-section">

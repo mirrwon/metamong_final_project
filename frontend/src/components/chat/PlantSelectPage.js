@@ -1,7 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-// import { useNavigate } from "react-router-dom";
+import { useEffect, useMemo, useState, useRef } from "react";
 import { fetchWithSession } from "../../services/session";
-// import { ROUTES } from "../../constants/routes";
 import "./Survey.css";
 
 const API_ORIGIN = "http://localhost:8000";
@@ -128,6 +126,8 @@ const buildPlantFilters = (plant) => {
   const styleSource = [
     plant?.style,
     plant?.tags,
+    plant?.attrs?.style_tags,
+    plant?.attrs?.functional_tags,
     plant?.placement,
     plant?.name,
     plant?.name_ko,
@@ -160,10 +160,6 @@ const filterPlantsBySurvey = (plants, answers) => {
   const styleWanted = answers?.style || [];
   const plantStyleWanted = answers?.Plant_style || answers?.plant_style || answers?.plantStyle || [];
 
-  const hasPetCaution = cautionWanted.includes("dog") || cautionWanted.includes("cat");
-  const hasAllergyCaution = cautionWanted.includes("allergy") || cautionWanted.includes("baby");
-  const hasBeginnerCaution = cautionWanted.includes("beginner");
-
   const isAllergyRisk = (plant) => {
     const val = plant?.allergy;
     if (val == null) return false;
@@ -174,25 +170,82 @@ const filterPlantsBySurvey = (plants, answers) => {
   };
 
   const isHardCare = (plant) => {
-    const val = plant?.care;
-    if (val == null) return false;
-    const text = String(val).toLowerCase();
-    return (
-      text.includes("hard") ||
-      text.includes("difficult") ||
-      text.includes("expert") ||
-      text.includes("high") ||
-      text.includes("어려") ||
-      text.includes("난이도") ||
-      text.includes("고난") ||
-      text.includes("상")
-    );
+    const values = [
+      plant?.care,
+      plant?.care_difficulty,
+      plant?.care_effort,
+      plant?.attrs?.care_level,
+      plant?.attrs?.care_requirement,
+    ].filter((value) => value != null);
+    if (values.length === 0) return false;
+
+    return values.some((value) => {
+      const text = String(value).toLowerCase();
+      return (
+        text.includes("hard") ||
+        text.includes("difficult") ||
+        text.includes("expert") ||
+        text.includes("high") ||
+        text.includes("높") ||
+        text.includes("어려") ||
+        text.includes("난이도") ||
+        text.includes("고난") ||
+        text.includes("상")
+      );
+    });
+  };
+
+  const isKidRisk = (plant) => {
+    const raw = plant?.attrs?.kid_safety_grade;
+    if (raw == null) return isAllergyRisk(plant);
+    const text = String(raw).toLowerCase().trim();
+    if (!text) return isAllergyRisk(plant);
+
+    if (
+      text.includes("safe") ||
+      text.includes("low risk") ||
+      text.includes("generally safe")
+    ) {
+      return false;
+    }
+
+    if (
+      text.includes("caution") ||
+      text.includes("risk") ||
+      text.includes("unsafe") ||
+      text.includes("danger") ||
+      text.includes("toxic") ||
+      text.includes("harmful")
+    ) {
+      return true;
+    }
+
+    return isAllergyRisk(plant);
+  };
+
+  const passesCaution = (plant) => {
+    if (cautionWanted.length === 0) return true;
+
+    // caution is strict AND: every selected caution must pass.
+    return cautionWanted.every((token) => {
+      switch (token) {
+        case "dog":
+        case "cat":
+          return plant?.pet_safe === true;
+        case "allergy":
+          return !isAllergyRisk(plant);
+        case "baby":
+          return !isKidRisk(plant);
+        case "beginner":
+          return !isHardCare(plant);
+        default:
+          return true;
+      }
+    });
   };
 
   return plants.filter((plant) => {
-    if (hasPetCaution && plant?.pet_safe !== true) return false;
-    if (hasAllergyCaution && isAllergyRisk(plant)) return false;
-    if (hasBeginnerCaution && isHardCare(plant)) return false;
+    if (!passesCaution(plant)) return false;
 
     const { sizeTokens, styleTokens, plantStyleTokens } = buildPlantFilters(plant);
     const sizeOk = matchGroup(sizeWanted, sizeTokens, false);
@@ -275,6 +328,9 @@ export default function PlantSelectPage({
   const [filteredPlants, setFilteredPlants] = useState([]);
   const [visiblePlants, setVisiblePlants] = useState([]);
 
+  const pickInFlightRef = useRef(false);
+  const plantsFetchRef = useRef(false);
+
   useEffect(() => {
     const raw = sessionStorage.getItem(SURVEY_STORAGE_KEY);
     if (!raw) {
@@ -293,6 +349,9 @@ export default function PlantSelectPage({
 
   useEffect(() => {
     if (!survey) return;
+    if (plantsFetchRef.current) return;   // 개발모드 중복 실행 방지
+    plantsFetchRef.current = true;
+
     let alive = true;
 
     const run = async () => {
@@ -336,16 +395,17 @@ export default function PlantSelectPage({
   }, [status, allPlants, survey]);
 
   const handlePick = (plant) => {
+    if (pickInFlightRef.current) return;   // 중복 클릭/키 입력 방지
+    pickInFlightRef.current = true;        // 잠금
+
     const payload = {
       id: plant?.id ?? null,
       name: plant?.displayName ?? plant?.name ?? "식물",
       image: plant?.displayImage ?? null,
     };
 
-    // ✅ 기존 키 그대로 유지
     sessionStorage.setItem(SELECTED_PLANT_KEY, JSON.stringify(payload));
 
-    // ✅ 이동/흐름은 부모(AnalyzePage)가 담당
     if (typeof onPicked === "function") {
       onPicked(payload);
     }

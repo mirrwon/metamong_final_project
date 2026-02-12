@@ -1,41 +1,39 @@
-import os
 import json
 from typing import Any, Dict, Optional
 
 import redis
 
-from .chat_env import env_bool
+from app.db.redis_client import get_redis as get_shared_redis
 
 # Fallback in-memory (Redis down 대비)
 USER_STATE: Dict[str, Dict[str, Any]] = {}
 USER_CTX: Dict[str, Dict[str, Any]] = {}
 
 
-def _redis_client() -> Optional[redis.Redis]:
-    host = os.getenv("REDIS_HOST")
-    port = os.getenv("REDIS_PORT")
-    if not host or not port:
-        return None
+def _decode_text(value: Any, encoding: str = "utf-8") -> str:
+    if isinstance(value, str):
+        return value
+    if isinstance(value, bytes):
+        try:
+            return value.decode(encoding)
+        except UnicodeDecodeError:
+            return value.decode(encoding, errors="replace")
+    return str(value)
 
-    username = os.getenv("REDIS_USERNAME") or None
-    password = os.getenv("REDIS_PASSWORD") or None
-    use_ssl = env_bool(os.getenv("REDIS_SSL"), default=False)
-    db = int(os.getenv("REDIS_DB", "0"))
 
+def _safe_json_loads(raw: Any) -> Dict[str, Any]:
+    text = _decode_text(raw).strip()
+    if not text:
+        return {}
     try:
-        r = redis.Redis(
-            host=host,
-            port=int(port),
-            username=username,
-            password=password,
-            db=db,
-            ssl=use_ssl,
-            decode_responses=True,
-        )
-        r.ping()
-        return r
+        obj = json.loads(text)
     except Exception:
-        return None
+        return {}
+    return obj if isinstance(obj, dict) else {}
+
+
+def _redis_client() -> Optional[redis.Redis]:
+    return get_shared_redis()
 
 
 def _rk_ctx(client_key: str) -> str:
@@ -50,11 +48,7 @@ def _rget_json(r: redis.Redis, key: str) -> Dict[str, Any]:
     raw = r.get(key)
     if not raw:
         return {}
-    try:
-        obj = json.loads(raw)
-    except Exception:
-        return {}
-    return obj if isinstance(obj, dict) else {}
+    return _safe_json_loads(raw)
 
 
 def _rset_json(r: redis.Redis, key: str, obj: Dict[str, Any], ttl_sec: Optional[int] = None):

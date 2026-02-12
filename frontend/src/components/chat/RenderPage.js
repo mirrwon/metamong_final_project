@@ -73,62 +73,75 @@ export default function RenderPage() {
         console.log("render payload", { plant_id, plant_name: plant?.name, plant_image_url: plant?.image });
 
         // =========================================================
-        // 3) render 3번 호출 (같은 plant_id + spot_index만 다르게)
+        // 3) render 1번 호출 (서버가 3개 스팟을 한 번에 내려줌)
         // =========================================================
-        const imgs = await Promise.all(
-          spotIndexes.map(async (spot_index) => {
-            const r = await fetchWithSession(RENDER_API, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                ...(sid ? { sid } : {}),
-                spot_index,
-                plant_id,
-                plant_image_url: plant?.image,
-                plant_name: plant?.name,
-                regen: true,   
-                // mode: "gemini",
-                // mode: "composite",
-                mode: "ai_edit",
-              }),
-            });
+        const r = await fetchWithSession(RENDER_API, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            ...(sid ? { sid } : {}),
+            // 백엔드가 spot_index 필수일 가능성 대응
+            spot_index: spotIndexes[0],          // 예: 0
+            // 3개 스팟을 명시적으로 전달 (백엔드가 받으면 이걸 우선 사용하게 됨)
+            render_idxs: spotIndexes,            // 예: [0,5,4]
 
-            // render 응답이 에러일 때도 json일 수 있으니 읽고 체크
-            const j = await r.json().catch(() => null);
-            if (!r.ok) {
-              const msg = j?.detail || j?.message || "render_failed";
-              throw new Error(`${msg} (spot_index=${spot_index})`);
-            }
+            plant_id,
+            plant_image_url: plant?.image,
+            plant_name: plant?.name,
+            regen: true,
+            mode: "ai_edit",
+          }),
+        });
 
-            // 응답 구조 여러 형태 대응 (composite / ai_edit 둘 다 안전)
-            const imagesMsg = j?.messages?.find((m) => m?.type === "images");
-            const imagesArr = Array.isArray(imagesMsg?.images) ? imagesMsg.images : [];
 
-            // 우선순위: ai_edit -> composite -> marker -> 첫번째
-            const picked =
-              imagesArr.find((it) => it?.name === "ai_edit") ||
-              imagesArr.find((it) => it?.name === "composite") ||
-              imagesArr.find((it) => it?.name === "marker") ||
-              imagesArr[0];
+        const j = await r.json().catch(() => null);
+        if (!r.ok) {
+          const msg = j?.detail || j?.message || "render_failed";
+          throw new Error(msg);
+        }
 
-            const rawUrl =
-              picked?.url ||
-              j?.image_url ||
-              j?.url ||
-              j?.result?.url;
+        console.log("[RENDER][response]", j);
+        console.log("[RENDER][images_type]", Array.isArray(j?.images) ? typeof j.images[0] : "no_images");
 
-            if (!rawUrl) {
-              console.log("render response json =", j);
-              throw new Error(`missing image_url for spot ${spot_index}`);
-            }
+        // ✅ 서버가 images 또는 spot_images 둘 중 어디로 보내든 받는다
+        const arr =
+          (Array.isArray(j?.images) && j.images) ||
+          (Array.isArray(j?.spot_images) && j.spot_images) ||
+          [];
 
-            const url = rawUrl.startsWith("http") ? rawUrl : `${RESULT_BASE}${rawUrl}`;
-            return { spot_index, url };
-          })
-        );
+        // ✅ 문자열 URL / 객체 둘 다 처리
+        const imgs = arr.map((it, i) => {
+          let rawUrl = null;
+          let spotIndex = i;
 
-        if (!mounted) return;
+          if (typeof it === "string") {
+            rawUrl = it;
+            spotIndex = i;
+          } else if (it && typeof it === "object") {
+            rawUrl = it.image_url || it.url || it.imageUrl || it.src || null;
+            const n = Number(it.spot_index ?? it.spotIndex ?? i);
+            spotIndex = Number.isFinite(n) ? n : i;
+          }
+
+          if (!rawUrl) {
+            // 디버그용으로 응답을 같이 찍어라 (원인 확정)
+            console.log("[RENDER][bad_item]", it);
+            throw new Error(`missing image_url for spot ${spotIndex}`);
+          }
+
+          const url = rawUrl.startsWith("http") ? rawUrl : `${RESULT_BASE}${rawUrl}`;
+          return { spot_index: spotIndex, url };
+        });
+
+        if (imgs.length < 1) {
+          console.log("render response json =", j);
+          throw new Error("missing images in render response");
+        }
+
         setSpotImages(imgs);
+
+
+
       } catch (e) {
         if (!mounted) return;
         setError(String(e?.message || e));

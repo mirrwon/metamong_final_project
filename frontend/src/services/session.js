@@ -1,7 +1,7 @@
 const STORAGE_KEY_USER = "user";
 const STORAGE_KEY_LAST_ACTIVITY = "lastActivity";
 
-export const IDLE_TIMEOUT_MS = 60 * 60 * 1000;
+export const IDLE_TIMEOUT_MS = 600 * 600 * 1000;
 export const SESSION_EXPIRED_EVENT = "session-expired";
 
 const readLastActivity = () => {

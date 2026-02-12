@@ -82,7 +82,7 @@ def _compute_spot_score(spot: Dict[str, Any]) -> Dict[str, Any]:
 # 3. 핵심 추천 함수
 # =========================
 
-def recommend_for_analysis(data: Dict[str, Any], user_filters: Dict[str, Any] | None = None) -> Dict[str, Any]:
+def recommend_for_analysis(data: Dict[str, Any], user_filters: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     if not isinstance(data, dict): return {}
     user_filters = user_filters or {}
     pet_filter = user_filters.get("pet")

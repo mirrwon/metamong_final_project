@@ -12,7 +12,7 @@
   z-index: 0;
 }
 
-/* ✅ analyze/render 같은 페이지에서 blur 끄기 */
+/* 선명하게 보여야 하는 페이지에서는 블러를 끕니다. */
 .surveyPage.noBlur::before {
   backdrop-filter: none;
 }
@@ -191,6 +191,36 @@
   justify-content: center;
 }
 
+/* "style"(방 분위기) 옵션은 한 줄로 유지합니다. */
+.surveyGroup[data-group-key="style"] .surveyChecks {
+  flex-wrap: nowrap;
+}
+
+.surveyGroup[data-group-key="style"] .surveyCheck {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.surveyGroup[data-group-key="style"] .surveyCheck__label--image {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+@media (max-width: 640px) {
+  .surveyGroup[data-group-key="style"] .surveyChecks {
+    overflow-x: auto;
+    justify-content: flex-start;
+    padding-bottom: var(--s-2);
+    scroll-snap-type: x proximity;
+  }
+
+  .surveyGroup[data-group-key="style"] .surveyCheck {
+    flex: 0 0 220px;
+    scroll-snap-align: start;
+  }
+}
+
 .surveyCheckGroup {
   display: contents;
 }
@@ -298,6 +328,9 @@
   background: rgba(61, 61, 61, 0.342);
 }
 
+.surveyCheck__label--dimmed {
+  opacity: 0.45;
+}
 
 .surveyFooter {
   margin-top: var(--s-4);
