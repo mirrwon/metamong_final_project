@@ -17,7 +17,7 @@ def gemini_edit_image(
     input_image_path: str,
     prompt: str,
     out_path: str,
-    model: str = "gemini-2.5-flash-image",
+    model: str = "gemini-3-pro-image-preview",
     api_key_env: str = "GEMINI_API_KEY",
 ) -> Dict[str, Any]:
     """

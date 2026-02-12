@@ -9,7 +9,6 @@ const Header = ({ user, onLogout }) => {
   const [isLoading, setIsLoading] = useState(false);
 
   const closeMenu = () => {
-    // 메뉴(햄버거 등) 닫는 로직 있으면 여기
   };
 
   const startLoadingThen = (fn) => {
@@ -17,32 +16,57 @@ const Header = ({ user, onLogout }) => {
 
     window.setTimeout(() => {
       fn();
-      // ✅ nav 이동이면 컴포넌트가 바뀌면서 자연스럽게 사라지지만,
-      // ✅ reload는 아래에서 바로 새로고침되어 의미 없음.
-      // 그래도 안전하게 꺼주고 싶으면 유지:
+
       setIsLoading(false);
     }, 400);
+  };
+
+  const openInNewTab = (path, beforeOpen) => {
+    if (beforeOpen) beforeOpen();
+    window.open(path, "_blank", "noopener");
+  };
+
+  const handleNavClick = (path, beforeNavigate) => (e) => {
+    if (e?.ctrlKey || e?.metaKey) {
+      e.preventDefault();
+      openInNewTab(path, beforeNavigate);
+      return;
+    }
+    if (beforeNavigate) beforeNavigate();
+    navigateOrReload(path);
+  };
+
+  const handleNavAuxClick = (path, beforeNavigate) => (e) => {
+    if (e?.button === 1) {
+      e.preventDefault();
+      openInNewTab(path, beforeNavigate);
+    }
+  };
+
+  const handleNavMouseDown = (path, beforeNavigate) => (e) => {
+    if (e?.button === 1) {
+      e.preventDefault();
+      openInNewTab(path, beforeNavigate);
+    }
   };
 
   const navigateOrReload = (path) => {
     closeMenu();
 
-    // ✅ 같은 페이지면: 로딩 연출 후 reload
     if (location.pathname === path) {
       startLoadingThen(() => window.location.reload());
       return;
     }
 
-    // ✅ 다른 페이지면: 로딩 연출 후 이동
     startLoadingThen(() => nav(path));
   };
 
-  const goHome = () => navigateOrReload(ROUTES.HOME);
-  const goMyinfo = () => navigateOrReload(ROUTES.MYINFO);
-  const goChat = () => navigateOrReload(ROUTES.UPLOAD);
-  const goPlantBoard = () => navigateOrReload(ROUTES.PLANTBOARD);
-  const goPlantData = () => navigateOrReload(ROUTES.PLANT_DATA);
-  const goMap = () => navigateOrReload(ROUTES.MAP);
+  const goPlantBoard = () => {
+    try {
+      localStorage.removeItem("plantboard_selected_plant");
+      localStorage.setItem("plantboard_active_view", "timelog");
+    } catch {}
+  };
   const goLogin = () => navigateOrReload(ROUTES.LOGIN);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const menuRef = useRef(null);
@@ -71,61 +95,91 @@ const Header = ({ user, onLogout }) => {
         </div>
       )}
 
-    <header className="header">
+    <header className={`header ${location.pathname === ROUTES.HOME ? "header--home" : "header--default"}`}>
     <div className="header-top">
-      <div className="header-logo typo-title" onClick={goHome} role="button" tabIndex={0}>
+      <div
+        className="header-logo typo-title"
+        onClick={handleNavClick(ROUTES.HOME)}
+        onAuxClick={handleNavAuxClick(ROUTES.HOME)}
+        onMouseDown={handleNavMouseDown(ROUTES.HOME)}
+        role="button"
+        tabIndex={0}
+      >
         Ditto
       </div>
 
-      <button
-        className="header-auth"
-        type="button"
-        onClick={user ? handleLogout : goLogin}
-      >
-        {user ? "logout" : "login"}
-      </button>
+      <nav className="header-nav">
+        <button
+          className="header-link"
+          type="button"
+          onClick={handleNavClick(ROUTES.HOME)}
+          onAuxClick={handleNavAuxClick(ROUTES.HOME)}
+          onMouseDown={handleNavMouseDown(ROUTES.HOME)}
+        >
+          Home
+        </button>
+
+        <button
+          className="header-link"
+          type="button"
+          onClick={handleNavClick(ROUTES.MYINFO)}
+          onAuxClick={handleNavAuxClick(ROUTES.MYINFO)}
+          onMouseDown={handleNavMouseDown(ROUTES.MYINFO)}
+          disabled={!user}
+        >
+          Profile
+        </button>
+
+        <button
+          className="header-link"
+          type="button"
+          onClick={handleNavClick(ROUTES.UPLOAD)}
+          onAuxClick={handleNavAuxClick(ROUTES.UPLOAD)}
+          onMouseDown={handleNavMouseDown(ROUTES.UPLOAD)}
+          disabled={!user}
+        >
+          Chat
+        </button>
+
+        <button
+          className="header-link"
+          type="button"
+          onClick={handleNavClick(ROUTES.PLANTBOARD, goPlantBoard)}
+          onAuxClick={handleNavAuxClick(ROUTES.PLANTBOARD, goPlantBoard)}
+          onMouseDown={handleNavMouseDown(ROUTES.PLANTBOARD, goPlantBoard)}
+          disabled={!user}
+        >
+          PlantBoard
+        </button>
+
+        <button
+          className="header-link"
+          type="button"
+          onClick={handleNavClick(ROUTES.PLANT_DATA)}
+          onAuxClick={handleNavAuxClick(ROUTES.PLANT_DATA)}
+          onMouseDown={handleNavMouseDown(ROUTES.PLANT_DATA)}
+        >
+          Data
+        </button>
+
+        <button
+          className="header-link"
+          type="button"
+          onClick={handleNavClick(ROUTES.MAP)}
+          onAuxClick={handleNavAuxClick(ROUTES.MAP)}
+          onMouseDown={handleNavMouseDown(ROUTES.MAP)}
+        >
+          Map
+        </button>
+        <button
+          className="header-link header-auth"
+          type="button"
+          onClick={user ? handleLogout : goLogin}
+        >
+          {user ? "logout" : "login"}
+        </button>
+      </nav>
     </div>
-
-    <nav className="header-nav">
-      <button className="header-link" type="button" onClick={goHome}>
-            Home
-          </button>
-
-          <button
-            className="header-link"
-            type="button"
-            onClick={goMyinfo}
-            disabled={!user}
-          >
-            Profile
-          </button>
-
-          <button
-            className="header-link"
-            type="button"
-            onClick={goChat}
-            disabled={!user}
-          >
-            Chat
-          </button>
-
-          <button
-            className="header-link"
-            type="button"
-            onClick={goPlantBoard}
-            disabled={!user}
-          >
-            PlantBoard
-          </button>
-
-          <button className="header-link" type="button" onClick={goPlantData}>
-            Data
-          </button>
-
-          <button className="header-link" type="button" onClick={goMap}>
-            Map
-          </button>
-        </nav>
       </header>
     </>
   );

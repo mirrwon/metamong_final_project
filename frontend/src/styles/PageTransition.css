@@ -22,7 +22,7 @@
 }
 
 .page-loading-logo {
-    font-family: var(--font-title, Georgia, serif);
+    font-family: var(--font-title);
     font-size: 72px;
     font-weight: 700;
     color: var(--c-text, #2b3d1a);

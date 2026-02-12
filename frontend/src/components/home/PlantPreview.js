@@ -70,14 +70,22 @@ const PlantPreview = ({ autoplayDelay = 2500 }) => {
 
   if (error) return <p className="catalog-status">{error}</p>;
 
-  const getPlantImages = (plant) => {
-    if (!plant) return [];
-    const images = Array.isArray(plant.images) ? plant.images : [];
-    const primary = plant.image ? [plant.image] : [];
-    const merged = [...primary, ...images]
-      .map((url) => buildImageUrl(baseUrl, url))
-      .filter(Boolean);
-    return Array.from(new Set(merged));
+  const getImageCandidates = (url) => {
+    if (!url) return [];
+    const [basePart, queryPart] = url.split("?");
+    const query = queryPart ? `?${queryPart}` : "";
+    const match = basePart.match(/^(.*?)(\.[a-z0-9]+)$/i);
+    if (!match) return [url];
+    const stem = match[1];
+    const ext = match[2].toLowerCase();
+    const candidates = [
+      url,
+      `${stem}.gif${query}`,
+      `${stem}.jpg${query}`,
+      `${stem}.png${query}`,
+      `${stem}.jpeg${query}`,
+    ];
+    return Array.from(new Set(candidates.filter(Boolean))).filter((item) => item !== url || ext);
   };
 
   return (
@@ -102,7 +110,8 @@ const PlantPreview = ({ autoplayDelay = 2500 }) => {
       >
         {items.map((plant, index) => {
           const key = `${plant.id || plant.name}-${index}`;
-          const candidates = getPlantImages(plant);
+          const baseImage = plant.image ? buildImageUrl(baseUrl, plant.image) : "";
+          const candidates = getImageCandidates(baseImage);
           const fallbackIndex = imageFallbackIndex[key] || 0;
           const imageUrl = candidates[fallbackIndex] || candidates[0];
           const handleImageError = () => {

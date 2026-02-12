@@ -16,6 +16,8 @@
   flex-direction: column;
   background: linear-gradient(135deg, #FAFAF8 0%, #E8E8E6 100%);
   animation: fadeIn 0.5s ease-out;
+  flex: 1;
+  min-height: 0;
 }
 
 @keyframes fadeIn {
@@ -56,6 +58,7 @@
   width: 100%;
   max-width: 1200px;
   margin: 0 auto;
+  min-height: 0;
 }
 
 .timelog-plant {
@@ -101,6 +104,10 @@
   justify-content: space-between;
   align-items: flex-end;
   margin-bottom: 30px;
+}
+
+.timelog-summaryRow--hidden {
+  display: none;
 }
 
 .timelog-addPlantBtn {
@@ -183,14 +190,55 @@
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   font-weight: 600;
   white-space: nowrap;
+  margin-top: 10px;
+}
+
+.timelog--tamagotchi .timelog-tabs {
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  gap: 15px;
+  justify-content: center;
+  padding: 0;
+  box-shadow: none;
+  margin-bottom: 10px;
+}
+
+.timelog--tamagotchi .timelog-tab.is-active {
+  background: linear-gradient(180deg, #ffffff, #f5f2ec);
+  color: var(--p-primary);
+  box-shadow: 0 8px 16px rgba(62, 64, 59, 0.12);
+}
+
+.timelog--tamagotchi .timelog-tab {
+  padding: 12px 18px;
+  border-radius: 12px;
+  background: rgba(62, 64, 59, 0.06);
+  border: none;
+  letter-spacing: 0.02em;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+}
+
+.timelog--tamagotchi .timelog-tab:not(:disabled):hover {
+  transform: translateY(-1px);
+  background: rgba(62, 64, 59, 0.1);
+  box-shadow: 0 6px 12px rgba(62, 64, 59, 0.12);
+}
+
+.timelog-tab:disabled {
+  cursor: not-allowed;
+  opacity: 0.85;
+  color: var(--p-text);
+  background: rgba(62, 64, 59, 0.08);
+  box-shadow: none;
 }
 
 .timelog-tab.is-active {
-  background-color: #fff;
   color: var(--p-primary);
   font-weight: 800;
   box-shadow: 0 4px 12px rgba(109, 76, 65, 0.15);
 }
+
 
 /* Timeline Aesthetics */
 .timelog-timeline-section {
@@ -390,6 +438,7 @@
   z-index: 10;
 }
 
+
 .timelog-actions__row {
   display: flex;
   gap: 12px;
@@ -442,12 +491,6 @@
   opacity: 0.5;
   cursor: not-allowed;
   filter: grayscale(1);
-}
-
-.timelog-actionBtn:hover:not(:disabled) {
-  transform: translateY(-5px);
-  box-shadow: 0 8px 20px rgba(109, 76, 65, 0.2);
-  border-color: var(--p-accent);
 }
 
 /* Premium Modal */
