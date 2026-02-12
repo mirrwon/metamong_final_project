@@ -21,33 +21,17 @@ const Header = ({ user, onLogout }) => {
     }, 400);
   };
 
-  const openInNewTab = (path, beforeOpen) => {
-    if (beforeOpen) beforeOpen();
-    window.open(path, "_blank", "noopener");
-  };
-
-  const handleNavClick = (path, beforeNavigate) => (e) => {
-    if (e?.ctrlKey || e?.metaKey) {
+  const handleNavClick = (path, beforeNavigate, isEnabled = true) => (e) => {
+    if (!isEnabled) {
       e.preventDefault();
-      openInNewTab(path, beforeNavigate);
       return;
     }
+    if (e?.ctrlKey || e?.metaKey) {
+      return;
+    }
+    e.preventDefault();
     if (beforeNavigate) beforeNavigate();
     navigateOrReload(path);
-  };
-
-  const handleNavAuxClick = (path, beforeNavigate) => (e) => {
-    if (e?.button === 1) {
-      e.preventDefault();
-      openInNewTab(path, beforeNavigate);
-    }
-  };
-
-  const handleNavMouseDown = (path, beforeNavigate) => (e) => {
-    if (e?.button === 1) {
-      e.preventDefault();
-      openInNewTab(path, beforeNavigate);
-    }
   };
 
   const navigateOrReload = (path) => {
@@ -97,80 +81,70 @@ const Header = ({ user, onLogout }) => {
 
     <header className={`header ${location.pathname === ROUTES.HOME ? "header--home" : "header--default"}`}>
     <div className="header-top">
-      <div
+      <a
         className="header-logo typo-title"
+        href={ROUTES.HOME}
         onClick={handleNavClick(ROUTES.HOME)}
-        onAuxClick={handleNavAuxClick(ROUTES.HOME)}
-        onMouseDown={handleNavMouseDown(ROUTES.HOME)}
         role="button"
         tabIndex={0}
       >
         Ditto
-      </div>
+      </a>
 
       <nav className="header-nav">
-        <button
+        <a
           className="header-link"
-          type="button"
+          href={ROUTES.HOME}
           onClick={handleNavClick(ROUTES.HOME)}
-          onAuxClick={handleNavAuxClick(ROUTES.HOME)}
-          onMouseDown={handleNavMouseDown(ROUTES.HOME)}
         >
           Home
-        </button>
+        </a>
 
-        <button
+        <a
           className="header-link"
-          type="button"
-          onClick={handleNavClick(ROUTES.MYINFO)}
-          onAuxClick={handleNavAuxClick(ROUTES.MYINFO)}
-          onMouseDown={handleNavMouseDown(ROUTES.MYINFO)}
-          disabled={!user}
+          href={ROUTES.MYINFO}
+          aria-disabled={!user}
+          tabIndex={user ? 0 : -1}
+          onClick={handleNavClick(ROUTES.MYINFO, undefined, !!user)}
         >
           Profile
-        </button>
+        </a>
 
-        <button
+        <a
           className="header-link"
-          type="button"
-          onClick={handleNavClick(ROUTES.UPLOAD)}
-          onAuxClick={handleNavAuxClick(ROUTES.UPLOAD)}
-          onMouseDown={handleNavMouseDown(ROUTES.UPLOAD)}
-          disabled={!user}
+          href={ROUTES.UPLOAD}
+          aria-disabled={!user}
+          tabIndex={user ? 0 : -1}
+          onClick={handleNavClick(ROUTES.UPLOAD, undefined, !!user)}
         >
           Chat
-        </button>
+        </a>
 
-        <button
+        <a
           className="header-link"
-          type="button"
-          onClick={handleNavClick(ROUTES.PLANTBOARD, goPlantBoard)}
-          onAuxClick={handleNavAuxClick(ROUTES.PLANTBOARD, goPlantBoard)}
-          onMouseDown={handleNavMouseDown(ROUTES.PLANTBOARD, goPlantBoard)}
-          disabled={!user}
+          href={ROUTES.PLANTBOARD}
+          aria-disabled={!user}
+          tabIndex={user ? 0 : -1}
+          onClick={handleNavClick(ROUTES.PLANTBOARD, goPlantBoard, !!user)}
         >
           PlantBoard
-        </button>
+        </a>
 
-        <button
+        <a
           className="header-link"
-          type="button"
+          href={ROUTES.PLANT_DATA}
           onClick={handleNavClick(ROUTES.PLANT_DATA)}
-          onAuxClick={handleNavAuxClick(ROUTES.PLANT_DATA)}
-          onMouseDown={handleNavMouseDown(ROUTES.PLANT_DATA)}
         >
           Data
-        </button>
+        </a>
 
-        <button
+        <a
           className="header-link"
-          type="button"
+          href={ROUTES.MAP}
           onClick={handleNavClick(ROUTES.MAP)}
-          onAuxClick={handleNavAuxClick(ROUTES.MAP)}
-          onMouseDown={handleNavMouseDown(ROUTES.MAP)}
         >
           Map
-        </button>
+        </a>
         <button
           className="header-link header-auth"
           type="button"

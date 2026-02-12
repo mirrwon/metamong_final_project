@@ -60,13 +60,11 @@
 
 .map-refresh {
   margin: 0;
-  border-radius: 999px;
-  padding: 0 16px;
+  padding: 0 14px;
   height: 32px;
   line-height: 32px;
+  border-radius: 6px;
   font-size: 12px;
-  background: #2f3e46;
-  color: #fff;
 }
 
 .map-canvas-wrap {

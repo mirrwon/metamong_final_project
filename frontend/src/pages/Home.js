@@ -33,11 +33,10 @@ const Home = () => {
             MORE
           </button>
         </div>
+
         <div className="catalog-divider" />
         <PlantPreview />
-        <h2 className="typo-title">Plant Catalog</h2>
-        <div className="ui-line" />
-        <PlantPreview autoplayDelay={sharedAutoplayDelay} />
+        
       </section>
 
       <section className="home-section">

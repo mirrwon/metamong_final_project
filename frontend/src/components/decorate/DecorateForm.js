@@ -7,11 +7,15 @@ const DecorateForm = ({
     dday,
     fixedTags,
     customTags,
+    emojiStickers,
+    emojiOptions,
     onChangeNickname,
     onChangeDday,
     onToggleFixedTag,
     onAddCustomTag,
     onRemoveCustomTag,
+    onAddEmojiSticker,
+    onRemoveEmojiSticker,
     onGenerate,
     status,
 }) => {
@@ -76,7 +80,7 @@ const DecorateForm = ({
                         onKeyDown={handleTagKeyDown}
                         placeholder="예: 거실에서 (Enter)"
                     />
-                    <button type="button" className="tag-add__btn" onClick={submitTag}>
+                    <button type="button" className="ui-btn ui-btn-ghost ui-btn--compact tag-add__btn" onClick={submitTag}>
                         추가
                     </button>
                 </div>
@@ -100,10 +104,46 @@ const DecorateForm = ({
                 )}
             </div>
 
+            <div className="decorate-panel__section">
+                <div className="decorate-panel__label">스티커</div>
+                <div className="sticker-grid">
+                    {(emojiOptions || []).map((emoji) => {
+                        const isOn = (emojiStickers || []).includes(emoji);
+                        return (
+                            <button
+                                key={emoji}
+                                type="button"
+                                className={`sticker-chip ${isOn ? "is-on" : ""}`}
+                                onClick={() => onAddEmojiSticker && onAddEmojiSticker(emoji)}
+                                title={isOn ? "클릭해서 추가" : "클릭해서 추가"}
+                            >
+                                <span className="sticker-chip__emoji">{emoji}</span>
+                            </button>
+                        );
+                    })}
+                </div>
+                {emojiStickers && emojiStickers.length ? (
+                    <div className="sticker-selected">
+                        {emojiStickers.map((emoji, idx) => (
+                            <button
+                                key={`${emoji}-${idx}`}
+                                type="button"
+                                className="sticker-selected__chip"
+                                onClick={() => onRemoveEmojiSticker && onRemoveEmojiSticker(emoji)}
+                                title="클릭해서 삭제"
+                            >
+                                {emoji}
+                            </button>
+                        ))}
+                    </div>
+                ) : (
+                    <div className="decorate-panel__hint">선택된 스티커가 없습니다.</div>
+                )}
+            </div>
+
             <div className="decorate-panel__actions">
                 <button
-                    className="timelog-actionBtn"
-                    style={{ width: '100%', height: '50px', fontSize: '16px' }}
+                    className="ui-btn ui-btn-primary decorate-generate"
                     onClick={onGenerate}
                     disabled={isGenerating || !baseImageUrl}
                 >

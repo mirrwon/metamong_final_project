@@ -7,7 +7,7 @@ const Layout = ({ user, children, onLogout }) => {
   const { pathname } = useLocation();
 
   // 헤더 숨길 페이지들
-  const hideHeaderPaths = [ROUTES.SPLASH, ROUTES.LOGIN, ROUTES.REGISTER];
+  const hideHeaderPaths = [ROUTES.LOGIN, ROUTES.REGISTER];
   const shouldHideHeader = hideHeaderPaths.includes(pathname);
 
   return (
