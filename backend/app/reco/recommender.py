@@ -89,7 +89,7 @@ def recommend_for_analysis(data: Dict[str, Any], user_filters: Optional[Dict[str
 
     # 1) 식물 DB 로드 - 절대 경로로 강제 지정
     # 유저님의 로그 경로: D:\study\07.FinalProject\01.project\rev_10\backend\plantsData\plants_sample.json
-    db_path = r"D:\study\07.FinalProject\01.project\rev_10\backend\plantsData\plants_sample.json"
+    db_path = r"D:\study\07.FinalProject\01.project\rev_12\backend\plantsData\plants_sample.json"
 
     raw_data = _load_plants_from_json(db_path)
     if isinstance(raw_data, dict):
@@ -100,11 +100,11 @@ def recommend_for_analysis(data: Dict[str, Any], user_filters: Optional[Dict[str
         plants_list = []
 
     # DB 로드 실패 시 테스트 데이터 (보험)
-    if not plants_list:
-        plants_list = [
-            {"name": "몬스테라(더미)", "pet_safe": True, "light_req": "high"},
-            {"name": "테이블야자(더미)", "pet_safe": True, "light_req": "medium"}
-        ]
+    # if not plants_list:
+    #     plants_list = [
+    #         {"name": "몬스테라(더미)", "pet_safe": True, "light_req": "high"},
+    #         {"name": "테이블야자(더미)", "pet_safe": True, "light_req": "medium"}
+    #     ]
 
     # 2) 날씨 보정 (밤 시간대에도 0이 되지 않게 보정됨)
     weather_res = data.get("solar")

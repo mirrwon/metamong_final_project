@@ -202,7 +202,7 @@ def _get_scan_limit() -> int:
 
 def _normalize_plant_id(key: str, prefix: str) -> str:
     if prefix and key.startswith(prefix):
-        return key[len(prefix) :]
+        return key[len(prefix):]
     if key.startswith("plant:"):
         return key.split("plant:", 1)[1]
     return key
@@ -316,7 +316,7 @@ def _s3_extract_key(value: str, base_url: str, prefix_path: str) -> str | None:
     key = None
     if val.lower().startswith(("http://", "https://")):
         if base_url and val.startswith(base_url):
-            remainder = val[len(base_url) :].lstrip("/")
+            remainder = val[len(base_url):].lstrip("/")
             if base_url.lower().endswith(prefix_path.lower()):
                 key = f"{prefix_path}/{remainder}" if remainder else prefix_path
             else:
@@ -329,7 +329,7 @@ def _s3_extract_key(value: str, base_url: str, prefix_path: str) -> str | None:
     else:
         key = val
         if base_url and val.startswith(base_url):
-            key = val[len(base_url) :].lstrip("/")
+            key = val[len(base_url):].lstrip("/")
 
     if not key:
         return None
@@ -354,70 +354,124 @@ def _build_filenames_for_index(plant_id: str, idx: int) -> list[str]:
     return [f"plant_{plant_id}_{idx}{ext}" for ext in _get_plant_image_ext_list()]
 
 
-def _resolve_plant_image(raw: dict, key: str, prefix: str) -> str | None:
-    """
-    raw에서 이미지 관련 필드를 읽어 최종 이미지 경로/URL을 반환.
-    - raw["image"] 또는 raw.get("이미지") 우선 사용
-      - presigned 옵션이면 presigned URL로 변환
-      - 이미 http(s) URL이면 그대로 반환
-      - 그 외는 base_url/prefix_path 규칙으로 URL 구성
-    - 없으면 plant_id 기반 규칙 파일명(plant_{id}_1.jpg)으로 생성
-      - presigned 옵션이면 presigned URL 반환
-      - 아니면 base_url/prefix_path로 URL 구성
-    """
+def _build_s3_candidate_keys(prefix_path: str, candidates: list[str]) -> list[str]:
+    return [f"{prefix_path}/{name}" for name in candidates]
+
+
+def _presign_candidate_keys(candidate_keys: list[str], include_all_fallbacks: bool = False) -> list[str]:
+    if not candidate_keys:
+        return []
+    # Performance-first: skip S3 existence probes and sign directly.
+    # Frontend already falls back across candidate URLs on image load errors.
+    if include_all_fallbacks:
+        signed = [get_presigned_url(key_path) for key_path in candidate_keys]
+        return [url for url in signed if url]
+
+    fallback = get_presigned_url(candidate_keys[0])
+    return [fallback] if fallback else []
+
+
+def _resolve_explicit_image_value(image: str, base_url: str, use_presigned: bool, prefix_path: str) -> str:
+    if use_presigned:
+        return _s3_presign_value(image, base_url, prefix_path)
+    if image.lower().startswith(("http://", "https://")):
+        return image
+    if not base_url:
+        return image
+
+    prefix_token = f"{prefix_path.lower()}/"
+    if image.lower().startswith(prefix_token) and base_url.lower().endswith(prefix_path.lower()):
+        image = image[len(prefix_path) + 1:]
+    image = image.lstrip("/")
+    return f"{base_url}/{image}"
+
+
+def _resolve_plant_image(raw: dict, key: str, prefix: str, attrs: dict | None = None):
     image = raw.get("image") or raw.get("이미지")
     base_url, use_presigned, prefix_path = _get_s3_settings()
 
-    def _finalize(value: str) -> str | None:
-        if not isinstance(value, str):
-            return None
-        value = value.strip()
-        if not value:
-            return None
+    if isinstance(image, str) and image.strip():
+        image = image.strip()
+        return _resolve_explicit_image_value(image, base_url, use_presigned, prefix_path)
 
-        # presigned 모드면 키/URL 무엇이든 presigned 시도
-        if use_presigned:
-            return _s3_presign_value(value, base_url, prefix_path)
-
-        # 이미 URL이면 그대로
-        if value.lower().startswith(("http://", "https://")):
-            return value
-
-        # base_url 없으면 raw 값을 그대로 반환(상대경로/키일 수 있음)
-        if not base_url:
-            return value
-
-        # prefix_path 중복 방지
-        prefix_token = f"{prefix_path.lower()}/"
-        if value.lower().startswith(prefix_token) and base_url.lower().endswith(prefix_path.lower()):
-            value = value[len(prefix_path) + 1 :]
-
-        value = value.lstrip("/")
-        return f"{base_url}/{value}"
-
-    # 1) raw에 image가 있으면 우선 처리
-    resolved = _finalize(image) if image else None
-    if resolved:
-        return resolved
-
-    # 2) 없으면 규칙 기반으로 생성 (대표는 1번 이미지)
-    plant_id = _normalize_plant_id(_decode_redis_key(key), prefix)
-    if not plant_id:
-        # fallback: raw 내부 id라도 시도
-        plant_id = str(raw.get("plant_id") or raw.get("id") or "").strip()
-    if not plant_id:
+    if not base_url and not use_presigned:
         return None
 
-    filename = _build_filenames_for_index(plant_id, 1)[0]  # plant_{id}_1.jpg
-
+    plant_id = _normalize_plant_id(key, prefix)
+    if not plant_id:
+        return None
+    candidates = _build_filenames_for_index(plant_id, 1)
     if use_presigned:
-        return get_presigned_url(f"{prefix_path}/{filename}")
-
-    if not base_url:
-        return filename
-
+        key_candidates = _build_s3_candidate_keys(prefix_path, candidates)
+        urls = _presign_candidate_keys(key_candidates, include_all_fallbacks=False)
+        return urls[0] if urls else None
+    filename = candidates[0]
     return f"{base_url}/{filename}"
 
+
+def _resolve_images_from_payload(images_raw, base_url: str, use_presigned: bool, prefix_path: str) -> list[str]:
+    if not isinstance(images_raw, list):
+        return []
+
+    resolved = []
+    for item in images_raw:
+        if not isinstance(item, str) or not item.strip():
+            continue
+        item = item.strip()
+        resolved.append(_resolve_explicit_image_value(item, base_url, use_presigned, prefix_path))
+    return resolved
+
+
+def _resolve_plant_images(raw: dict, key: str, prefix: str, attrs: dict | None = None) -> list:
+    base_url, use_presigned, prefix_path = _get_s3_settings()
+    if not base_url and not use_presigned:
+        return []
+
+    if attrs is None:
+        attrs = _build_attrs(raw)
+
+    image_count = attrs.get("photo_count")
+    try:
+        image_count = int(image_count)
+        if image_count < 1:
+            image_count = None
+    except Exception:
+        image_count = None
+
+    images_raw = raw.get("images") or raw.get("이미지들")
+    resolved_from_payload = _resolve_images_from_payload(images_raw, base_url, use_presigned, prefix_path)
+    if resolved_from_payload:
+        return resolved_from_payload
+
+    max_images_raw = os.getenv("S3_PLANT_IMAGE_MAX", "").strip()
+    try:
+        max_images = max(1, min(int(max_images_raw), 12))
+    except Exception:
+        max_images = 4
+    if image_count:
+        max_images = min(max_images, image_count)
+
+    plant_id = _normalize_plant_id(key, prefix)
+    if not plant_id:
+        return []
+
+    if use_presigned:
+        signed = []
+        for idx in range(1, max_images + 1):
+            candidates = _build_filenames_for_index(plant_id, idx)
+            key_candidates = _build_s3_candidate_keys(prefix_path, candidates)
+            signed.extend(_presign_candidate_keys(key_candidates, include_all_fallbacks=True))
+        deduped = []
+        seen = set()
+        for url in signed:
+            if url in seen:
+                continue
+            seen.add(url)
+            deduped.append(url)
+        return deduped
+    ext = _get_plant_image_ext_list()[0]
+    filenames = [f"plant_{plant_id}_{idx}{ext}" for idx in range(1, max_images + 1)]
+    return [f"{base_url}/{name}" for name in filenames]
 
 
 def _normalize_plant_payload(raw, key: str, prefix: str) -> dict:
@@ -498,8 +552,8 @@ def _normalize_plant_payload(raw, key: str, prefix: str) -> dict:
     placement = attrs.get("placement")
     placement = _join_list(placement)
 
-    image = _resolve_plant_image(raw, key, prefix)
-    images = _resolve_plant_images(raw, key, prefix)
+    image = _resolve_plant_image(raw, key, prefix, attrs=attrs)
+    images = _resolve_plant_images(raw, key, prefix, attrs=attrs)
     if image:
         if image not in images:
             images = [image, *images]
@@ -529,6 +583,7 @@ def _normalize_plant_payload(raw, key: str, prefix: str) -> dict:
         "images": images,
         "attrs": attrs,
     }
+
 
 @app.get("/health")
 def health():
@@ -633,7 +688,7 @@ def list_plants(cursor: int = 0, limit: int = 24, offset: int | None = None):
 
         keys = _get_cached_keys(r, prefix, cache_ttl)
         total = len(keys)
-        slice_keys = keys[offset_val : offset_val + limit_val]
+        slice_keys = keys[offset_val: offset_val + limit_val]
         items = []
         if slice_keys:
             raw_items = _fetch_redis_json_items(r, slice_keys, json_path)
@@ -680,7 +735,8 @@ def list_plants(cursor: int = 0, limit: int = 24, offset: int | None = None):
     if cache_ttl:
         _plants_cache[cache_key] = {"ts": time.time(), "payload": payload}
     return payload
-    
+
+
 @app.get("/debug/mysql")
 def mysql_debug():
     conn = get_mysql()
@@ -694,10 +750,10 @@ def mysql_debug():
         return {"ok": False, "reason": "ping_failed"}
     return {"ok": True}
 
+
 @app.get("/debug/s3")
 def s3_debug():
     ok = ping_s3()
     if not ok:
         return {"ok": False, "error": get_s3_error()}
     return {"ok": True}
-
