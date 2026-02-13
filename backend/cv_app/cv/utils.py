@@ -2,7 +2,7 @@ import cv2
 import numpy as np
 from typing import Any
 
-from app.cv.cv_config import DEPTH_OCC_THRESHOLD
+from cv_app.cv.cv_config import DEPTH_OCC_THRESHOLD
 
 # =========================
 # UTILS (RESTORED)

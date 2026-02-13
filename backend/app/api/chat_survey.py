@@ -8,8 +8,8 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, UploadFile, File, Form, Request, HTTPException, Depends
 
 from app.config import BASE_DIR, UPLOAD_DIR, RESULT_DIR
-from app.cv.pipeline import run_pipeline
-from app.llm.image_edit import composite_plant_on_original
+from cv_app.cv.pipeline import run_pipeline
+from cv_app.llm.image_edit import composite_plant_on_original
 
 from .chat_session import _get_or_create_sid
 from .chat_storage import get_user_ctx, set_user_ctx

@@ -2,14 +2,14 @@ import os
 import json
 import time
 import glob
-import app.cv.pipeline as p
+import cv_app.cv.pipeline as p
 
 from datetime import datetime
 from typing import Any, Dict, Optional, Tuple,  List
 
 from pathlib import Path
 
-from app.cv.pipeline import list_71765_scenes
+from cv_app.cv.pipeline import list_71765_scenes
 from app.config import RESULT_DIR
 
 from fastapi import Request

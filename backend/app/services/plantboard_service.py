@@ -9,7 +9,7 @@ from typing import List, Optional, Dict, Any
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
-from app.llm.gemini.gemini_image_edit import gemini_edit_image
+from cv_app.llm.gemini.gemini_image_edit import gemini_edit_image
 from app.config import PLANTS_DIR
 
 # 충돌 없는 독립 저장 경로
