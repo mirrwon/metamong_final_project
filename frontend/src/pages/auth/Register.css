@@ -32,6 +32,21 @@
   text-align: left;
 }
 
+.register-field-label {
+  display: block;
+  margin: 0 0 6px;
+  font-size: var(--fs-1);
+  font-weight: 600;
+  color: var(--c-text);
+}
+
+.register-form .ui-input {
+  border: 1px solid rgba(43, 61, 26, 0.2);
+  background: #fff;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  border-radius: 6px;
+}
+
 .address-row {
   display: flex;
   gap: var(--s-2);

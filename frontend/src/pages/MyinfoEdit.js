@@ -192,7 +192,11 @@ const MyinfoEdit = ({ user, setUser }) => {
 
           {/* ================= 기본 정보 ================= */}
           <section className="myinfoedit-section">
+            <label className="myinfoedit-label" htmlFor="myinfo-username">
+              아이디
+            </label>
             <input
+              id="myinfo-username"
               name="username"
               type="text"
               value={myinfo.username}
@@ -201,7 +205,11 @@ const MyinfoEdit = ({ user, setUser }) => {
             />
             <p className="myinfoedit-help">아이디는 수정할 수 없어요.</p>
 
+            <label className="myinfoedit-label" htmlFor="myinfo-password">
+              비밀번호
+            </label>
             <input
+              id="myinfo-password"
               name="password"
               type="password"
               value={myinfo.password}
@@ -217,7 +225,11 @@ const MyinfoEdit = ({ user, setUser }) => {
               </p>
             )}
 
+            <label className="myinfoedit-label" htmlFor="myinfo-name">
+              이름
+            </label>
             <input
+              id="myinfo-name"
               name="name"
               type="text"
               value={myinfo.name}
@@ -226,7 +238,11 @@ const MyinfoEdit = ({ user, setUser }) => {
               className="ui-input"
             />
 
+            <label className="myinfoedit-label" htmlFor="myinfo-gender">
+              성별
+            </label>
             <select
+              id="myinfo-gender"
               name="gender"
               value={myinfo.gender}
               onChange={handleChangeMyinfo}
@@ -236,7 +252,11 @@ const MyinfoEdit = ({ user, setUser }) => {
               <option value="female">여성</option>
             </select>
 
+            <label className="myinfoedit-label" htmlFor="myinfo-birthdate">
+              생년월일
+            </label>
             <input
+              id="myinfo-birthdate"
               name="birthDate"
               type="date"
               value={myinfo.birthDate}
@@ -246,7 +266,11 @@ const MyinfoEdit = ({ user, setUser }) => {
               className="ui-input"
             />
 
+            <label className="myinfoedit-label" htmlFor="myinfo-phone">
+              전화번호
+            </label>
             <input
+              id="myinfo-phone"
               name="phone"
               type="tel"
               value={myinfo.phone}
@@ -257,7 +281,11 @@ const MyinfoEdit = ({ user, setUser }) => {
               className="ui-input"
             />
 
+            <label className="myinfoedit-label" htmlFor="myinfo-email">
+              이메일
+            </label>
             <input
+              id="myinfo-email"
               name="email"
               type="email"
               value={myinfo.email}
@@ -266,8 +294,12 @@ const MyinfoEdit = ({ user, setUser }) => {
               className="ui-input"
             />
 
+            <label className="myinfoedit-label" htmlFor="myinfo-zipcode">
+              우편번호
+            </label>
             <div className="address-row">
               <input
+                id="myinfo-zipcode"
                 name="zipcode"
                 type="text"
                 value={myinfo.zipcode}
@@ -285,7 +317,11 @@ const MyinfoEdit = ({ user, setUser }) => {
               </button>
             </div>
 
+            <label className="myinfoedit-label" htmlFor="myinfo-address1">
+              주소
+            </label>
             <input
+              id="myinfo-address1"
               name="address1"
               type="text"
               value={myinfo.address1}
@@ -294,7 +330,11 @@ const MyinfoEdit = ({ user, setUser }) => {
               className="ui-input"
             />
 
+            <label className="myinfoedit-label" htmlFor="myinfo-address2">
+              상세 주소
+            </label>
             <input
+              id="myinfo-address2"
               name="address2"
               type="text"
               value={myinfo.address2}

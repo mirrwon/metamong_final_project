@@ -18,7 +18,7 @@
   margin: 0 auto var(--s-5);
 }
 
-/* ✅ 폼 래퍼 */
+/* 폼 래퍼 */
 .myinfoedit-form {
   width: 100%;
 }
@@ -27,6 +27,17 @@
 .myinfoedit-section {
   text-align: center;
   margin-bottom: var(--s-6);
+}
+
+.myinfoedit-label {
+  display: block;
+  width: 100%;
+  max-width: 500px;
+  margin: 0 auto 6px;
+  font-size: var(--fs-1);
+  font-weight: 600;
+  color: var(--c-text);
+  text-align: left;
 }
 
 /* =========================
@@ -95,6 +106,10 @@
   max-width: 500px; /* Myinfo.css 텍스트 폭 느낌 */
   margin: 0 auto var(--s-3);
   display: block;
+  border: 1px solid rgba(43, 61, 26, 0.2);
+  background: #fff;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  border-radius: 6px;
 }
 
 .myinfoedit-readonly {
@@ -188,7 +203,7 @@
   .myinfoedit-help,
   .address-row,
   .error-message {
-    max-width: 500x;
+    max-width: 500px;
   }
 }
 
