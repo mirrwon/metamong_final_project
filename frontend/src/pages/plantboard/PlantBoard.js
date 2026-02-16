@@ -6,11 +6,11 @@ import "./PlantBoard.css";
 import DecorateContainer from "../../components/decorate/DecorateContainer";
 import DiaryMiniPreview from "../../components/diary/DiaryMiniPreview";
 import { fetchWithSession } from "../../services/session";
-import icon1 from "../../assets/tamagotchi/plant_icons/plant_icon_1.png";
-import icon2 from "../../assets/tamagotchi/plant_icons/plant_icon_2.png";
-import icon3 from "../../assets/tamagotchi/plant_icons/plant_icon_3.png";
-import icon4 from "../../assets/tamagotchi/plant_icons/plant_icon_4.png";
-import icon5 from "../../assets/tamagotchi/plant_icons/plant_icon_5.png";
+import iconTt from "../../assets/tamagotchi/plant_icons/튼튼이.png";
+import iconStar from "../../assets/tamagotchi/plant_icons/별꽃이.png";
+import iconLong from "../../assets/tamagotchi/plant_icons/쭉쭉이.png";
+import iconFluffy from "../../assets/tamagotchi/plant_icons/복실이.png";
+import iconVine from "../../assets/tamagotchi/plant_icons/꼬불이.png";
 import emoteAnnoyed from "../../assets/tamagotchi/emotes/EMOTE_ANNOYED.png";
 import emoteCalm from "../../assets/tamagotchi/emotes/EMOTE_CALM.png";
 import emoteHappy from "../../assets/tamagotchi/emotes/EMOTE_HAPPY.png";
@@ -129,81 +129,75 @@ const PlantBoard = () => {
     };
   }, [activeView, selectedPlant]);
 
-  const tamaSamples = useMemo(
-    () => [
-      {
-        sample_id: "plant:019|summer|MIST_DONE_OK|sample",
-        output: {
-          text: "분무 덕분에 공기가 촉촉해졌어.",
-          emote: "CALM",
-          animation: "nod",
-          tags: ["need:HUMIDITY", "bucket:OK", "MIST_DONE_OK"],
-        },
-      },
-      {
-        sample_id: "plant:011|spring|DRAFT_STRESS|sample",
-        output: {
-          text: "바람이 강하면 잎이 스트레스를 받아.",
-          emote: "WORRIED",
-          animation: "shake",
-          tags: ["DRAFT_STRESS", "bucket:WARN", "need:DRAFT"],
-        },
-      },
-      {
-        sample_id: "plant:019|winter|MIST_DONE_OK|sample",
-        output: {
-          text: "요즘은 습도를 조금만 올려줘.",
-          emote: "CALM",
-          animation: "nod",
-          tags: ["need:HUMIDITY", "bucket:OK", "MIST_DONE_OK"],
-        },
-      },
-      {
-        sample_id: "plant:019|summer|MIST_DONE_OK+REPOT_DUE|sample",
-        output: {
-          text: "분무는 좋지만 통풍도 필요해.",
-          emote: "ANNOYED",
-          animation: "shake",
-          tags: ["bucket:OK", "need:MAINTENANCE", "MIST_DONE_OK", "need:HUMIDITY", "REPOT_DUE"],
-        },
-      },
-      {
-        sample_id: "plant:003|fall|PET_SAFETY_CAUTION+LIGHT_CHECK_REMINDER|sample",
-        output: {
-          text: "반려동물이 있다면 안전을 먼저 확인해줘.",
-          emote: "WORRIED",
-          animation: "nod",
-          tags: ["need:SAFETY", "bucket:WARN", "PET_SAFETY_CAUTION", "need:LIGHT", "LIGHT_CHECK_REMINDER"],
-        },
-      },
-    ],
-    []
-  );
-
   useEffect(() => {
-    if (!selectedPlant) {
+    if (!selectedPlant || activeView !== "tamagotchi") {
       setTamaState(null);
       return;
     }
-    const idx =
-      Math.abs(
-        String(selectedPlant.id || "")
-          .split("")
-          .reduce((a, c) => a + c.charCodeAt(0), 0)
-      ) % tamaSamples.length;
-    setTamaState(tamaSamples[idx].output);
-  }, [selectedPlant, tamaSamples]);
+
+    let mounted = true;
+    const run = async () => {
+      try {
+        const res = await fetchWithSession("/api/tamagotchi/state", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ plant_id: selectedPlant.id }),
+        });
+        const data = await res.json();
+        if (!mounted) return;
+        if (data?.ok && data?.state) {
+          setTamaState(data.state);
+        } else if (data?.ok && data?.output) {
+          setTamaState(data.output);
+        } else {
+          setTamaState(null);
+        }
+      } catch (e) {
+        if (mounted) setTamaState(null);
+      }
+    };
+    run();
+
+    return () => {
+      mounted = false;
+    };
+  }, [selectedPlant, activeView]);
 
   const getPlantIcon = (plant) => {
     if (!plant) return null;
+    if (plant.characterImageUrl) return plant.characterImageUrl;
+    const raw =
+      plant.characterName ||
+      plant.character ||
+      plant.characterId ||
+      plant.character_key ||
+      "";
+    const key = String(raw).toLowerCase();
     const map = {
-      p_1: icon1,
-      p_2: icon2,
-      p_3: icon3,
-      p_4: icon4,
-      p_5: icon5,
+      // New asset names (Korean character names)
+      "튼튼이": iconTt,
+      "별꽃이": iconStar,
+      "쭉쭉이": iconLong,
+      "복실이": iconFluffy,
+      "꼬불이": iconVine,
+      // Legacy keys (keep backward compatibility)
+      plant_icon_1: iconTt,
+      icon1: iconTt,
+      "1": iconTt,
+      plant_icon_2: iconStar,
+      icon2: iconStar,
+      "2": iconStar,
+      plant_icon_3: iconLong,
+      icon3: iconLong,
+      "3": iconLong,
+      plant_icon_4: iconFluffy,
+      icon4: iconFluffy,
+      "4": iconFluffy,
+      plant_icon_5: iconVine,
+      icon5: iconVine,
+      "5": iconVine,
     };
-    return map[plant.id] || icon1;
+    return map[key] || null;
   };
 
   const getEmoteOverlay = (emote) => {

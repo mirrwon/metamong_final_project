@@ -25,6 +25,7 @@ from app.api.diary_routes import router as diary_router
 from app.api.login_routes import router as login_router
 from app.api.plantboard_routes import router as plantboard_router
 from app.api.map_routes import router as map_router
+from app.api.tamagotchi_routes import router as tamagotchi_router
 
 # ...
 AUTH_UPLOAD_DIR = os.path.normpath(os.path.join(BASE_DIR, "app", "api", "uploads"))
@@ -64,6 +65,7 @@ app.include_router(diary_router)
 app.include_router(login_router)
 app.include_router(plantboard_router)
 app.include_router(map_router)
+app.include_router(tamagotchi_router)
 
 _plants_cache = {}
 _plants_key_cache = {}

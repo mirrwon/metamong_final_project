@@ -4,6 +4,7 @@ import { fetchWithSession } from "../../services/session";
 import "./Chat.css";
 
 const API_BASE = "http://localhost:8000/api/chat";
+const API_ROOT = API_BASE.replace(/\/api\/chat$/, "");
 const IMAGE_API = `${API_BASE}/image`;
 const RESULTS_API = `${API_BASE}/results`;
 const SCENES_API = `${API_BASE.replace(/\/api\/chat$/, "")}/api/chat/scenes`;
@@ -385,6 +386,16 @@ export default function Chat() {
       if (!response.ok) throw new Error("failed");
 
       const data = await response.json();
+
+      const savedImage =
+        data?.saved_image ||
+        data?.data?.saved_image ||
+        data?.payload?.saved_image ||
+        null;
+      if (savedImage) {
+        sessionStorage.setItem("room_image_url", `${API_ROOT}/uploads/${savedImage}`);
+        sessionStorage.setItem("room_image_filename", savedImage);
+      }
 
       // ✅ (합침) cv_result 파싱/정규화
       const cvRaw =

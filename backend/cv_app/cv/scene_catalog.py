@@ -4,8 +4,8 @@ import random
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from app.cv.pipeline import list_71765_scenes
-from app.cv.scene_room_infer import load_scene_json, infer_room_type_from_scene_json
+from cv_app.cv.pipeline import list_71765_scenes
+from cv_app.cv.scene_room_infer import load_scene_json, infer_room_type_from_scene_json
 
 # 네 실제 경로로 고정
 # DEFAULT_SCENE_ROOT = Path(r"C:\Users\201\Desktop\71765_json\71765_json")

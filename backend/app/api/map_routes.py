@@ -69,6 +69,13 @@ def _request_kakao(url: str, params: Dict[str, Any]) -> Dict[str, Any]:
 
     if not response.ok:
         detail = response.text or "Kakao API error"
+        # Do not leak upstream auth status as our session/auth failure.
+        # Frontend treats 401 as local session expiry.
+        if response.status_code in (401, 403):
+            raise HTTPException(
+                status_code=502,
+                detail=f"Kakao API auth failed ({response.status_code})",
+            )
         raise HTTPException(status_code=response.status_code, detail=detail)
 
     return response.json()

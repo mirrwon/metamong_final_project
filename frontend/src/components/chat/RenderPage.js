@@ -9,6 +9,8 @@ export default function RenderPage() {
   const [loading, setLoading] = useState(true);
   const [spotImages, setSpotImages] = useState([]); // [{spot_index, url}]
   const [error, setError] = useState(null);
+  const [savingSpot, setSavingSpot] = useState(null);
+  const [saveMessage, setSaveMessage] = useState("");
 
   useEffect(() => {
     let mounted = true;
@@ -156,27 +158,156 @@ export default function RenderPage() {
     };
   }, []);
 
+  const buildNow = () => {
+    const now = new Date();
+    const yyyy = now.getFullYear();
+    const mm = String(now.getMonth() + 1).padStart(2, "0");
+    const dd = String(now.getDate()).padStart(2, "0");
+    const hh = String(now.getHours()).padStart(2, "0");
+    const min = String(now.getMinutes()).padStart(2, "0");
+    return { date: `${yyyy}-${mm}-${dd}`, time: `${hh}:${min}` };
+  };
+
+  const readSelectedPlant = () => {
+    const plantRaw = sessionStorage.getItem("selected_plant");
+    if (!plantRaw) return null;
+    try {
+      return JSON.parse(plantRaw);
+    } catch {
+      return null;
+    }
+  };
+
+  const ensurePlant = async (payload, roomImageUrl) => {
+    const listRes = await fetchWithSession("/api/plantboard/plants");
+    const listData = await listRes.json();
+    const list = Array.isArray(listData?.items) ? listData.items : [];
+
+    const existing =
+      list.find((p) => p.sourcePlantId === payload.id) ||
+      list.find((p) => p.name === payload.name) ||
+      null;
+    if (existing) return existing;
+
+    const plantData = {
+      name: payload.name,
+      sourcePlantId: payload.id,
+      sourcePlantName: payload.name,
+      image: payload.image,
+      roomImageUrl: roomImageUrl || null,
+      characterName: payload.characterName || null,
+      personality: payload.personality || null,
+    };
+
+    const res = await fetchWithSession("/api/plantboard/plants", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ plant: plantData }),
+    });
+    const data = await res.json();
+    if (!data.ok) throw new Error("plant_create_failed");
+    return data.item;
+  };
+
+  const ensureRoomPixel = async (roomImageUrl, plantId) => {
+    if (!roomImageUrl || !plantId) return null;
+    try {
+      const res = await fetchWithSession("/api/plantboard/room_pixel", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ imageUrl: roomImageUrl, plantId }),
+      });
+      const data = await res.json();
+      if (data.ok && data.plant) return data.plant;
+      if (data.ok && data.url) return { id: plantId, roomImagePixelUrl: data.url };
+    } catch (e) {
+      console.error("Failed to build room pixel:", e);
+    }
+    return null;
+  };
+
+  const handleSave = async (spot) => {
+    if (!spot?.url) return;
+    setSavingSpot(spot.url);
+    setSaveMessage("");
+    try {
+      const selectedPlant = readSelectedPlant();
+      if (!selectedPlant) throw new Error("missing selected_plant");
+
+      const roomImageUrl = sessionStorage.getItem("room_image_url") || "";
+      const plant = await ensurePlant(selectedPlant, roomImageUrl);
+      const pixelResult = await ensureRoomPixel(roomImageUrl, plant?.id);
+      const mergedPlant = pixelResult?.id ? { ...plant, ...pixelResult } : plant;
+
+      const now = buildNow();
+      const log = {
+        type: "photo",
+        date: now.date,
+        time: now.time,
+        title: "챗봇 결과 저장",
+        detail: "AI 렌더 결과",
+        imageUrl: spot.url,
+        plantId: mergedPlant?.id || plant?.id,
+        plantName: mergedPlant?.name || plant?.name || selectedPlant.name,
+        plantImageUrl: mergedPlant?.image || selectedPlant.image || null,
+        plantCharacterName: mergedPlant?.characterName || selectedPlant.characterName || null,
+        plantPersonality: mergedPlant?.personality || selectedPlant.personality || null,
+        roomImageUrl: roomImageUrl || null,
+        roomImagePixelUrl: mergedPlant?.roomImagePixelUrl || null,
+        sourcePlantId: selectedPlant.id || null,
+      };
+
+      const res = await fetchWithSession("/api/plantboard/logs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ log }),
+      });
+      const data = await res.json();
+      if (!data.ok) throw new Error("log_create_failed");
+
+      if (mergedPlant?.id) {
+        localStorage.setItem("plantboard_selected_plant", JSON.stringify(mergedPlant));
+        localStorage.setItem("plantboard_active_view", "tamagotchi");
+      }
+
+      setSaveMessage("저장 완료. 타임로그에 추가했어요.");
+    } catch (e) {
+      setSaveMessage("저장 실패. 다시 시도해주세요.");
+    } finally {
+      setSavingSpot(null);
+    }
+  };
+
   return (
     <div className="render-page">
-      <h2>AI 추천 스팟 분석중···</h2>
+      <h2>AI 추천 스팟</h2>
 
-      {loading && <div>이미지 생성 중···</div>}
+      {loading && <div>이미지 생성 중...</div>}
       {error && <div style={{ color: "red" }}>{error}</div>}
 
       {!loading && !error && (
         <div className="spot-grid">
           {spotImages.map((it) => (
             <div className="spot-card" key={it.spot_index}>
-              <div className="spot-title">Spot #{it.spot_index + 1}</div>
               <img
                 src={it.url}
                 alt={`spot-${it.spot_index}`}
                 style={{ width: "100%", borderRadius: 12 }}
               />
+              <button
+                type="button"
+                className="ui-btn ui-btn-primary ui-btn--compact"
+                style={{ marginTop: 12 }}
+                disabled={savingSpot === it.url}
+                onClick={() => handleSave(it)}
+              >
+                {savingSpot === it.url ? "저장 중..." : "타임로그에 저장"}
+              </button>
             </div>
           ))}
         </div>
       )}
+      {saveMessage && <div style={{ marginTop: 12 }}>{saveMessage}</div>}
     </div>
   );
 }

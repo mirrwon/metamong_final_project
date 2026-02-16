@@ -5,6 +5,21 @@ import "./Decorate.css";
 
 // 템플릿 이미지가 없을 경우를 대비하여 null로 설정 (파일이 생기면 assets에 넣고 import 해주세요)
 const TEMPLATE_BG = null;
+const TEMPLATE_PRESETS = [
+    { id: "white", name: "기본", color: "#ffffff" },
+    { id: "peach", name: "피치", color: "#ffe5d9" },
+    { id: "lemon", name: "레몬", color: "#fff4cc" },
+    { id: "mint", name: "민트", color: "#dff7f1" },
+    { id: "sky", name: "스카이", color: "#e3f1ff" },
+    { id: "lav", name: "라벤더", color: "#efe4ff" },
+];
+const EMOJI_STICKERS = [
+    "🌿", "🌸", "🌼", "🍀", "🪴", "☀️", "✨", "💧",
+    "🎀", "🌈", "⭐", "🍓", "🍑", "🍋", "🦋", "🐝",
+    "🐞", "🐰", "🐣", "🌷", "🌻", "🌙", "🫧", "🍃",
+];
+
+const DECORATE_STORAGE_KEY = "decorate_state_v1";
 
 
 /* dataURL -> Blob */
@@ -114,14 +129,52 @@ const DecorateContainer = ({ item, onSave, onCancel }) => {
     const [dday, setDday] = useState("");
 
     const [customTags, setCustomTags] = useState([]);
-    const allTags = useMemo(() => [...customTags], [customTags]);
+    const [emojiStickers, setEmojiStickers] = useState([]);
+    const allTags = useMemo(() => [...customTags, ...emojiStickers], [customTags, emojiStickers]);
 
     const [stickers, setStickers] = useState([]);
     const [resultImageUrl, setResultImageUrl] = useState("");
     const [status, setStatus] = useState("idle");
+    const [templatePresetId, setTemplatePresetId] = useState(TEMPLATE_PRESETS[0].id);
+
+    const activeTemplate = useMemo(
+        () => TEMPLATE_PRESETS.find((t) => t.id === templatePresetId) || TEMPLATE_PRESETS[0],
+        [templatePresetId]
+    );
 
     const isGenerating = status === "generating";
     const isSaving = status === "saving";
+
+    useEffect(() => {
+        try {
+            const raw = localStorage.getItem(DECORATE_STORAGE_KEY);
+            if (!raw) return;
+            const saved = JSON.parse(raw);
+            if (saved?.baseImageUrl && item?.imageUrl && saved.baseImageUrl !== item.imageUrl) {
+                return;
+            }
+            if (saved?.baseImageUrl) setBaseImageUrl(saved.baseImageUrl);
+            if (saved?.nickname) setNickname(saved.nickname);
+            if (saved?.dday) setDday(saved.dday);
+            if (Array.isArray(saved?.customTags)) setCustomTags(saved.customTags);
+            if (Array.isArray(saved?.emojiStickers)) setEmojiStickers(saved.emojiStickers);
+            if (saved?.templatePresetId) setTemplatePresetId(saved.templatePresetId);
+        } catch {}
+    }, [item?.imageUrl]);
+
+    useEffect(() => {
+        try {
+            const payload = {
+                baseImageUrl,
+                nickname,
+                dday,
+                customTags,
+                emojiStickers,
+                templatePresetId,
+            };
+            localStorage.setItem(DECORATE_STORAGE_KEY, JSON.stringify(payload));
+        } catch {}
+    }, [baseImageUrl, nickname, dday, customTags, emojiStickers, templatePresetId]);
 
     // 태그/이미지 레이아웃 변경 시 스티커 즉시 갱신
     useEffect(() => {
@@ -175,6 +228,20 @@ const DecorateContainer = ({ item, onSave, onCancel }) => {
 
     const removeCustomTag = (tag) => {
         setCustomTags((prev) => prev.filter((t) => t !== tag));
+    };
+
+    const addEmojiSticker = (emoji) => {
+        setEmojiStickers((prev) => [...prev, emoji]);
+    };
+
+    const removeEmojiSticker = (emoji) => {
+        setEmojiStickers((prev) => {
+            const idx = prev.lastIndexOf(emoji);
+            if (idx === -1) return prev;
+            const next = [...prev];
+            next.splice(idx, 1);
+            return next;
+        });
     };
 
     const generateDecorated = async () => {
@@ -238,7 +305,7 @@ const DecorateContainer = ({ item, onSave, onCancel }) => {
             <div className="decorate-center">
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
                     <h1 className="timelog__sectionTitle">사진 꾸미기</h1>
-                    <button className="timelog-addPlantBtn" onClick={onCancel}>취소하고 돌아가기</button>
+                    <button className="ui-btn ui-btn-ghost ui-btn--compact decorate-cancel" onClick={onCancel}>취소하고 돌아가기</button>
                 </div>
 
                 <div className="decorate-layout">
@@ -248,18 +315,49 @@ const DecorateContainer = ({ item, onSave, onCancel }) => {
                         nickname={nickname}
                         dday={dday}
                         customTags={customTags}
+                        emojiStickers={emojiStickers}
+                        emojiOptions={EMOJI_STICKERS}
                         onChangeNickname={setNickname}
                         onChangeDday={setDday}
                         onAddCustomTag={addCustomTag}
                         onRemoveCustomTag={removeCustomTag}
+                        onAddEmojiSticker={addEmojiSticker}
+                        onRemoveEmojiSticker={removeEmojiSticker}
                         onGenerate={generateDecorated}
                         status={status}
                     />
 
                     <div className="decorate-preview">
-                        <div className="template-frame--brand" ref={captureRef}>
-                            <img className="template-bg" src={TEMPLATE_BG} alt="" crossOrigin="anonymous"
-                                onError={(e) => { e.target.style.display = 'none'; e.target.parentNode.style.background = '#fff3e0'; }} />
+                        <div className="template-picker-row">
+                            <div className="template-picker__label">템플릿 배경</div>
+                            <div className="template-picker">
+                                {TEMPLATE_PRESETS.map((tpl) => (
+                                    <button
+                                        key={tpl.id}
+                                        type="button"
+                                        className={`template-swatch ${templatePresetId === tpl.id ? "is-active" : ""}`}
+                                        style={{ background: tpl.color }}
+                                        onClick={() => setTemplatePresetId(tpl.id)}
+                                        title={tpl.name}
+                                        aria-label={tpl.name}
+                                    />
+                                ))}
+                            </div>
+                        </div>
+                        <div
+                            className="template-frame--brand"
+                            ref={captureRef}
+                            style={{ background: activeTemplate?.color || "#ffffff" }}
+                        >
+                            <img
+                                className="template-bg"
+                                src={TEMPLATE_BG}
+                                alt=""
+                                crossOrigin="anonymous"
+                                onError={(e) => {
+                                    e.target.style.display = "none";
+                                }}
+                            />
 
                             <div className="tpl-photoSlot" ref={photoWrapRef}>
                                 {baseImageUrl ? (
@@ -305,10 +403,10 @@ const DecorateContainer = ({ item, onSave, onCancel }) => {
                                 <div className="decorate-result__title">완성된 미리보기</div>
                                 <img className="decorate-result__img" src={resultImageUrl} alt="result" />
                                 <div className="decorate-result__actions">
-                                    <button type="button" className="timelog-actionBtn" onClick={handleDownload}>
+                                    <button type="button" className="ui-btn ui-btn-ghost ui-btn--compact" onClick={handleDownload}>
                                         🖼️ 다운로드
                                     </button>
-                                    <button type="button" className="timelog-actionBtn" onClick={handleFinalSave} disabled={isSaving}>
+                                    <button type="button" className="ui-btn ui-btn-primary ui-btn--compact" onClick={handleFinalSave} disabled={isSaving}>
                                         {isSaving ? "저장 중..." : "💾 타임로그에 저장"}
                                     </button>
                                 </div>
