@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 from io import BytesIO
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from PIL import Image
 
@@ -88,17 +88,17 @@ def gemini_edit_image(
     except Exception as e:
         return {"ok": False, "reason": f"gemini error: {e}"}
 
-
 def gemini_inpaint_with_reference(
     *,
     room_image_path: str,
-    reference_image_path: str,
+    reference_image_path: Optional[str] = None,
     mask_image_path: str,
     prompt: str,
     out_path: str,
     model: str = "gemini-2.5-flash-image",
     api_key_env: str = "GEMINI_API_KEY",
 ) -> Dict[str, Any]:
+
     """
     Gemini 부분 생성(inpaint) + 참조(reference) + 마스크(mask)
     반환: {"ok": bool, "out_path": str?, "reason": str?}
@@ -110,9 +110,15 @@ def gemini_inpaint_with_reference(
     if not api_key:
         return {"ok": False, "reason": f"{api_key_env} missing in environment"}
 
-    for p, name in [(room_image_path, "room"), (reference_image_path, "reference"), (mask_image_path, "mask")]:
+    # room/mask는 필수
+    for p, name in [(room_image_path, "room"), (mask_image_path, "mask")]:
         if not os.path.exists(p):
             return {"ok": False, "reason": f"{name} not found: {p}"}
+
+    # reference는 선택 (있을 때만)
+    if reference_image_path:
+        if not os.path.exists(reference_image_path):
+            return {"ok": False, "reason": f"reference not found: {reference_image_path}"}
 
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
 
@@ -120,12 +126,17 @@ def gemini_inpaint_with_reference(
         client = genai.Client(api_key=api_key)
 
         room_img = Image.open(room_image_path)
-        ref_img = Image.open(reference_image_path)
         mask_img = Image.open(mask_image_path)
+
+        contents = [prompt, room_img, mask_img]
+
+        if reference_image_path:
+            ref_img = Image.open(reference_image_path)
+            contents = [prompt, room_img, ref_img, mask_img]
 
         response = client.models.generate_content(
             model=model,
-            contents=[prompt, room_img, ref_img, mask_img],
+            contents=contents,
         )
 
         saved = False

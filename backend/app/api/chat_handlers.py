@@ -779,119 +779,65 @@ def _ensure_fixed_3_spots(data: Dict[str, Any]) -> List[int]:
     data["spots"] = spots
     return idxs
 
-def _make_mask_from_point(w: int, h: int, pt: List[float], box: int = 320, shape: str = "ellipse") -> Image.Image:
-    x, y = float(pt[0]), float(pt[1])
-    half = box / 2.0
-    left, top = max(0, x - half), max(0, y - half)
-    right, bottom = min(w, x + half), min(h, y + half)
-
-    mask = Image.new("L", (w, h), 0)
-    draw = ImageDraw.Draw(mask)
-    if shape == "ellipse":
-        draw.ellipse([left, top, right, bottom], fill=255)
-    else:
-        draw.rectangle([left, top, right, bottom], fill=255)
-    return mask
-
-def _mask_params_for_usage(spot_usage: str) -> Dict[str, Any]:
-    su = (spot_usage or "").lower().strip()
-
-    params = {
-        "shape": "rect",
-        "box_w": 420,
-        "box_h": 240,
-        "dx": 0,
-        "dy": 0,
-    }
-
-    if su == "floor_large":
-        params.update({
-            "shape": "rect",
-            "box_w": 420,  # 520 → 420로 줄이기
-            "box_h": 220,  # 260 → 220
-            "dx": 0,
-            "dy": +60,  # +90 → +60
-        })
-
-    elif su == "table_small":
-        params.update({
-            "shape": "rect",
-            "box_w": 320,
-            "box_h": 180,
-            "dx": 0,
-            "dy": -20,
-        })
-
-    elif su == "low_light":
-        params.update({
-            "shape": "ellipse",
-            "box_w": 320,  # 420 → 320
-            "box_h": 160,  # 260 → 160
-            "dx": 0,
-            "dy": +40,
-        })
-
-    return params
-
-
-
-def _make_mask_from_point_wh(
+def _make_mask_from_point(
     w: int,
     h: int,
     pt: List[float],
-    *,
-    box_w: int,
-    box_h: int,
-    dx: int = 0,
-    dy: int = 0,
-    shape: str = "ellipse",
+    box_w: int = 240,
+    box_h: int = 520,
+    bottom_pad: int = 18,   # ✅ 바닥 아래로는 아주 조금만 열어줌
+    feather: int = 6,
 ) -> Image.Image:
     """
-    기존 _make_mask_from_point는 정사각(box) 중심형.
-    이건 가로/세로 분리 + 중심 오프셋(dx,dy) 지원.
+    ✅ pt를 '바닥 접지점(화분 바닥 닿는 지점)'으로 가정하고,
+    마스크를 위로 크게, 아래로는 아주 조금만 열어준다.
+    => 바닥을 칠하는 "흰 원형판" 확률이 확 줄어듦.
     """
-    x, y = float(pt[0]) + float(dx), float(pt[1]) + float(dy)
-    half_w = box_w / 2.0
-    half_h = box_h / 2.0
+    x, y = float(pt[0]), float(pt[1])
 
-    left, top = max(0, x - half_w), max(0, y - half_h)
-    right, bottom = min(w, x + half_w), min(h, y + half_h)
+    half_w = box_w / 2.0
+
+    left   = max(0, int(x - half_w))
+    right  = min(w, int(x + half_w))
+
+    # ✅ bottom 정렬: pt가 마스크의 바닥쪽
+    bottom = min(h, int(y + bottom_pad))
+    top    = max(0, int(bottom - box_h))
 
     mask = Image.new("L", (w, h), 0)
     draw = ImageDraw.Draw(mask)
-    if shape == "ellipse":
-        draw.ellipse([left, top, right, bottom], fill=255)
-    else:
-        draw.rectangle([left, top, right, bottom], fill=255)
+
+    radius = max(14, int(min(box_w, box_h) * 0.18))
+    draw.rounded_rectangle([left, top, right, bottom], radius=radius, fill=255)
+
+    if feather and feather > 0:
+        mask = mask.filter(ImageFilter.GaussianBlur(feather))
+
     return mask
 
-
-def _save_mask_for_spot_by_usage(room_path: str, pt: List[float], out_path: str, spot_usage: str) -> str:
+def _save_mask_for_spot(
+    room_path: str,
+    pt: List[float],
+    out_path: str,
+    box_w: int = 240,
+    box_h: int = 520,
+    bottom_pad: int = 12,
+    feather: int = 6,
+) -> str:
     room = Image.open(room_path)
     w, h = room.size
-
-    p = _mask_params_for_usage(spot_usage)
-    mask = _make_mask_from_point_wh(
+    mask = _make_mask_from_point(
         w, h, pt,
-        box_w=int(p["box_w"]),
-        box_h=int(p["box_h"]),
-        dx=int(p["dx"]),
-        dy=int(p["dy"]),
-        shape=str(p["shape"]),
+        box_w=box_w,
+        box_h=box_h,
+        bottom_pad=bottom_pad,
+        feather=feather,
     )
-
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
     mask.save(out_path)
     return out_path
 
 
-def _save_mask_for_spot(room_path: str, pt: List[float], out_path: str, box: int = 320) -> str:
-    room = Image.open(room_path)
-    w, h = room.size
-    mask = _make_mask_from_point(w, h, pt, box=box, shape="ellipse")
-    os.makedirs(os.path.dirname(out_path), exist_ok=True)
-    mask.save(out_path)
-    return out_path
 
 def _verify_outside_mask_identical(room_path: str, out_path: str, mask_path: str, tolerance: int = 0) -> bool:
     """
@@ -1027,20 +973,35 @@ async def handle_chat_analyze(request: Request, body: AnalyzeBody) -> JSONRespon
         data["spots"] = []
         spots = data["spots"]
 
-    # 바닥 스팟 하나 고르기: surface에 floor 포함된 첫번째 우선
-    chosen_idx = None
-    for i, s in enumerate(spots):
-        if not isinstance(s, dict):
-            continue
-        surf = (str(s.get("surface") or "")).lower()
-        if "floor" in surf:
-            chosen_idx = i
-            break
+    # ✅ 소형 여부 판단 (filters 기반)
+    is_small = _is_small_from_filters(data, user_filters)
 
-    # floor가 없으면 그냥 0
+    chosen_idx = None
+
+    # (1) 소형이면: 테이블/선반/책상 스팟 우선
+    if is_small:
+        for i, s in enumerate(spots):
+            if not isinstance(s, dict):
+                continue
+            surf = (str(s.get("surface") or "")).lower()
+            # 네 파이프라인 surface 값이 다양할 수 있어서 넓게 잡음
+            if ("table" in surf) or ("desk" in surf) or ("shelf" in surf) or ("counter" in surf):
+                chosen_idx = i
+                break
+
+    # (2) 못 찾았으면: 기존대로 floor 우선
+    if chosen_idx is None:
+        for i, s in enumerate(spots):
+            if not isinstance(s, dict):
+                continue
+            surf = (str(s.get("surface") or "")).lower()
+            if "floor" in surf:
+                chosen_idx = i
+                break
+
+    # (3) 그래도 없으면: 0 + spots 비면 synthetic 생성
     if chosen_idx is None:
         chosen_idx = 0
-        # spots 비어있으면 synthetic 하나 생성
         if len(spots) == 0:
             w, h = _get_img_wh(data)
             pt = [float(int(w * 0.55)), float(int(h * 0.82))]
@@ -1054,12 +1015,12 @@ async def handle_chat_analyze(request: Request, body: AnalyzeBody) -> JSONRespon
             })
             data["spots"] = spots
 
-    # render_plan 1장 고정
-    data["render_plan"] = {"count": 1, "spot_indexes": [int(chosen_idx)], "reason": "single"}
+    # ✅ render_plan reason/spot_usage를 소형/대형에 맞게 내려준다 (이게 핵심)
+    reason = "table_small" if is_small else "floor_large"
+    data["render_plan"] = {"count": 1, "spot_indexes": [int(chosen_idx)], "reason": reason}
 
-    # spot_usage도 1장 고정 (바닥)
     try:
-        spots[int(chosen_idx)]["spot_usage"] = "floor_large"
+        spots[int(chosen_idx)]["spot_usage"] = "table_small" if is_small else "floor_large"
     except Exception:
         pass
 
@@ -1214,80 +1175,9 @@ async def chat_image(
 
 class PickSpotBody(BaseModel):
     spot_index: int
-    plant_id: Optional[str] = None
-    plant_name: Optional[str] = None
-    plant_image_url: Optional[str] = None
+    plant_name: str
     regen: bool = False
     mode: Optional[str] = None
-
-def _safe_ext_from_url(url: str) -> str:
-    try:
-        p = urlparse(url)
-        ext = pathlib.Path(p.path).suffix.lower()
-        if ext in [".png", ".jpg", ".jpeg", ".webp"]:
-            return ext
-    except Exception:
-        pass
-    return ".png"
-
-def _download_image_cached(url: str, cache_dir: str, cache_key: str, regen: bool = False) -> Optional[str]:
-    """
-    S3(또는 외부) 이미지 URL을 로컬 파일로 다운로드해서 composite에서 사용할 수 있게 한다.
-    regen=True면 캐시 무시하고 다시 받는다.
-    """
-    if not url or not isinstance(url, str):
-        return None
-
-    os.makedirs(cache_dir, exist_ok=True)
-
-    ext = _safe_ext_from_url(url)
-    h = hashlib.sha1((cache_key + "|" + url).encode("utf-8")).hexdigest()[:16]
-    out_path = os.path.join(cache_dir, f"plant_{h}{ext}")
-
-    if (not regen) and os.path.exists(out_path) and os.path.getsize(out_path) > 0:
-        return out_path
-
-    try:
-        r = requests.get(url, timeout=10, stream=True)
-        if r.status_code != 200:
-            print(f"[PLANT_DL][WARN] status={r.status_code} url={url}")
-            return None
-
-        ctype = (r.headers.get("content-type") or "").lower()
-        if "image" not in ctype:
-            # 일부 S3는 content-type이 이상할 수 있어 경고만
-            print(f"[PLANT_DL][WARN] non-image content-type={ctype} url={url}")
-
-        with open(out_path, "wb") as f:
-            for chunk in r.iter_content(chunk_size=8192):
-                if chunk:
-                    f.write(chunk)
-
-        if os.path.getsize(out_path) <= 0:
-            print(f"[PLANT_DL][WARN] empty file url={url}")
-            return None
-
-        return out_path
-    except Exception as e:
-        print(f"[PLANT_DL][ERR] {e} url={url}")
-        return None
-
-def _find_plant_image_url(top_plants: Any, pid: str) -> Optional[str]:
-    """
-    top_plants(list[dict])에서 plant_id에 해당하는 이미지 URL을 찾아온다.
-    (키 이름이 image / image_url / url 등 여러 형태일 수 있어서 다 대응)
-    """
-    if not pid or not isinstance(top_plants, list):
-        return None
-
-    for p in top_plants:
-        if not isinstance(p, dict):
-            continue
-        cand_id = p.get("id") or p.get("plant_id")
-        if cand_id is not None and str(cand_id) == str(pid):
-            return p.get("image_url") or p.get("image") or p.get("url")
-    return None
-
 
 def get_filters():
     groups = [
@@ -1353,6 +1243,10 @@ def _save_mask_overlay(room_path: str, mask_path: str, out_path: str, alpha: int
 async def chat_pick_spot(request: Request, body: PickSpotBody) -> JSONResponse:
     sid, sid_is_new = _get_or_create_sid(request)
     key = sid
+
+    # ✅ 강제: 이미지 URL/ID는 무시하고 이름만 사용
+    pid = ""
+    plant_url = ""
 
     print("[RUNNING_FILE]", __file__)
     print("[RUNNING_FUNC] chat_pick_spot called")
@@ -1435,86 +1329,13 @@ async def chat_pick_spot(request: Request, body: PickSpotBody) -> JSONResponse:
         )
 
     # =========================
-    # 3) plant 이미지 고정 (유저 선택 = plant_image_url이 진실)
+    # 3) plant_name만 사용 (✅ 이미지 URL/다운로드/레퍼런스 금지)
     # =========================
-    pid = (str(body.plant_id).strip() if body.plant_id else "")
-    pid_safe = pid if pid else "none"
-
-    plant_url = (str(body.plant_image_url).strip() if body.plant_image_url else "")
-    plant_url_l = plant_url.lower()
-
-    is_none_plant = (plant_url == "" or plant_url_l in ["없음", "none", "해당없음"])
-
-    # ✅ "없음"이면: marker-only로 render_idxs 만큼 만들어서 내려준다
-    if is_none_plant:
-        ts_ms = int(time.time() * 1000)
-        images_payload: List[Dict[str, Any]] = []
-
-        def add_marker_img(label: str, path: str, spot_index: int):
-            if path and os.path.exists(path):
-                u = cache_bust_url(request, to_results_url(path), ts_ms)
-                images_payload.append({
-                    "name": f"{label}_spot_{spot_index}",
-                    "url": u,
-                    "image_url": u,
-                    "spot_index": spot_index,
-                })
-
-        for ridx in render_idxs[:1]:
-            if not (0 <= ridx < len(spots)):
-                continue
-            forced = _best_point_from_spot(spots[ridx])
-            if not forced or not forced.get("pt"):
-                continue
-
-            # ✅ marker도 화면 밖이면 점이 안 보임 → 클램프
-            w = int(data.get("image_w") or data.get("w") or 1248)
-            h = int(data.get("image_h") or data.get("h") or 832)
-            pt = forced["pt"]
-            pt[0] = max(5.0, min(float(w) - 5.0, float(pt[0])))
-            pt[1] = max(5.0, min(float(h) - 5.0, float(pt[1])))
-
-            marker_path = os.path.join(RESULT_DIR, f"marker_{sid}_spot_{ridx}.png")
-            composite_plant_on_original(
-                original_image_path=str(save_path),
-                best_point_obj={"pt": forced["pt"], "spot_index": forced.get("spot_index")},
-                out_path=marker_path,
-                plant_png_path=None,
-                anchor="bottom_center",
-                add_green_dot=True,
-            )
-            add_marker_img("marker", marker_path, ridx)
-
-        text = "✅ '없음' 선택 → 식물 합성 없이 위치 마커만 표시했습니다."
-        msgs: List[Dict[str, Any]] = [{"type": "text", "text": text}]
-        if images_payload:
-            msgs.append({"type": "images", "text": "마커 결과", "images": images_payload})
-
+    plant_name = (str(body.plant_name).strip() if getattr(body, "plant_name", None) else "")
+    if not plant_name:
         return _json_with_sid(
-            {
-                "ok": True,
-                "images": images_payload,
-                "spot_images": images_payload,
-                "messages": msgs,
-                "cv_result": data,
-                "render_reason": render_reason,
-                "render_idxs": render_idxs,
-            },
+            {"ok": False, "messages": [{"type": "text", "text": "plant_name이 비어있습니다."}]},
             sid, sid_is_new
-        )
-
-    plant_cache_dir = os.path.join(str(RESULT_DIR), "plant_cache")
-    plant_asset = _download_image_cached(
-        url=plant_url,
-        cache_dir=plant_cache_dir,
-        cache_key=pid_safe,
-        regen=regen,
-    )
-
-    if not plant_asset or not os.path.exists(plant_asset):
-        return _json_with_sid(
-            {"messages": [{"type": "text", "text": f"plant_image_url 다운로드 실패. pid={pid_safe} url={plant_url}"}]},
-            sid, sid_is_new,
         )
 
     # =========================
@@ -1579,11 +1400,41 @@ async def chat_pick_spot(request: Request, body: PickSpotBody) -> JSONResponse:
         best_point["pt"][0] = max(5.0, min(float(w) - 5.0, best_point["pt"][0]))
         best_point["pt"][1] = max(5.0, min(float(h) - 5.0, best_point["pt"][1]))
 
-        # ✅ spot_usage 기반 mask 생성 (floor/table 분리)
         mask_path = os.path.join(RESULT_DIR, f"mask_{sid}_spot_{ridx}.png")
-        spot_usage = str((spots[ridx] or {}).get("spot_usage") or (data.get("best_spot") or {}).get("spot_usage") or "")
 
-        su = (spot_usage or "").lower().strip()
+        # ✅ 마스크 파일 생성 (없으면 Gemini가 mask not found로 터짐)
+        _save_mask_for_spot(
+            room_path=str(save_path),
+            pt=best_point["pt"],
+            out_path=mask_path,
+            box_w=240,
+            box_h=460,
+            bottom_pad=10,
+            feather=6,
+        )
+
+        # ✅ spot_usage 결정 (su 정의)
+        su = ""
+        if isinstance(spots[ridx], dict):
+            su = (spots[ridx].get("spot_usage") or "").strip().lower()
+
+        # render_plan reason이 table_small이면 우선 반영
+        if (not su) and (render_reason == "table_small"):
+            su = "table_small"
+
+        # 그래도 없으면: user_filters로 소형이면 table_small, 아니면 floor_large
+        if not su:
+            try:
+                # data["constraints"]나 ctx filters 등 네 구조에 맞춰 가져와도 됨
+                # 여기서는 data/ctx에서 가능한 값만 대충 커버
+                uf = (data.get("constraints") or {})
+                size_pref = (uf.get("size_pref") or "").strip().lower()
+                if size_pref in ("small", "소형", "미니"):
+                    su = "table_small"
+                else:
+                    su = "floor_large"
+            except Exception:
+                su = "floor_large"
 
         blend_rule = (
             "- Match the room’s exposure and white balance.\n"
@@ -1597,52 +1448,36 @@ async def chat_pick_spot(request: Request, body: PickSpotBody) -> JSONResponse:
             "- No halos or cutout edges; blend edges seamlessly with the background.\n"
         )
 
-        if su == "floor_large":
+        if su == "table_small":
             placement_rule = (
-                "- The bottom of the pot MUST firmly touch the FLOOR inside the mask.\n"
+                "- Place the plant ON TOP of a TABLE (tabletop) inside the mask.\n"
+                "- The pot bottom MUST sit naturally on the table surface.\n"
+                "- Do NOT place it on the floor.\n"
+                "- Scale realistic: height approx 15–35cm.\n"
+                "- Add a subtle contact shadow on the table.\n"
+            )
+        else:
+            # default = floor_large
+            placement_rule = (
+                "- Place the pot on the FLOOR inside the mask.\n"
+                "- The pot bottom MUST firmly touch the real floor.\n"
                 "- Do NOT place it on tables, shelves, or furniture.\n"
                 "- Scale realistic: height approx 40–80cm.\n"
-                "- Add a soft contact shadow directly under the pot (soft edge, subtle but visible).\n"
-                "- The shadow intensity must match existing floor shadows in the room.\n"
-                "- Do not create a darker shadow than other objects in the scene.\n"
-                "- Shadow direction must match the window light direction in the room.\n"
+                "- Add a soft contact shadow directly under the pot.\n"
+                "- Shadow softness/direction must match the room.\n"
             )
 
-
-        elif su == "table_small":
-            placement_rule = (
-                "- The bottom of the pot MUST sit naturally on the TABLE surface inside the mask.\n"
-                "- Do NOT place the plant on the floor.\n"
-                "- Scale realistic: height approx 15–35cm.\n"
-                "- Add a soft contact shadow on the table (soft edge, subtle but visible).\n"
-            )
-
-        else:
-            placement_rule = (
-                "- Place the plant naturally inside the mask.\n"
-                "- Scale must be realistic.\n"
-                "- Add a very subtle soft contact shadow.\n"
-            )
-
-        _save_mask_for_spot_by_usage(str(save_path), best_point["pt"], mask_path, spot_usage)
-
-        overlay_path = os.path.join(RESULT_DIR, f"mask_overlay_{sid}_spot_{ridx}.png")
-        _save_mask_overlay(str(save_path), mask_path, overlay_path, alpha=120)
-
-        ai_out_path = os.path.join(RESULT_DIR, f"ai_inpaint_{sid}_spot_{ridx}_plant_{pid_safe}.png")
-
-        plant_name = (str(body.plant_name).strip() if body.plant_name else "") or "potted plant"
+        name_safe = "".join(c for c in (plant_name or "plant") if c.isalnum() or c in ("-", "_"))[:40]
+        ai_out_path = os.path.join(RESULT_DIR, f"ai_inpaint_{sid}_spot_{ridx}_{name_safe}.png")
 
         prompt = f"""
         IMPORTANT: Do not change ANY pixels outside the mask (keep the original room exactly).
-        Inside the mask, match the room’s lighting, color temperature, exposure, and softness so the plant blends naturally.
-        Task: Inpaint exactly ONE potted plant inside the white mask area.
+        Inside the mask, insert EXACTLY ONE realistic potted plant that matches the room’s lighting and perspective.
 
-        Reference plant:
+        Plant to generate:
         - Name: "{plant_name}"
-        - Follow the reference image strictly for leaf shape and overall plant form.
-        - Ignore the background of the reference image completely.
-        - Match ONLY the plant and pot from the reference.
+        - Generate a plant that is commonly recognized by this name.
+        - Do NOT use any reference images. Generate only from the name.
 
         Rules (must follow):
         - Generate EXACTLY ONE plant. No duplicates.
@@ -1650,6 +1485,12 @@ async def chat_pick_spot(request: Request, body: PickSpotBody) -> JSONResponse:
         {placement_rule}
         - Do NOT add any extra objects.
         - No square background, no pasted look.
+        - Do NOT repaint the floor/table surface. Keep its original texture and color.
+        - Only add the plant + a natural contact shadow. No white platform / no filled base.
+        - Do NOT create any white/bright base, spotlight circle, rug, mat, platform, pedestal, or disc under the plant.
+        - Do NOT brighten, repaint, smooth, or blur the floor/table surface. Keep the exact original texture.
+        - The ONLY allowed new pixels are the plant itself and a small natural contact shadow directly under the pot.
+
         {blend_rule}
         {light_sentence}
 
@@ -1663,11 +1504,12 @@ async def chat_pick_spot(request: Request, body: PickSpotBody) -> JSONResponse:
         for attempt in range(2):
             ret = gemini_inpaint_with_reference(
                 room_image_path=str(save_path),
-                reference_image_path=plant_asset,
+                reference_image_path=None,
                 mask_image_path=mask_path,
                 prompt=prompt,
                 out_path=ai_out_path,
             )
+
             last_ret = ret
             if (not isinstance(ret, dict)) or (not ret.get("ok")):
                 continue
@@ -1685,13 +1527,15 @@ async def chat_pick_spot(request: Request, body: PickSpotBody) -> JSONResponse:
                     "debug": {
                         "spot": ridx,
                         "mask_path": mask_path,
-                        "plant_asset": plant_asset,
                         "ai_out_path": ai_out_path,
                         "ret": last_ret,
                     },
                 },
                 sid, sid_is_new
             )
+
+        # ✅ 바깥 픽셀 강제 원본 복원 (원판/바닥칠/번짐 방지)
+        _force_outside_mask_original(str(save_path), ai_out_path, mask_path)
 
         # ✅ 성공한 경우에만 결과 반환
         add_ai_img("ai_inpaint", ai_out_path, ridx)
@@ -1710,7 +1554,6 @@ async def chat_pick_spot(request: Request, body: PickSpotBody) -> JSONResponse:
                     "render_reason": render_reason,
                     "render_idxs": render_idxs,
                     "save_path": str(save_path),
-                    "plant_asset": str(plant_asset) if 'plant_asset' in locals() else None,
                 },
             },
             sid,

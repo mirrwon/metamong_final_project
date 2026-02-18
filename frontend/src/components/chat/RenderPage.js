@@ -66,13 +66,15 @@ export default function RenderPage() {
         if (!plantRaw) throw new Error("missing selected_plant");
 
         const plant = JSON.parse(plantRaw);
-        const plant_id = plant?.id;
-        if (!plant_id) throw new Error("missing plant_id");
+        const plant_name = plant?.name;
+        if (!plant_name) throw new Error("missing plant_name");
+
 
         // sid는 있으면 같이 보내고, 없으면 생략
         const sid = localStorage.getItem("sid");
 
-        console.log("render payload", { plant_id, plant_name: plant?.name, plant_image_url: plant?.image });
+        console.log("render payload", { plant_name });
+
 
         // =========================================================
         // 3) render 1번 호출 (서버가 3개 스팟을 한 번에 내려줌)
@@ -87,9 +89,7 @@ export default function RenderPage() {
             // 3개 스팟을 명시적으로 전달 (백엔드가 받으면 이걸 우선 사용하게 됨)
             render_idxs: spotIndexes,            // 예: [0,5,4]
 
-            plant_id,
-            plant_image_url: plant?.image,
-            plant_name: plant?.name,
+            plant_name,
             regen: true,
             mode: "ai_edit",
           }),
