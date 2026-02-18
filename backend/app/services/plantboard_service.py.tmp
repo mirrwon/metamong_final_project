@@ -1,0 +1,11 @@
+TAMAGOTCHI_PIXEL_PROMPT = (
+    "Transform this interior photo into 1990s tamagotchi-style pixel art. "
+    "Moderate pixelation with visible 6-10px pixel blocks (not overly chunky). "
+    "Limited palette (8-14 colors). "
+    "Muted pastel colors with reduced saturation (low to medium saturation). "
+    "Soft, slightly desaturated tones - avoid bright or neon colors. "
+    "Clean 1-2px outlines, simplified shapes, minimal texture. "
+    "Subtle light/shadow blocks (no gradients). "
+    "Cute cozy room vibe, soft nostalgic 90s digital aesthetic. "
+    "No blur, no gradients, no noise, no halftone, no dithering."
+)

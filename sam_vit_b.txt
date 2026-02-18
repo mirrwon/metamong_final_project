@@ -1,0 +1,6 @@
+https://github.com/facebookresearch/segment-anything
+에서 vit_b 다운 후
+
+sam_vit_b.pth 로 파일명 변경
+
+app/models 에 넣어두기
