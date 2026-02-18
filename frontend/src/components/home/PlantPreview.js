@@ -31,6 +31,7 @@ const PlantPreview = ({ autoplayDelay = 2500 }) => {
         if (!raw) return false;
         const parsed = JSON.parse(raw);
         if (!parsed?.ts || !Array.isArray(parsed?.items)) return false;
+        if (parsed.items.length === 0) return false;
         if (Date.now() - parsed.ts > cacheTtlMs) return false;
         setItems(parsed.items);
         return true;
@@ -55,9 +56,18 @@ const PlantPreview = ({ autoplayDelay = 2500 }) => {
         const res = await api.get("/api/plants", {
           params: { offset: 0, limit: 40 },
         });
+        if (res?.data?.ok === false) {
+          setError(`Failed to load plants (${res?.data?.reason || "api_error"}).`);
+          window.localStorage.removeItem(cacheKey);
+          return;
+        }
         const nextItems = Array.isArray(res?.data?.items) ? res.data.items : [];
         setItems(nextItems);
-        saveToCache(nextItems);
+        if (nextItems.length > 0) {
+          saveToCache(nextItems);
+        } else {
+          window.localStorage.removeItem(cacheKey);
+        }
       } catch {
         setError("Failed to load plants.");
       }

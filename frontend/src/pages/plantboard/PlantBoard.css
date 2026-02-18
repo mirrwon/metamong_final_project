@@ -218,6 +218,27 @@
   max-height: none;
   object-fit: cover;
   box-sizing: border-box;
+  transition: filter 0.1s ease;
+  filter: none;
+}
+
+.sidebar-section--tamagotchi:hover .tamagotchi-room-img {
+  filter: blur(0.5px);
+}
+
+.sidebar-section--tamagotchi.is-disabled {
+  opacity: 0.5;
+  filter: grayscale(0.2);
+  cursor: not-allowed;
+}
+
+
+.tamagotchi-placeholder-text {
+  margin: 8px 0 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: #000000;
+  letter-spacing: 0.02em;
 }
 
 .tamagotchi-room {

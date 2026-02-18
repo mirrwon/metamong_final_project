@@ -9,7 +9,7 @@ import './Login.css';
 const Login = ({ setUser }) => {
   const nav = useNavigate();
 
-  const goHome = () => nav('/home');
+  const goHome = () => nav('/');
 
   const [error, setError] = useState('');
 
@@ -19,7 +19,7 @@ const Login = ({ setUser }) => {
       const res = await login(formData);
       storeUser(res.data);
       setUser(res.data);
-      nav('/home');
+      nav('/');
     } catch (err) {
       setError('아이디 또는 비밀번호가 올바르지 않습니다.');
     }

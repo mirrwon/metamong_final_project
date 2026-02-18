@@ -42,7 +42,7 @@ const JoinLogin = ({ onSubmit }) => {
       );
       return;
     }
-    window.location.replace("/home");
+    window.location.replace("/");
   }, []);
 
   const handleChange = (e) => {

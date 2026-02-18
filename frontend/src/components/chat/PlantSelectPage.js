@@ -401,7 +401,9 @@ export default function PlantSelectPage({
     const payload = {
       id: plant?.id ?? null,
       name: plant?.displayName ?? plant?.name ?? "식물",
-      // image: plant?.displayImage ?? null,
+      image: plant?.displayImage ?? null,
+      characterName: plant?.character || plant?.attrs?.character || null,
+      personality: plant?.personality || plant?.attrs?.personality || null,
     };
 
     sessionStorage.setItem(SELECTED_PLANT_KEY, JSON.stringify(payload));

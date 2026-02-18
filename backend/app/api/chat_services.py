@@ -11,13 +11,13 @@ from fastapi import Request, UploadFile
 from app.config import BASE_DIR, RESULT_DIR, UPLOAD_DIR, ASSET_DIR
 
 # 1. 외부 모듈 및 클라이언트
-from app.cv.pipeline import run_pipeline
+from cv_app.cv.pipeline import run_pipeline
 from app.reco.recommender import recommend_for_analysis
 from app.solar.weather_client import AsosWeatherClient
 
 # 2. 이미지 편집/합성 엔진 (경로 확인 필요)
-from app.llm.image_edit import composite_plant_on_original
-from app.llm.gemini.gemini_image_edit import gemini_edit_image
+from cv_app.llm.image_edit import composite_plant_on_original
+from cv_app.llm.gemini.gemini_image_edit import gemini_edit_image
 
 # 3. 채팅 관련 유틸 및 스토리지
 from .chat_progress import progress

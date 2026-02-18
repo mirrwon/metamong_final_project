@@ -11,14 +11,14 @@ from fastapi import UploadFile, File, Form, Request
 from fastapi.responses import JSONResponse
 from urllib.parse import urlparse
 
-from app.cv.pipeline import run_pipeline, list_71765_scenes
-from app.cv.space_classifier import classify_space
-from app.cv.scene_room_infer import infer_room_type_from_scene_json, load_scene_json
-from app.cv.scene_catalog import build_room_groups, DEFAULT_SCENE_ROOT, pick_scene_for_room
+from cv_app.cv.pipeline import run_pipeline, list_71765_scenes
+from cv_app.cv.space_classifier import classify_space
+from cv_app.cv.scene_room_infer import infer_room_type_from_scene_json, load_scene_json
+from cv_app.cv.scene_catalog import build_room_groups, DEFAULT_SCENE_ROOT, pick_scene_for_room
 
 from app.config import BASE_DIR, RESULT_DIR, RESULT_JSON_LATEST, UPLOAD_DIR, ASSET_DIR
-from app.llm.image_edit import composite_plant_on_original
-from app.llm.gemini.gemini_image_edit import gemini_inpaint_with_reference
+from cv_app.llm.image_edit import composite_plant_on_original
+from cv_app.llm.gemini.gemini_image_edit import gemini_inpaint_with_reference
 from app.solar.weather_client import AsosWeatherClient
 from app.reco.recommender import recommend_for_analysis
 

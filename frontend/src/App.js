@@ -17,7 +17,6 @@ import api from './services/api';
 import { useEffect } from "react";
 
 // pages (라우트에 직접 연결되는 페이지)\
-import Splash from './pages/intro/Splash';
 import Home from './pages/Home';
 import Login from './pages/auth/Login';
 import Register from './pages/auth/Register';
@@ -108,7 +107,6 @@ const AppContent = ({ user, setUser, handleLogout }) => {
       <div style={{ visibility: isPageLoading ? "hidden" : "visible", height: "100%" }}>
         <Layout user={user} onLogout={handleLogout}>
           <Routes>
-            <Route path={ROUTES.SPLASH} element={<Splash />} />
             <Route path={ROUTES.HOME} element={<Home />} />
             <Route path={ROUTES.LOGIN} element={<Login setUser={setUser} />} />
             <Route path={ROUTES.REGISTER} element={<Register />} />
@@ -164,8 +162,6 @@ function App() {
         {/* Layout: Header/Footer 등 공통 UI (로그아웃 핸들러도 내려줌) */}
         <Layout user={user} onLogout={handleLogout}>
           <Routes>
-            {/* Splash (표지): 첫 진입 화면 */}
-            <Route path={ROUTES.SPLASH} element={<Splash />} />
 
             {/* 메인(Home): 로그인한 사용자만 접근 */}
              <Route path={ROUTES.HOME} element={<Home />} />

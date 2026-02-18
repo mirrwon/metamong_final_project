@@ -25,6 +25,23 @@ from app.api.diary_routes import router as diary_router
 from app.api.login_routes import router as login_router
 from app.api.plantboard_routes import router as plantboard_router
 from app.api.map_routes import router as map_router
+from app.api.tamagotchi_routes import router as tamagotchi_router
+
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request
+from starlette.responses import Response
+
+
+class StaticCORSMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        response: Response = await call_next(request)
+
+        if request.url.path.startswith("/results"):
+            response.headers["Access-Control-Allow-Origin"] = "http://localhost:3000"
+            response.headers["Access-Control-Allow-Credentials"] = "true"
+
+        return response
+
 
 # ...
 AUTH_UPLOAD_DIR = os.path.normpath(os.path.join(BASE_DIR, "app", "api", "uploads"))
@@ -34,18 +51,12 @@ AUTH_UPLOAD_MOUNT = "/auth-uploads"
 os.makedirs(RESULT_DIR, exist_ok=True)
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 os.makedirs(PLANTS_DIR, exist_ok=True)
-
+os.makedirs(AUTH_UPLOAD_DIR, exist_ok=True)
 os.makedirs(ASSET_DIR, exist_ok=True)
 
 app = FastAPI()
 
-# ✅ 정적 파일 mount는 여기(api_server)에서만 한다 (chat_routes에 넣지 말기)
-# ✅ 중복 mount 제거: /results는 1번만
-app.mount("/results", StaticFiles(directory=RESULT_DIR), name="results")
-app.mount("/plants", StaticFiles(directory=PLANTS_DIR), name="plants")
-app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
-app.mount("/assets", StaticFiles(directory=ASSET_DIR), name="assets")
-app.mount(AUTH_UPLOAD_MOUNT, StaticFiles(directory=AUTH_UPLOAD_DIR), name="auth-uploads")
+app.add_middleware(StaticCORSMiddleware)
 
 app.add_middleware(
     CORSMiddleware,
@@ -58,12 +69,23 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# ✅ 정적 파일 mount는 여기(api_server)에서만 한다 (chat_routes에 넣지 말기)
+# ✅ 중복 mount 제거: /results는 1번만
+app.mount("/results", StaticFiles(directory=RESULT_DIR), name="results")
+app.mount("/plants", StaticFiles(directory=PLANTS_DIR), name="plants")
+app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
+app.mount("/assets", StaticFiles(directory=ASSET_DIR), name="assets")
+app.mount(AUTH_UPLOAD_MOUNT, StaticFiles(directory=AUTH_UPLOAD_DIR), name="auth-uploads")
+
+
+
 # 라우터 등록 (All)
 app.include_router(chat_router)
 app.include_router(diary_router)
 app.include_router(login_router)
 app.include_router(plantboard_router)
 app.include_router(map_router)
+app.include_router(tamagotchi_router)
 
 _plants_cache = {}
 _plants_key_cache = {}
