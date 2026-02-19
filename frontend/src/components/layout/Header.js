@@ -152,7 +152,7 @@ const Header = ({ user, onLogout }) => {
           type="button"
           onClick={user ? handleLogout : goLogin}
         >
-          {user ? "logout" : "login"}
+          {user ? "Logout" : "Login"}
         </button>
       </nav>
     </div>
