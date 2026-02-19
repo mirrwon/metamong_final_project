@@ -1,0 +1,29 @@
+.render-page {
+  --render-image-max-w: 1000px;
+  --render-image-max-h: 1000px;
+  width: min(1200px, 100%);
+  margin: 0 auto;
+}
+
+.spot-grid {
+  margin-top: var(--s-4);
+  display: grid;
+  gap: var(--s-4);
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  align-items: start;
+}
+
+.spot-card {
+  width: 100%;
+  max-width: var(--render-image-max-w);
+  margin: 0 auto;
+}
+
+.spot-card__img {
+  width: 100%;
+  max-height: var(--render-image-max-h);
+  object-fit: contain;
+  border-radius: 12px;
+  display: block;
+  background: rgba(255, 255, 255, 0.55);
+}

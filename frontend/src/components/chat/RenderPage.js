@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { fetchWithSession } from "../../services/session";
+import "./RenderPage.css";
 
 const API_BASE = "http://localhost:8000/api/chat";
 const RENDER_API = `${API_BASE}/render`;
@@ -290,9 +291,9 @@ export default function RenderPage() {
           {spotImages.map((it) => (
             <div className="spot-card" key={it.spot_index}>
               <img
+                className="spot-card__img"
                 src={it.url}
                 alt={`spot-${it.spot_index}`}
-                style={{ width: "100%", borderRadius: 12 }}
               />
               <button
                 type="button"

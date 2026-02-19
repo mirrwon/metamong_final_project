@@ -344,7 +344,7 @@ export default function Survey() {
   return (
     <div className="surveyPage">
       <div className="surveyShell">
-        <div className="surveyCard">
+        <div className="surveyCard surveyCard--survey">
           <header className="surveyHeader">
             <h2 className="surveyTitle">{survey?.title || "Survey"}</h2>
             {survey?.description && <p className="surveyDesc">{survey.description}</p>}
