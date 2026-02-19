@@ -308,7 +308,11 @@ const JoinRegister = ({ onSubmit }) => {
         </div>
 
         <form onSubmit={handleSubmit}>
+          <label className="register-field-label" htmlFor="register-username">
+            아이디
+          </label>
           <input
+            id="register-username"
             name="username"
             type="text"
             value={formData.username}
@@ -319,7 +323,11 @@ const JoinRegister = ({ onSubmit }) => {
             disabled={isOauth}
           />
 
+          <label className="register-field-label" htmlFor="register-password">
+            비밀번호
+          </label>
           <input
+            id="register-password"
             name="password"
             type="password"
             value={formData.password}
@@ -330,7 +338,11 @@ const JoinRegister = ({ onSubmit }) => {
             disabled={isOauth}
           />
 
+          <label className="register-field-label" htmlFor="register-confirm-password">
+            비밀번호 확인
+          </label>
           <input
+            id="register-confirm-password"
             name="confirmPassword"
             type="password"
             value={formData.confirmPassword}
@@ -341,7 +353,11 @@ const JoinRegister = ({ onSubmit }) => {
             disabled={isOauth}
           />
 
+          <label className="register-field-label" htmlFor="register-name">
+            이름
+          </label>
           <input
+            id="register-name"
             name="name"
             type="text"
             value={formData.name}
@@ -352,7 +368,11 @@ const JoinRegister = ({ onSubmit }) => {
           />
 
           {/* 성별 */}
+          <label className="register-field-label" htmlFor="register-gender">
+            성별
+          </label>
           <select
+            id="register-gender"
             name="gender"
             value={formData.gender}
             onChange={handleChange}
@@ -364,7 +384,11 @@ const JoinRegister = ({ onSubmit }) => {
             <option value="female">여성</option>
           </select>
 
+          <label className="register-field-label" htmlFor="register-birthdate">
+            생년월일
+          </label>
           <input
+            id="register-birthdate"
             name="birthDate"
             type="date"
             value={formData.birthDate}
@@ -375,7 +399,11 @@ const JoinRegister = ({ onSubmit }) => {
             required
           />
 
+          <label className="register-field-label" htmlFor="register-phone">
+            전화번호
+          </label>
           <input
+            id="register-phone"
             name="phone"
             type="tel"
             value={formData.phone}
@@ -387,7 +415,11 @@ const JoinRegister = ({ onSubmit }) => {
             required
           />
 
+          <label className="register-field-label" htmlFor="register-email">
+            이메일
+          </label>
           <input
+            id="register-email"
             name="email"
             type="email"
             value={formData.email}
@@ -398,8 +430,12 @@ const JoinRegister = ({ onSubmit }) => {
             disabled={isOauth}
           />
 
+          <label className="register-field-label" htmlFor="register-zipcode">
+            우편번호
+          </label>
           <div className="address-row">
             <input
+              id="register-zipcode"
               name="zipcode"
               type="text"
               value={formData.zipcode}
@@ -417,7 +453,11 @@ const JoinRegister = ({ onSubmit }) => {
             </button>
           </div>
 
+          <label className="register-field-label" htmlFor="register-address1">
+            주소
+          </label>
           <input
+            id="register-address1"
             name="address1"
             type="text"
             value={formData.address1}
@@ -426,7 +466,11 @@ const JoinRegister = ({ onSubmit }) => {
             className="ui-input"
           />
 
+          <label className="register-field-label" htmlFor="register-address2">
+            상세 주소
+          </label>
           <input
+            id="register-address2"
             name="address2"
             type="text"
             value={formData.address2}

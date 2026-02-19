@@ -245,7 +245,7 @@ const PlantBoard = () => {
         </div>
 
         <div
-          className={`sidebar-section sidebar-section--tamagotchi ${activeView === "tamagotchi" ? "active" : ""}`}
+          className={`sidebar-section sidebar-section--tamagotchi ${activeView === "tamagotchi" ? "active" : ""} ${!selectedPlant ? "is-disabled" : ""}`}
           onClick={() => {
             if (!selectedPlant) return;
             setActiveView("tamagotchi");
@@ -274,6 +274,7 @@ const PlantBoard = () => {
                   alt="tamagotchi tab placeholder"
                   className="tamagotchi-room-img"
                 />
+                <p className="tamagotchi-placeholder-text">식물을 선택하세요</p>
               </div>
             )}
           </div>
