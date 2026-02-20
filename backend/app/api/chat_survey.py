@@ -74,7 +74,7 @@ def _append_survey(key: str, record: Dict[str, Any]) -> None:
 def get_survey(current_user: dict = Depends(get_current_user)):
     return {
         "key": "style_survey",
-        "label": "선호 스타일 선택",
+        "label": "식물 선호 스타일 선택",
         "ui": "checkbox",
         "description": "",
         "groups": [

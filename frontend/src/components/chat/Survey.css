@@ -50,6 +50,21 @@
   overflow: visible;
 }
 
+.surveyCard--loading {
+  min-height: 220px;
+  width: min(560px, 92vw);
+  margin-left: auto;
+  margin-right: auto;
+  padding: var(--s-4);
+  display: grid;
+  place-items: center;
+}
+
+.surveyCard--loading .surveyStatus {
+  font-size: clamp(17px, 2vw, 22px);
+  font-weight: 600;
+}
+
 .surveyCard::-webkit-scrollbar {
   width: 10px;
 }

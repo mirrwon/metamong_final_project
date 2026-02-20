@@ -1,0 +1,58 @@
+.hourglassLoader {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 10px 14px;
+}
+
+.hourglassLoader__icon {
+  position: relative;
+  width: 24px;
+  height: 30px;
+  border: 2px solid var(--c-primary, #2e7d32);
+  border-radius: 4px;
+  box-sizing: border-box;
+  animation: hourglassTurn 1.2s ease-in-out infinite;
+}
+
+.hourglassLoader__icon::before,
+.hourglassLoader__icon::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  width: 0;
+  height: 0;
+  border-left: 8px solid transparent;
+  border-right: 8px solid transparent;
+  transform: translateX(-50%);
+}
+
+.hourglassLoader__icon::before {
+  top: 3px;
+  border-bottom: 9px solid var(--c-primary, #2e7d32);
+}
+
+.hourglassLoader__icon::after {
+  bottom: 3px;
+  border-top: 9px solid var(--c-primary, #2e7d32);
+}
+
+.hourglassLoader__text {
+  font-size: clamp(18px, 2.2vw, 24px);
+  font-weight: 700;
+  line-height: 1.2;
+  color: var(--c-text, #2f2f2f);
+}
+
+@keyframes hourglassTurn {
+  0% {
+    transform: rotate(0deg);
+  }
+  50% {
+    transform: rotate(180deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { fetchWithSession } from "../../services/session";
+import HourglassLoader from "../common/HourglassLoader";
 import "./RenderPage.css";
 
 const API_BASE = "http://localhost:8000/api/chat";
@@ -21,9 +22,6 @@ export default function RenderPage() {
         setLoading(true);
         setError(null);
 
-        // =========================================================
-        // 1) 최신 분석 결과에서 spots 3개 가져오기
-        // =========================================================
         const latestRes = await fetchWithSession(
           `${RESULT_BASE}/results/result_latest.json?t=${Date.now()}`,
           { method: "GET" }
@@ -34,18 +32,14 @@ export default function RenderPage() {
         const spots = Array.isArray(latest?.spots) ? latest.spots : [];
         if (spots.length < 3) throw new Error("spots<3");
 
-        // spots: result_latest.json의 latest.spots
-        // render_plan: 백엔드(analyze)에서 넣어준 정책 { count, spot_indexes }
         const plan = latest?.render_plan;
 
-        // 1) 기본은 기존처럼 3개
         let spotIndexes = spots.slice(0, 3).map((s, i) => {
           const v = s?.spot_index ?? s?.index ?? i;
           const n = Number(v);
           return Number.isFinite(n) ? n : i;
         });
 
-        // 2) 테이블/바닥 정책이 있으면 plan 우선 적용
         if (plan?.count === 1 && Array.isArray(plan?.spot_indexes) && plan.spot_indexes.length >= 1) {
           const n = Number(plan.spot_indexes[0]);
           spotIndexes = [Number.isFinite(n) ? n : 0];
@@ -58,11 +52,6 @@ export default function RenderPage() {
           });
         }
 
-
-        // =========================================================
-        // 2) 선택한 식물 고정 (sessionStorage.selected_plant)
-        //    너 스샷 기준: { id:"136", name:"...", image:"https://..." }
-        // =========================================================
         const plantRaw = sessionStorage.getItem("selected_plant");
         if (!plantRaw) throw new Error("missing selected_plant");
 
@@ -70,32 +59,20 @@ export default function RenderPage() {
         const plant_name = plant?.name;
         if (!plant_name) throw new Error("missing plant_name");
 
-
-        // sid는 있으면 같이 보내고, 없으면 생략
         const sid = localStorage.getItem("sid");
 
-        console.log("render payload", { plant_name });
-
-
-        // =========================================================
-        // 3) render 1번 호출 (서버가 3개 스팟을 한 번에 내려줌)
-        // =========================================================
         const r = await fetchWithSession(RENDER_API, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             ...(sid ? { sid } : {}),
-            // 백엔드가 spot_index 필수일 가능성 대응
-            spot_index: spotIndexes[0],          // 예: 0
-            // 3개 스팟을 명시적으로 전달 (백엔드가 받으면 이걸 우선 사용하게 됨)
-            render_idxs: spotIndexes,            // 예: [0,5,4]
-
+            spot_index: spotIndexes[0],
+            render_idxs: spotIndexes,
             plant_name,
             regen: true,
             mode: "ai_edit",
           }),
         });
-
 
         const j = await r.json().catch(() => null);
         if (!r.ok) {
@@ -103,16 +80,11 @@ export default function RenderPage() {
           throw new Error(msg);
         }
 
-        console.log("[RENDER][response]", j);
-        console.log("[RENDER][images_type]", Array.isArray(j?.images) ? typeof j.images[0] : "no_images");
-
-        // ✅ 서버가 images 또는 spot_images 둘 중 어디로 보내든 받는다
         const arr =
           (Array.isArray(j?.images) && j.images) ||
           (Array.isArray(j?.spot_images) && j.spot_images) ||
           [];
 
-        // ✅ 문자열 URL / 객체 둘 다 처리
         const imgs = arr.map((it, i) => {
           let rawUrl = null;
           let spotIndex = i;
@@ -127,8 +99,6 @@ export default function RenderPage() {
           }
 
           if (!rawUrl) {
-            // 디버그용으로 응답을 같이 찍어라 (원인 확정)
-            console.log("[RENDER][bad_item]", it);
             throw new Error(`missing image_url for spot ${spotIndex}`);
           }
 
@@ -137,14 +107,11 @@ export default function RenderPage() {
         });
 
         if (imgs.length < 1) {
-          console.log("render response json =", j);
           throw new Error("missing images in render response");
         }
 
+        if (!mounted) return;
         setSpotImages(imgs);
-
-
-
       } catch (e) {
         if (!mounted) return;
         setError(String(e?.message || e));
@@ -231,6 +198,7 @@ export default function RenderPage() {
     if (!spot?.url) return;
     setSavingSpot(spot.url);
     setSaveMessage("");
+
     try {
       const selectedPlant = readSelectedPlant();
       if (!selectedPlant) throw new Error("missing selected_plant");
@@ -245,7 +213,7 @@ export default function RenderPage() {
         type: "photo",
         date: now.date,
         time: now.time,
-        title: "챗봇 결과 저장",
+        title: "채팅 결과 저장",
         detail: "AI 렌더 결과",
         imageUrl: spot.url,
         plantId: mergedPlant?.id || plant?.id,
@@ -271,7 +239,7 @@ export default function RenderPage() {
         localStorage.setItem("plantboard_active_view", "tamagotchi");
       }
 
-      setSaveMessage("저장 완료. 타임로그에 추가했어요.");
+      setSaveMessage("저장 완료. 타임로그에 추가되었어요.");
     } catch (e) {
       setSaveMessage("저장 실패. 다시 시도해주세요.");
     } finally {
@@ -283,18 +251,18 @@ export default function RenderPage() {
     <div className="render-page">
       <h2>AI 추천 스팟</h2>
 
-      {loading && <div>이미지 생성 중...</div>}
-      {error && <div style={{ color: "red" }}>{error}</div>}
+      {loading && (
+        <div className="render-loading-panel">
+          <HourglassLoader message="이미지 생성 중..." />
+        </div>
+      )}
+      {error && <div className="render-error">{error}</div>}
 
       {!loading && !error && (
         <div className="spot-grid">
           {spotImages.map((it) => (
             <div className="spot-card" key={it.spot_index}>
-              <img
-                className="spot-card__img"
-                src={it.url}
-                alt={`spot-${it.spot_index}`}
-              />
+              <img className="spot-card__img" src={it.url} alt={`spot-${it.spot_index}`} />
               <button
                 type="button"
                 className="ui-btn ui-btn-primary ui-btn--compact"
