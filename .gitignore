@@ -15,3 +15,8 @@ backend/uploads/*.jpg
 backend/uploads/*.png
 # runtime artifacts
 backend/surveys/
+
+# large model / training files
+backend/lora_gemma2_v3_unsloth_final.tar.gz
+backend/full_dataset_training.jsonl
+*.tar.gz

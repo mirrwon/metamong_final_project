@@ -22,6 +22,7 @@ export default function TimeLogPage({
   enableFiltering = true,
   mode = "timelog",
   filterTabs,
+  onTrigger,
   children,
 }) {
   const [activeTab, setActiveTab] = useState("all");
@@ -115,6 +116,7 @@ export default function TimeLogPage({
           isPlantSelected={isPlantSelected}
           onAddDiaryLog={addDiaryLog}
           onUploadPhoto={handleUploadPhoto}
+          onTrigger={onTrigger}
           hideExtras={!showTimeline}
         />
       )}

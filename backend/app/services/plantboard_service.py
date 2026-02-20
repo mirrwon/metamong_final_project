@@ -8,9 +8,22 @@ import hashlib
 from typing import List, Optional, Dict, Any
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
+from urllib.error import HTTPError, URLError
 
 from app.llm.gemini.gemini_image_edit import gemini_edit_image
 from app.config import PLANTS_DIR
+
+LORA_SERVER_URL = os.getenv("LORA_SERVER_URL", "http://localhost:8000")
+LORA_TIMEOUT_SEC = int(os.getenv("LORA_TIMEOUT_SEC", "12"))
+LORA_MAX_NEW_TOKENS = int(os.getenv("LORA_MAX_NEW_TOKENS", "48"))
+LORA_TEMPERATURE = float(os.getenv("LORA_TEMPERATURE", "0.0"))
+LORA_TOP_P = float(os.getenv("LORA_TOP_P", "0.9"))
+LORA_SYSTEM_PROMPT = (
+    "You generate Korean Tamagotchi-style plant dialogue. "
+    "Output MUST be a single JSON object only. No markdown. No extra text. "
+    "Schema exactly: {\"text\":\"...\",\"emote\":\"HAPPY|NEEDY|ANNOYED|SASSY|WORRIED|CALM|PROUD|MAGICAL\","
+    "\"animation\":\"idle|bounce|shake|wiggle|float|sparkle|droop|pout|wave|nod\",\"tags\":[\"...\"]}"
+)
 
 # 충돌 없는 독립 저장 경로
 # Using 'plantboard_store' to avoid collision with other team members' 'data' folders
@@ -263,6 +276,70 @@ def add_plant_log(username: str, log_data: dict) -> dict:
     all_data[username] = user_logs
     _save_json(LOGS_FILE, all_data)
     return log_data
+
+def call_lora_dialogue(plant: dict, triggers: list = None, season: str = None) -> dict:
+    import datetime
+    if triggers is None:
+        triggers = []
+    if season is None:
+        month = datetime.datetime.now().month
+        if month in (3, 4, 5):
+            season = "spring"
+        elif month in (6, 7, 8):
+            season = "summer"
+        elif month in (9, 10, 11):
+            season = "fall"
+        else:
+            season = "winter"
+
+    base_payload = {
+        "system_prompt": LORA_SYSTEM_PROMPT,
+        "user_payload": {
+            "plant": {
+                "id": plant.get("id", ""),
+                "name": plant.get("name", ""),
+                "soul": plant.get("soul", ""),
+            },
+            "season": season,
+            "triggers": triggers,
+        },
+        "temperature": LORA_TEMPERATURE,
+        "top_p": LORA_TOP_P,
+    }
+
+    # Retry once with shorter generation when schema validation(422) fails.
+    for max_new_tokens in (LORA_MAX_NEW_TOKENS, max(24, LORA_MAX_NEW_TOKENS // 2)):
+        payload = dict(base_payload)
+        payload["max_new_tokens"] = int(max_new_tokens)
+        data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        req = Request(
+            f"{LORA_SERVER_URL}/generate",
+            data=data,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        try:
+            with urlopen(req, timeout=LORA_TIMEOUT_SEC) as resp:
+                result = json.loads(resp.read().decode("utf-8"))
+                return {"ok": True, **result}
+        except HTTPError as e:
+            # 422 means model output schema mismatch; retry once with shorter output.
+            try:
+                detail = e.read().decode("utf-8", errors="replace")
+            except Exception:
+                detail = str(e)
+            print(f"[LoRA] call failed: HTTP {e.code} - {detail}")
+            if e.code != 422:
+                return {"ok": False, "reason": f"HTTP {e.code}: {detail}"}
+        except URLError as e:
+            print(f"[LoRA] call failed: {e}")
+            return {"ok": False, "reason": str(e)}
+        except Exception as e:
+            print(f"[LoRA] call failed: {e}")
+            return {"ok": False, "reason": str(e)}
+
+    return {"ok": False, "reason": "LoRA output schema invalid (422) after retry"}
+
 
 def delete_plant_log(username: str, log_id: str) -> bool:
     all_data = _load_json(LOGS_FILE, {})
