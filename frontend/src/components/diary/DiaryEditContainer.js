@@ -7,7 +7,7 @@ const BACKEND_ORIGIN = "http://localhost:8000";
 
 const toAbsoluteUrl = (url) => {
   if (!url) return "";
-  if (url.startsWith("http://") || url.startsWith("https://")) return url;
+  if (url.startsWith("http://") || url.startsWith("https://") || url.startsWith("data:")) return url;
   if (url.startsWith("/")) return `${BACKEND_ORIGIN}${url}`;
   return `${BACKEND_ORIGIN}/${url}`;
 };
@@ -20,18 +20,15 @@ const normalizeDiaryItems = (payload) => {
 };
 
 const resolveImageUrl = (item) => {
-  const filename = item?.image_filename || item?.imageFilename;
-  if (filename) return `/auth-uploads/${filename}`; // 상대경로로 반환
-
-  return (
+  const directUrl =
     item?.imageUrl ||
     item?.image_url ||
     item?.photoUrl ||
     item?.photo_url ||
     item?.photo ||
     item?.image ||
-    ""
-  );
+    "";
+  return directUrl;
 };
 
 const getItemDateValue = (item) => {

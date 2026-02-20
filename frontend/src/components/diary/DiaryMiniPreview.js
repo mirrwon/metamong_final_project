@@ -4,8 +4,6 @@ import { fetchWithSession } from "../../services/session";
 import "./DiaryMiniPreview.css";
 
 const API_BASE = "/api/diary";
-const BACKEND_ORIGIN = "http://localhost:8000";
-
 const normalizeDiaryItems = (payload) => {
   if (!payload) return [];
   if (Array.isArray(payload)) return payload;
@@ -24,18 +22,15 @@ const getItemDateValue = (item) => {
 };
 
 const resolveImageUrl = (item) => {
-  const filename = item?.image_filename || item?.imageFilename;
-  if (filename) return `${BACKEND_ORIGIN}/auth-uploads/${filename}`;
-
-  return (
+  const directUrl =
     item?.imageUrl ||
     item?.image_url ||
     item?.photoUrl ||
     item?.photo_url ||
     item?.photo ||
     item?.image ||
-    ""
-  );
+    "";
+  return directUrl;
 };
 
 const formatDateLabel = (value) => {

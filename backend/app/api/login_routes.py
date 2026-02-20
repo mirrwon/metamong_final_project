@@ -6,111 +6,38 @@ import time
 import urllib.parse
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
+from uuid import uuid4
 
-
-from fastapi import APIRouter, Form, HTTPException, UploadFile, File, Request, Depends
-from fastapi.responses import JSONResponse, RedirectResponse
 import requests
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
+from fastapi.responses import JSONResponse, RedirectResponse
+
+from app.api.deps import get_current_user
 from app.api.security import (
-    verify_password,
-    get_password_hash,
+    clear_access_cookie,
     create_access_token,
+    get_password_hash,
     is_password_hash,
     set_access_cookie,
-    clear_access_cookie,
+    verify_password,
 )
-from app.api.deps import get_current_user
+from app.db.mysql_repo import execute, fetch_all, fetch_one
+from app.db.s3_client import get_object_url, upload_bytes
 
 router = APIRouter(prefix="/api/auth")
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-USER_DIR = os.path.join(BASE_DIR, "users")
-UPLOAD_DIR = os.path.join(BASE_DIR, "uploads")
-RESULT_DIR = os.path.join(BASE_DIR, "results")
-os.makedirs(USER_DIR, exist_ok=True)
-os.makedirs(UPLOAD_DIR, exist_ok=True)
-os.makedirs(RESULT_DIR, exist_ok=True)
-
-UPLOAD_MOUNT = "/auth-uploads"
-ALLOWED_RESULT_EXTS = {".png", ".jpg", ".jpeg", ".jfif", ".gif", ".webp"}
 OAUTH_STATE_TTL_SEC = 600
-_oauth_state_cache = {}
+_oauth_state_cache: Dict[str, float] = {}
 
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _safe_username(name: str) -> str:
-    return name.replace(os.sep, "_").replace(os.altsep or "", "_")
-
-
-def _user_path(username: str) -> str:
-    safe = _safe_username(username)
-    return os.path.join(USER_DIR, f"{safe}.json")
-
-
-def _save_profile_image(file: UploadFile, username: str) -> str:
-    ext = os.path.splitext(file.filename or "")[1].lower() or ".jpg"
-    safe = _safe_username(username)
-    filename = f"profile_{safe}{ext}"
-    dest = os.path.join(UPLOAD_DIR, filename)
-    with open(dest, "wb") as f:
-        f.write(file.file.read())
-    return filename
-
-
-def _build_profile_image_url(request: Request, filename: Optional[str]) -> Optional[str]:
-    if not filename:
-        return None
-    base_url = str(request.base_url).rstrip("/")
-    return f"{base_url}{UPLOAD_MOUNT}/{filename}"
-
-
-def _load_user(path: str) -> Dict[str, Any]:
-    if not os.path.exists(path):
-        raise HTTPException(status_code=404, detail="User not found")
-    with open(path, "r", encoding="utf-8") as f:
-        record = json.load(f)
-    if _normalize_user_record(record):
-        _save_user(path, record)
-    return record
-
-
-def _save_user(path: str, data: Dict[str, Any]) -> None:
-    _normalize_user_record(data)
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
-
-
-def _normalize_user_record(data: Dict[str, Any]) -> bool:
-    changed = False
-    if "user_name" in data:
-        if "username" in data:
-            data.pop("username", None)
-            changed = True
-    elif "username" in data:
-        data["user_name"] = data.pop("username")
-        changed = True
-    return changed
-
-
-def _verify_or_migrate_password(record: Dict[str, Any], password: str) -> tuple[bool, bool]:
-    stored = record.get("password") or ""
-    if not stored:
-        return False, False
-
-    if is_password_hash(stored):
-        try:
-            return verify_password(password, stored), False
-        except Exception:
-            return False, False
-
-    if stored == password:
-        record["password"] = get_password_hash(password)
-        return True, True
-
-    return False, False
+def _to_iso(value: Any) -> str:
+    if hasattr(value, "isoformat"):
+        return value.isoformat()
+    return str(value or "")
 
 
 def _cleanup_oauth_state() -> None:
@@ -140,61 +67,94 @@ def _encode_oauth_payload(payload: Dict[str, Any]) -> str:
     return base64.urlsafe_b64encode(raw.encode("utf-8")).decode("ascii")
 
 
-def _is_result_image(name: str, path: str) -> bool:
-    if not os.path.isfile(path):
-        return False
-    _, ext = os.path.splitext(name)
-    return ext.lower() in ALLOWED_RESULT_EXTS
+def _safe_username(name: str) -> str:
+    return "".join(c for c in (name or "") if c.isalnum() or c in ("-", "_", ".", "@"))[:120]
 
 
-def _next_user_num() -> int:
-    # Incremental numeric id based on existing users.
-    max_id = 0
-    for filename in os.listdir(USER_DIR):
-        if not filename.endswith(".json"):
-            continue
-        path = os.path.join(USER_DIR, filename)
-        try:
-            with open(path, "r", encoding="utf-8") as f:
-                data = json.load(f)
-            value = str(data.get("user_num", "")).strip()
-            if value.isdigit():
-                max_id = max(max_id, int(value))
-        except (OSError, json.JSONDecodeError, ValueError):
-            continue
-    return max_id + 1
+def _next_user_num() -> str:
+    row = fetch_one(
+        "SELECT MAX(CAST(user_num AS UNSIGNED)) AS max_num "
+        "FROM users WHERE user_num REGEXP '^[0-9]+$'"
+    )
+    try:
+        max_num = int((row or {}).get("max_num") or 0)
+    except Exception:
+        max_num = 0
+    return str(max_num + 1)
 
 
-def _oauth_user_record(
-    username: str,
-    email: Optional[str],
-    name: Optional[str],
-    sub: str,
-) -> Dict[str, Any]:
+def _fetch_user(username: str) -> Optional[Dict[str, Any]]:
+    if not username:
+        return None
+    return fetch_one("SELECT * FROM users WHERE username=%s LIMIT 1", (username,))
+
+
+def _user_response(row: Dict[str, Any], fallback_profile_url: Optional[str] = None) -> Dict[str, Any]:
+    profile_url = row.get("profile_image_url") or fallback_profile_url
     return {
-        "user_num": str(_next_user_num()),
-        "user_name": username,
-        "password": "google-oauth",
-        "name": name or username,
-        "birthDate": "",
-        "phone": "",
-        "email": email or "",
-        "gender": "",
-        "zipcode": "",
-        "address1": "",
-        "address2": "",
-        "provider": "google",
-        "oauth_sub": sub,
-        "created_at": _now_iso(),
+        "user_num": str(row.get("user_num") or ""),
+        "user_name": row.get("username") or "",
+        "username": row.get("username") or "",
+        "name": row.get("name") or "",
+        "birthDate": row.get("birth_date") or "",
+        "phone": row.get("phone") or "",
+        "email": row.get("email") or "",
+        "gender": row.get("gender") or "",
+        "zipcode": row.get("zipcode") or "",
+        "address1": row.get("address1") or "",
+        "address2": row.get("address2") or "",
+        "provider": row.get("provider") or "",
+        "oauth_sub": row.get("oauth_sub") or "",
+        "created_at": _to_iso(row.get("created_at")),
+        "profileImageUrl": profile_url,
     }
 
 
 def _needs_profile(record: Dict[str, Any]) -> bool:
     required = ["gender", "birthDate", "phone", "zipcode", "address1"]
     for key in required:
-        value = str(record.get(key, "")).strip()
+        value = str(record.get(key, "") or "").strip()
         if not value:
             return True
+    return False
+
+
+def _upload_profile_image(file: UploadFile, username: str) -> tuple[Optional[str], Optional[str]]:
+    content = file.file.read()
+    if not content:
+        return None, None
+
+    ext = os.path.splitext(file.filename or "")[1].lower() or ".jpg"
+    content_type = file.content_type or "application/octet-stream"
+    safe_user = _safe_username(username) or "user"
+    key = f"profiles/{safe_user}/{uuid4().hex}{ext}"
+
+    if upload_bytes(key, content, content_type=content_type):
+        return key, (get_object_url(key) or "")
+
+    # Fallback for environments without configured S3.
+    encoded = base64.b64encode(content).decode("ascii")
+    return None, f"data:{content_type};base64,{encoded}"
+
+
+def _verify_or_migrate_password(row: Dict[str, Any], password: str) -> bool:
+    stored = str(row.get("password_hash") or "")
+    if not stored or stored == "google-oauth":
+        return False
+
+    if is_password_hash(stored):
+        try:
+            return verify_password(password, stored)
+        except Exception:
+            return False
+
+    if stored == password:
+        execute(
+            "UPDATE users SET password_hash=%s, updated_at=NOW(3) WHERE id=%s",
+            (get_password_hash(password), row.get("id")),
+        )
+        return True
+
     return False
 
 
@@ -249,6 +209,7 @@ def google_callback(
     )
     if not token_resp.ok:
         raise HTTPException(status_code=400, detail="Token exchange failed")
+
     token_data = token_resp.json()
     id_token = token_data.get("id_token")
     if not id_token:
@@ -271,21 +232,56 @@ def google_callback(
     picture = info.get("picture")
 
     username = email or f"google_{sub}"
-    path = _user_path(username)
-    if os.path.exists(path):
-        record = _load_user(path)
-    else:
-        record = _oauth_user_record(username, email, name, sub)
-        _save_user(path, record)
+    row = _fetch_user(username)
 
-    response = {k: v for k, v in record.items() if k != "password"}
-    profile_url = _build_profile_image_url(request, record.get("profile_image_filename"))
-    response["profileImageUrl"] = profile_url or picture
-    response["needsProfile"] = _needs_profile(record)
+    if row is None:
+        execute(
+            "INSERT INTO users ("
+            "user_num, username, password_hash, name, birth_date, phone, email, gender, zipcode, "
+            "address1, address2, provider, oauth_sub, profile_image_s3_key, profile_image_url, "
+            "created_at, updated_at"
+            ") VALUES ("
+            "%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(3), NOW(3)"
+            ")",
+            (
+                _next_user_num(),
+                username,
+                "google-oauth",
+                name or username,
+                "",
+                "",
+                email or "",
+                "",
+                "",
+                "",
+                "",
+                "google",
+                sub,
+                None,
+                picture or None,
+            ),
+        )
+    else:
+        execute(
+            "UPDATE users SET provider=%s, oauth_sub=%s, "
+            "email=COALESCE(NULLIF(email, ''), %s), "
+            "name=COALESCE(NULLIF(name, ''), %s), "
+            "profile_image_url=COALESCE(NULLIF(profile_image_url, ''), %s), "
+            "updated_at=NOW(3) WHERE id=%s",
+            ("google", sub, email or "", name or "", picture or "", row.get("id")),
+        )
+
+    row = _fetch_user(username)
+    if row is None:
+        raise HTTPException(status_code=500, detail="Failed to load oauth user")
+
+    response = _user_response(row, fallback_profile_url=picture)
+    response["needsProfile"] = _needs_profile(response)
 
     frontend_redirect = os.getenv("FRONTEND_OAUTH_REDIRECT", "http://localhost:3000/login")
     payload = _encode_oauth_payload(response)
     redirect_url = f"{frontend_redirect}?oauth=google&payload={urllib.parse.quote(payload)}"
+
     access_token = create_access_token(data={"sub": username})
     resp = RedirectResponse(redirect_url)
     set_access_cookie(resp, access_token)
@@ -294,7 +290,6 @@ def google_callback(
 
 @router.post("/register")
 def register(
-    request: Request,
     username: str = Form(...),
     password: str = Form(...),
     name: str = Form(...),
@@ -307,34 +302,47 @@ def register(
     address1: Optional[str] = Form(None),
     address2: Optional[str] = Form(None),
 ) -> JSONResponse:
-    path = _user_path(username)
-    if os.path.exists(path):
+    existing = _fetch_user(username)
+    if existing is not None:
         raise HTTPException(status_code=409, detail="Username already exists")
 
-    record: Dict[str, Any] = {
-        "user_num": str(_next_user_num()),
-        "user_name": username,
-        "password": get_password_hash(password),
-        "name": name,
-        "birthDate": birthDate,
-        "phone": phone,
-        "email": email,
-        "gender": gender,
-        "zipcode": zipcode,
-        "address1": address1,
-        "address2": address2,
-        "created_at": _now_iso(),
-    }
-
+    profile_key = None
+    profile_url = None
     if profileImage:
-        record["profile_image_filename"] = _save_profile_image(profileImage, username)
+        profile_key, profile_url = _upload_profile_image(profileImage, username)
 
-    _save_user(path, record)
-
-    response = {k: v for k, v in record.items() if k != "password"}
-    response["profileImageUrl"] = _build_profile_image_url(
-        request, record.get("profile_image_filename")
+    execute(
+        "INSERT INTO users ("
+        "user_num, username, password_hash, name, birth_date, phone, email, gender, zipcode, "
+        "address1, address2, provider, oauth_sub, profile_image_s3_key, profile_image_url, "
+        "created_at, updated_at"
+        ") VALUES ("
+        "%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(3), NOW(3)"
+        ")",
+        (
+            _next_user_num(),
+            username,
+            get_password_hash(password),
+            name,
+            birthDate,
+            phone,
+            email,
+            gender,
+            zipcode,
+            address1,
+            address2,
+            "local",
+            None,
+            profile_key,
+            profile_url,
+        ),
     )
+
+    row = _fetch_user(username)
+    if row is None:
+        raise HTTPException(status_code=500, detail="Failed to create user")
+
+    response = _user_response(row)
     access_token = create_access_token(data={"sub": username})
     resp = JSONResponse(response, status_code=201)
     set_access_cookie(resp, access_token)
@@ -342,24 +350,24 @@ def register(
 
 
 @router.post("/login")
-def login(payload: Dict[str, Any], request: Request) -> JSONResponse:
+def login(payload: Dict[str, Any]) -> JSONResponse:
     username = payload.get("username")
     password = payload.get("password")
     if not username or not password:
         raise HTTPException(status_code=400, detail="Username and password required")
 
-    record = _load_user(_user_path(username))
-    ok, migrated = _verify_or_migrate_password(record, password)
-    if not ok:
+    row = _fetch_user(username)
+    if row is None:
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
-    if migrated:
-        _save_user(_user_path(username), record)
+    if not _verify_or_migrate_password(row, password):
+        raise HTTPException(status_code=401, detail="Invalid credentials")
 
-    response = {k: v for k, v in record.items() if k != "password"}
-    response["profileImageUrl"] = _build_profile_image_url(
-        request, record.get("profile_image_filename")
-    )
+    row = _fetch_user(username)
+    if row is None:
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+
+    response = _user_response(row)
     access_token = create_access_token(data={"sub": username})
     resp = JSONResponse(response)
     set_access_cookie(resp, access_token)
@@ -368,7 +376,6 @@ def login(payload: Dict[str, Any], request: Request) -> JSONResponse:
 
 @router.put("/profile")
 def update_profile(
-    request: Request,
     current_user: dict = Depends(get_current_user),
     password: Optional[str] = Form(None),
     name: Optional[str] = Form(None),
@@ -385,40 +392,53 @@ def update_profile(
     if not username:
         raise HTTPException(status_code=401, detail="Invalid token")
 
-    path = _user_path(username)
-    record = _load_user(path)
+    row = _fetch_user(username)
+    if row is None:
+        raise HTTPException(status_code=404, detail="User not found")
 
-    updates = {
-        "name": name,
-        "birthDate": birthDate,
-        "phone": phone,
-        "email": email,
-        "gender": gender,
-        "zipcode": zipcode,
-        "address1": address1,
-        "address2": address2,
-    }
-    for key, value in updates.items():
-        if value is not None:
-            record[key] = value
-
-    is_oauth_user = record.get("provider") == "google" or bool(record.get("oauth_sub"))
+    is_oauth_user = row.get("provider") == "google" or bool(row.get("oauth_sub"))
     if password and is_oauth_user:
         raise HTTPException(status_code=400, detail="OAuth users cannot change password")
 
+    updates: Dict[str, Any] = {}
+    if name is not None:
+        updates["name"] = name
+    if birthDate is not None:
+        updates["birth_date"] = birthDate
+    if phone is not None:
+        updates["phone"] = phone
+    if email is not None:
+        updates["email"] = email
+    if gender is not None:
+        updates["gender"] = gender
+    if zipcode is not None:
+        updates["zipcode"] = zipcode
+    if address1 is not None:
+        updates["address1"] = address1
+    if address2 is not None:
+        updates["address2"] = address2
     if password:
-        record["password"] = get_password_hash(password)
+        updates["password_hash"] = get_password_hash(password)
 
     if profileImage:
-        record["profile_image_filename"] = _save_profile_image(profileImage, username)
+        profile_key, profile_url = _upload_profile_image(profileImage, username)
+        updates["profile_image_s3_key"] = profile_key
+        updates["profile_image_url"] = profile_url
 
-    _save_user(path, record)
+    if updates:
+        clauses = [f"{col}=%s" for col in updates.keys()]
+        params = list(updates.values())
+        params.append(row.get("id"))
+        execute(
+            f"UPDATE users SET {', '.join(clauses)}, updated_at=NOW(3) WHERE id=%s",
+            params,
+        )
 
-    response = {k: v for k, v in record.items() if k != "password"}
-    response["profileImageUrl"] = _build_profile_image_url(
-        request, record.get("profile_image_filename")
-    )
-    return JSONResponse(response)
+    row = _fetch_user(username)
+    if row is None:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    return JSONResponse(_user_response(row))
 
 
 @router.post("/logout")
@@ -430,17 +450,29 @@ def logout() -> JSONResponse:
 
 @router.get("/results")
 def list_results() -> JSONResponse:
+    rows = fetch_all(
+        "SELECT id, image_path, image_s3_key, created_at "
+        "FROM saved_recos ORDER BY id DESC LIMIT 100"
+    )
+
     items = []
-    for name in os.listdir(RESULT_DIR):
-        path = os.path.join(RESULT_DIR, name)
-        if not _is_result_image(name, path):
+    for row in rows:
+        image_key = str(row.get("image_s3_key") or "").strip()
+        image_path = str(row.get("image_path") or "").strip()
+        url = get_object_url(image_key) if image_key else image_path
+        if not url:
             continue
+        created_at = row.get("created_at")
+        try:
+            mtime = float(created_at.timestamp()) if created_at else 0.0
+        except Exception:
+            mtime = 0.0
         items.append(
             {
-                "name": name,
-                "url": f"/results/{name}",
-                "mtime": os.path.getmtime(path),
+                "name": str(row.get("id") or ""),
+                "url": url,
+                "mtime": mtime,
             }
         )
-    items.sort(key=lambda x: x.get("mtime", 0), reverse=True)
+
     return JSONResponse({"items": items})

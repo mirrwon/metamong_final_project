@@ -152,5 +152,43 @@
       "created_at": "2026-02-12 16:29:17",
       "roomImagePixelUrl": "/plants/room_9a041ef006e3_pixel.png"
     }
+  ],
+  "1234": [
+    {
+      "name": "익소라",
+      "sourcePlantId": "146",
+      "sourcePlantName": "익소라",
+      "image": "https://metamong-ap-920671455199.s3-accesspoint.ap-northeast-2.amazonaws.com/plant_img/plant_146_1.jpg?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIA5MXCLQ7PTNF4GHPO%2F20260212%2Fap-northeast-2%2Fs3%2Faws4_request&X-Amz-Date=20260212T091322Z&X-Amz-Expires=900&X-Amz-SignedHeaders=host&X-Amz-Signature=8158e0d3b9d8390fabe2370e5d15732bb3f4e7dfc24a6b4ca6cc6788f49ba4a5",
+      "roomImageUrl": "http://localhost:8000/uploads/0304a8e7c67242c9a35ce44a791d6086.jpg",
+      "characterName": "튼튼이",
+      "personality": "투덜이",
+      "id": "plant_1770887684_0",
+      "created_at": "2026-02-12 18:14:44",
+      "roomImagePixelUrl": "/plants/room_daf29305b63c_pixel.png"
+    },
+    {
+      "name": "아프리칸 바이올렛",
+      "sourcePlantId": "129",
+      "sourcePlantName": "아프리칸 바이올렛",
+      "image": "https://metamong-ap-920671455199.s3-accesspoint.ap-northeast-2.amazonaws.com/plant_img/plant_129_1.jpg?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIA5MXCLQ7PTNF4GHPO%2F20260219%2Fap-northeast-2%2Fs3%2Faws4_request&X-Amz-Date=20260219T011643Z&X-Amz-Expires=900&X-Amz-SignedHeaders=host&X-Amz-Signature=20a12599eb4e452ea6f614e6932966a63b6920aabd03f018d3cc4688b05f2773",
+      "roomImageUrl": "http://localhost:8000/uploads/632d8a0584374aabad4829c7c282a52c.jpg",
+      "characterName": "별꽃이",
+      "personality": "댕댕이",
+      "id": "plant_1771463841_1",
+      "created_at": "2026-02-19 10:17:21",
+      "roomImagePixelUrl": "/plants/room_ac6e922cdca9_pixel.png"
+    },
+    {
+      "name": "파피오페딜럼",
+      "sourcePlantId": "178",
+      "sourcePlantName": "파피오페딜럼",
+      "image": "https://metamong-ap-920671455199.s3-accesspoint.ap-northeast-2.amazonaws.com/plant_img/plant_178_1.jpg?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIA5MXCLQ7PTNF4GHPO%2F20260219%2Fap-northeast-2%2Fs3%2Faws4_request&X-Amz-Date=20260219T012127Z&X-Amz-Expires=900&X-Amz-SignedHeaders=host&X-Amz-Signature=4d7fde5ed0c3cb3a97da9ec7990e90e119b9d50102b58c375cba4bab2eaceba9",
+      "roomImageUrl": "http://localhost:8000/uploads/1e8d5eff4fb0445bad50e70e5829b576.jpg",
+      "characterName": "복실이",
+      "personality": "투덜이",
+      "id": "plant_1771464148_2",
+      "created_at": "2026-02-19 10:22:28",
+      "roomImagePixelUrl": "/plants/room_259d2013a97a_pixel.png"
+    }
   ]
 }

@@ -4,7 +4,6 @@ import "./DiaryList.css";
 import { fetchWithSession } from "../../services/session";
 
 const API_BASE = "/api/diary";
-const BACKEND_ORIGIN = "http://localhost:8000";
 
 /* 응답 형태 통일 */
 const normalizeDiaryItems = (payload) => {
@@ -27,18 +26,15 @@ const getItemDateValue = (item) => {
 
 /* 이미지 URL 해결 (조원 수정 반영) */
 const resolveImageUrl = (item) => {
-  const filename = item?.image_filename || item?.imageFilename;
-  if (filename) return `${BACKEND_ORIGIN}/auth-uploads/${filename}`;
-
-  return (
+  const directUrl =
     item?.imageUrl ||
     item?.image_url ||
     item?.photoUrl ||
     item?.photo_url ||
     item?.photo ||
     item?.image ||
-    ""
-  );
+    "";
+  return directUrl;
 };
 
 const formatDateLabel = (value) => {

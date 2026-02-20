@@ -1,0 +1,15 @@
+{
+  "user_num": "4",
+  "user_name": "1234",
+  "password": "$argon2id$v=19$m=65536,t=3,p=4$GcPYG2NsDSEkBAAAwJgTAg$97f4js+sb1cqRyrEFHOb1Sw9rMTGiibeMsnpwZaiZMw",
+  "name": "Min",
+  "birthDate": "2026-02-03",
+  "phone": "010-1111-1112",
+  "email": "1234@naevr.com",
+  "gender": "male",
+  "zipcode": "05065",
+  "address1": "서울 광진구 아차산로 262",
+  "address2": "A동",
+  "created_at": "2026-02-12T03:37:06.306469+00:00",
+  "profile_image_filename": "profile_1234.png"
+}
