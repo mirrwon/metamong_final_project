@@ -1,25 +1,35 @@
+import json
+import os
 from typing import Any, Dict
 
 import requests
 from fastapi import APIRouter, HTTPException, Depends
 from app.api.deps import get_current_user
-from app.db.mysql_repo import fetch_one
 
 router = APIRouter(prefix="/api/map")
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+USER_DIR = os.path.join(BASE_DIR, "users")
 
 KAKAO_ADDRESS_URL = "https://dapi.kakao.com/v2/local/search/address.json"
 KAKAO_KEYWORD_URL = "https://dapi.kakao.com/v2/local/search/keyword.json"
 KAKAO_CATEGORY_URL = "https://dapi.kakao.com/v2/local/search/category.json"
 
 
-def _load_user(username: str) -> Dict[str, Any]:
-    row = fetch_one(
-        "SELECT username, address1, address2 FROM users WHERE username=%s LIMIT 1",
-        (username,),
-    )
-    if not row:
+def _safe_username(name: str) -> str:
+    return name.replace(os.sep, "_").replace(os.altsep or "", "_")
+
+
+def _user_path(username: str) -> str:
+    safe = _safe_username(username)
+    return os.path.join(USER_DIR, f"{safe}.json")
+
+
+def _load_user(path: str) -> Dict[str, Any]:
+    if not os.path.exists(path):
         raise HTTPException(status_code=404, detail="User not found")
-    return row
+    with open(path, "r", encoding="utf-8") as f:
+        return json.load(f)
 
 
 def _get_kakao_key() -> str:
@@ -208,7 +218,7 @@ def list_nearby_flowers(
     if not username:
         raise HTTPException(status_code=400, detail="Username required")
 
-    record = _load_user(username)
+    record = _load_user(_user_path(username))
     address = _build_address(record)
     if not address:
         raise HTTPException(status_code=400, detail="User address is missing")

@@ -1,18 +1,22 @@
-import base64
+﻿import os
 import json
-import os
-import re
-import tempfile
 import time
+import base64
 import uuid
-from datetime import datetime
-from typing import Any, Dict, List, Optional, Tuple
+import re
+import hashlib
+from typing import List, Optional, Dict, Any
+from urllib.parse import urlparse
+from urllib.request import Request, urlopen
 
-import requests
-
-from app.db.mysql_repo import execute, fetch_all, fetch_one
-from app.db.s3_client import get_object_url, upload_bytes
 from app.llm.gemini.gemini_image_edit import gemini_edit_image
+from app.config import PLANTS_DIR
+
+# 충돌 없는 독립 저장 경로
+# Using 'plantboard_store' to avoid collision with other team members' 'data' folders
+STORE_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "plantboard_store")
+PLANTS_FILE = os.path.join(STORE_DIR, "user_plants.json")
+LOGS_FILE = os.path.join(STORE_DIR, "plant_logs.json")
 
 TAMAGOTCHI_PIXEL_PROMPT = (
     "Transform this interior photo into 1990s tamagotchi-style pixel art. "
@@ -26,457 +30,249 @@ TAMAGOTCHI_PIXEL_PROMPT = (
     "No blur, no gradients, no noise, no halftone, no dithering."
 )
 
-DATA_URL_RE = re.compile(r"^data:(?P<mime>[\w.+\-/]+);base64,(?P<data>.+)$", re.IGNORECASE)
 
+# Ensure directory exists
+os.makedirs(STORE_DIR, exist_ok=True)
 
-def _now_date() -> str:
-    return datetime.now().strftime("%Y-%m-%d")
-
-
-def _now_time() -> str:
-    return datetime.now().strftime("%H:%M")
-
-
-def _to_iso(value: Any) -> str:
-    if hasattr(value, "isoformat"):
-        return value.isoformat()
-    return str(value or "")
-
-
-def _ensure_user_id(username: str) -> int:
-    row = fetch_one("SELECT id FROM users WHERE username=%s LIMIT 1", (username,))
-    if row:
-        return int(row["id"])
-
-    execute(
-        "INSERT IGNORE INTO users (username, provider, created_at, updated_at) VALUES (%s, %s, NOW(3), NOW(3))",
-        (username, "local"),
-    )
-    row = fetch_one("SELECT id FROM users WHERE username=%s LIMIT 1", (username,))
-    if not row:
-        raise RuntimeError("failed_to_create_user")
-    return int(row["id"])
-
-
-def _json_loads_dict(raw: Any) -> Dict[str, Any]:
-    if isinstance(raw, dict):
-        return raw
-    if not raw:
-        return {}
+def _load_json(filepath: str, default_val: any):
+    if not os.path.exists(filepath):
+        return default_val
     try:
-        obj = json.loads(str(raw))
-        return obj if isinstance(obj, dict) else {}
+        with open(filepath, "r", encoding="utf-8") as f:
+            return json.load(f)
     except Exception:
-        return {}
+        return default_val
 
+def _save_json(filepath: str, data: any):
+    try:
+        with open(filepath, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        print(f"[PlantBoard] Save Error: {e}")
 
-def _json_loads_any(raw: Any) -> Any:
-    if raw in (None, ""):
+def _process_base64_image(image_data: str, prefix: str = "img") -> str:
+    """
+    Base64 이미지를 파일로 저장하고 접근 가능한 URL을 반환합니다.
+    이미 URL 형태일 경우 그대로 반환합니다.
+    """
+    if not image_data or not isinstance(image_data, str):
+        return image_data
+    
+    # 이미 URL인 경우 (http, /plants/ 등) 처리 생략
+    if image_data.startswith(("http", "/api", "/plants", "/uploads", "/results")):
+        return image_data
+    
+    # Base64 패턴 확인 (data:image/png;base64,...)
+    match = re.match(r"data:image/(\w+);base64,(.*)", image_data)
+    if not match:
+        return image_data
+    
+    ext = match.group(1)
+    base64_str = match.group(2)
+    
+    try:
+        # 고유 파일명 생성
+        filename = f"{prefix}_{uuid.uuid4().hex}.{ext}"
+        filepath = os.path.join(PLANTS_DIR, filename)
+        
+        # 디렉터리 보장
+        os.makedirs(PLANTS_DIR, exist_ok=True)
+        
+        # 파일로 저장
+        with open(filepath, "wb") as f:
+            f.write(base64.b64decode(base64_str))
+            
+        # 프론트엔드에서 접근 가능한 절대 경로 반환
+        return f"/plants/{filename}"
+    except Exception as e:
+        print(f"[PlantBoard] Image Process Error: {e}")
+        return image_data
+
+def _save_base64_to_file(image_data: str, prefix: str = "img") -> Optional[str]:
+    if not image_data or not isinstance(image_data, str):
         return None
-    try:
-        return json.loads(str(raw))
-    except Exception:
-        return raw
-
-
-def _json_dumps_safe(raw: Any) -> Optional[str]:
-    if raw is None:
-        return None
-    try:
-        return json.dumps(raw, ensure_ascii=False)
-    except Exception:
-        return str(raw)
-
-
-def _ext_from_content_type(content_type: str) -> str:
-    ct = (content_type or "").lower()
-    if "png" in ct:
-        return ".png"
-    if "jpeg" in ct or "jpg" in ct:
-        return ".jpg"
-    if "webp" in ct:
-        return ".webp"
-    if "gif" in ct:
-        return ".gif"
-    return ".bin"
-
-
-def _decode_data_url(data_url: str) -> Optional[Tuple[bytes, str]]:
-    match = DATA_URL_RE.match(data_url or "")
+    match = re.match(r"data:image/(\w+);base64,(.*)", image_data)
     if not match:
         return None
-    mime = (match.group("mime") or "application/octet-stream").strip()
-    b64_data = match.group("data")
+    ext = match.group(1)
+    base64_str = match.group(2)
     try:
-        payload = base64.b64decode(b64_data)
-    except Exception:
+        filename = f"{prefix}_{uuid.uuid4().hex}.{ext}"
+        filepath = os.path.join(PLANTS_DIR, filename)
+        os.makedirs(PLANTS_DIR, exist_ok=True)
+        with open(filepath, "wb") as f:
+            f.write(base64.b64decode(base64_str))
+        return filepath
+    except Exception as e:
+        print(f"[PlantBoard] Base64 Save Error: {e}")
         return None
-    return payload, mime
 
+def _download_image_to_file(image_url: str, prefix: str = "room") -> Optional[str]:
+    try:
+        parsed = urlparse(image_url)
+        ext = os.path.splitext(parsed.path)[1] or ".png"
+        url_hash = hashlib.sha1(image_url.encode("utf-8")).hexdigest()[:12]
+        filename = f"{prefix}_{url_hash}{ext}"
+        filepath = os.path.join(PLANTS_DIR, filename)
+        if os.path.exists(filepath):
+            return filepath
+        os.makedirs(PLANTS_DIR, exist_ok=True)
+        req = Request(image_url, headers={"User-Agent": "Mozilla/5.0"})
+        with urlopen(req, timeout=10) as resp, open(filepath, "wb") as out:
+            out.write(resp.read())
+        return filepath
+    except Exception as e:
+        print(f"[PlantBoard] Download Error: {e}")
+        return None
 
-def _upload_image_bytes(prefix: str, user_id: int, content: bytes, content_type: str) -> tuple[Optional[str], Optional[str]]:
-    if not content:
-        return None, None
-
-    ext = _ext_from_content_type(content_type)
-    key = f"plantboard/{prefix}/{user_id}/{uuid.uuid4().hex}{ext}"
-    if upload_bytes(key, content, content_type=content_type):
-        return key, (get_object_url(key) or "")
-
-    # Fallback if S3 is not configured.
-    encoded = base64.b64encode(content).decode("ascii")
-    return None, f"data:{content_type};base64,{encoded}"
-
-
-def _normalize_image_value(value: Any, prefix: str, user_id: int) -> tuple[Optional[str], Optional[str]]:
-    if not isinstance(value, str):
-        return None, None
-
-    image_data = value.strip()
-    if not image_data:
-        return None, None
-
-    decoded = _decode_data_url(image_data)
-    if decoded is not None:
-        payload, mime = decoded
-        return _upload_image_bytes(prefix, user_id, payload, mime)
-
-    if image_data.startswith(("http://", "https://")):
-        return image_data, None
-
-    if image_data.startswith("/"):
-        base_url = os.getenv("BACKEND_PUBLIC_BASE_URL", "http://localhost:8000").rstrip("/")
-        return f"{base_url}{image_data}", None
-
-    return image_data, None
-
-
-def _serialize_plant_row(row: Dict[str, Any]) -> Dict[str, Any]:
-    item: Dict[str, Any] = {
-        "id": row.get("id"),
-        "name": row.get("name") or "",
-        "sourcePlantId": row.get("source_plant_id"),
-        "sourcePlantName": row.get("source_plant_name"),
-        "createdBy": row.get("created_by"),
-        "coverUrl": row.get("cover_url"),
-        "roomImageUrl": row.get("room_image_url"),
-        "roomImagePixelUrl": row.get("room_image_pixel_url"),
-        "characterName": row.get("character_name"),
-        "characterImageUrl": row.get("character_image_url"),
-        "personality": row.get("personality"),
-        "created_at": _to_iso(row.get("created_at")),
-        "updated_at": _to_iso(row.get("updated_at")),
-    }
-
-    extra = _json_loads_dict(row.get("extra"))
-    for key, value in extra.items():
-        if key not in item or item[key] in (None, ""):
-            item[key] = value
-
-    return item
-
-
-def _serialize_log_row(row: Dict[str, Any]) -> Dict[str, Any]:
-    meta = _json_loads_any(row.get("meta"))
-    item: Dict[str, Any] = {
-        "id": row.get("id"),
-        "type": row.get("log_type") or "",
-        "date": row.get("log_date") or "",
-        "time": row.get("log_time") or "",
-        "plantId": row.get("plant_id") or "",
-        "plantName": row.get("source_plant_name") or "",
-        "title": row.get("title") or "",
-        "detail": row.get("detail") or "",
-        "imageUrl": row.get("image_url") or "",
-        "sourcePlantId": row.get("source_plant_id") or "",
-        "sourcePlantName": row.get("source_plant_name") or "",
-        "plantImageUrl": row.get("plant_image_url") or "",
-        "plantCharacterName": row.get("plant_character_name") or "",
-        "plantPersonality": row.get("plant_personality") or "",
-        "roomImageUrl": row.get("room_image_url") or "",
-        "roomImagePixelUrl": row.get("room_image_pixel_url") or "",
-        "created_at": _to_iso(row.get("created_at")),
-        "updated_at": _to_iso(row.get("updated_at")),
-    }
-    if meta is not None:
-        item["meta"] = meta
-    return item
-
-
-def _download_image_bytes(image_url: str) -> tuple[Optional[bytes], str]:
-    image_url = str(image_url or "").strip()
-    if not image_url:
-        return None, "application/octet-stream"
-
-    decoded = _decode_data_url(image_url)
-    if decoded is not None:
-        return decoded
-
-    if image_url.startswith("/"):
-        base_url = os.getenv("BACKEND_PUBLIC_BASE_URL", "http://localhost:8000").rstrip("/")
-        image_url = f"{base_url}{image_url}"
-
-    if image_url.startswith(("http://", "https://")):
-        try:
-            response = requests.get(image_url, timeout=20)
-            if not response.ok:
-                return None, "application/octet-stream"
-            content_type = response.headers.get("content-type", "application/octet-stream").split(";")[0]
-            return response.content, content_type
-        except Exception:
-            return None, "application/octet-stream"
-
-    possible_url = get_object_url(image_url)
-    if possible_url:
-        try:
-            response = requests.get(possible_url, timeout=20)
-            if not response.ok:
-                return None, "application/octet-stream"
-            content_type = response.headers.get("content-type", "application/octet-stream").split(";")[0]
-            return response.content, content_type
-        except Exception:
-            return None, "application/octet-stream"
-
-    return None, "application/octet-stream"
-
-
-def _generate_pixel_image_from_url(image_url: str, user_id: int) -> Dict[str, Any]:
+def _generate_pixel_image_from_url(image_url: str) -> Dict[str, str]:
     if not image_url:
         return {"ok": False, "reason": "image_url missing"}
 
-    payload, content_type = _download_image_bytes(image_url)
-    if not payload:
+    input_path = None
+    if image_url.startswith("data:image/"):
+        input_path = _save_base64_to_file(image_url, "room")
+    elif image_url.startswith(("http://", "https://")):
+        input_path = _download_image_to_file(image_url, "room")
+    elif image_url.startswith(("/plants/", "/uploads/", "/results/")):
+        input_path = os.path.join(PLANTS_DIR, os.path.basename(image_url))
+    else:
+        input_path = image_url if os.path.exists(image_url) else None
+
+    if not input_path or not os.path.exists(input_path):
         return {"ok": False, "reason": "input image not found"}
 
-    input_ext = _ext_from_content_type(content_type)
-    if input_ext == ".bin":
-        input_ext = ".png"
+    base = os.path.splitext(os.path.basename(input_path))[0]
+    out_filename = f"{base}_pixel.png"
+    out_path = os.path.join(PLANTS_DIR, out_filename)
 
-    with tempfile.TemporaryDirectory(prefix="metamong_pixel_") as tmp_dir:
-        input_path = os.path.join(tmp_dir, f"room{input_ext}")
-        out_path = os.path.join(tmp_dir, "room_pixel.png")
-
-        with open(input_path, "wb") as f:
-            f.write(payload)
-
-        res = gemini_edit_image(
-            input_image_path=input_path,
-            prompt=TAMAGOTCHI_PIXEL_PROMPT,
-            out_path=out_path,
-        )
-
-        if not res.get("ok"):
-            return {"ok": False, "reason": res.get("reason", "gemini failed")}
-
-        try:
-            with open(out_path, "rb") as f:
-                out_bytes = f.read()
-        except Exception:
-            return {"ok": False, "reason": "pixel output read failed"}
-
-    s3_key, pixel_url = _upload_image_bytes("room_pixel", user_id, out_bytes, "image/png")
-    if not pixel_url:
-        return {"ok": False, "reason": "pixel upload failed"}
-
-    return {"ok": True, "url": pixel_url, "s3_key": s3_key}
-
-
-# --- Plants ---
-
-def get_user_plants(username: str) -> List[dict]:
-    user_id = _ensure_user_id(username)
-    rows = fetch_all(
-        "SELECT * FROM plant_instances WHERE user_id=%s ORDER BY created_at ASC",
-        (user_id,),
-    )
-    return [_serialize_plant_row(row) for row in rows]
-
-
-def add_user_plant(username: str, plant_data: dict) -> dict:
-    user_id = _ensure_user_id(username)
-    data = dict(plant_data or {})
-
-    cover_url, cover_key = _normalize_image_value(data.get("coverUrl"), "cover", user_id)
-    room_image_url, room_image_key = _normalize_image_value(data.get("roomImageUrl"), "room", user_id)
-    room_pixel_url, room_pixel_key = _normalize_image_value(data.get("roomImagePixelUrl"), "room_pixel", user_id)
-
-    plant_id = f"plant_{int(time.time())}_{uuid.uuid4().hex[:8]}"
-
-    known_keys = {
-        "name",
-        "sourcePlantId",
-        "sourcePlantName",
-        "createdBy",
-        "coverUrl",
-        "roomImageUrl",
-        "roomImagePixelUrl",
-        "characterName",
-        "characterImageUrl",
-        "personality",
-    }
-    extra = {k: v for k, v in data.items() if k not in known_keys}
-
-    execute(
-        "INSERT INTO plant_instances ("
-        "id, user_id, name, source_plant_id, source_plant_name, created_by, "
-        "cover_s3_key, cover_url, room_image_s3_key, room_image_url, "
-        "room_image_pixel_s3_key, room_image_pixel_url, character_name, "
-        "character_image_url, personality, extra, created_at, updated_at"
-        ") VALUES ("
-        "%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(3), NOW(3)"
-        ")",
-        (
-            plant_id,
-            user_id,
-            data.get("name"),
-            data.get("sourcePlantId"),
-            data.get("sourcePlantName"),
-            data.get("createdBy"),
-            cover_key,
-            cover_url,
-            room_image_key,
-            room_image_url,
-            room_pixel_key,
-            room_pixel_url,
-            data.get("characterName"),
-            data.get("characterImageUrl"),
-            data.get("personality"),
-            _json_dumps_safe(extra),
-        ),
+    res = gemini_edit_image(
+        input_image_path=input_path,
+        prompt=TAMAGOTCHI_PIXEL_PROMPT,
+        out_path=out_path,
     )
 
-    row = fetch_one("SELECT * FROM plant_instances WHERE id=%s LIMIT 1", (plant_id,))
-    if not row:
-        return {"id": plant_id, **data}
-    return _serialize_plant_row(row)
+    if not res.get("ok"):
+        return {"ok": False, "reason": res.get("reason", "gemini failed")}
+
+    return {"ok": True, "url": f"/plants/{out_filename}"}
 
 
-# --- Logs ---
-
-def get_plant_logs(username: str) -> List[dict]:
-    user_id = _ensure_user_id(username)
-    rows = fetch_all(
-        "SELECT * FROM plant_logs WHERE user_id=%s "
-        "ORDER BY COALESCE(log_date, '') DESC, COALESCE(log_time, '') DESC, created_at DESC",
-        (user_id,),
-    )
-    return [_serialize_log_row(row) for row in rows]
-
-
-def add_plant_log(username: str, log_data: dict) -> dict:
-    user_id = _ensure_user_id(username)
-    data = dict(log_data or {})
-
-    image_url, image_key = _normalize_image_value(data.get("imageUrl"), "log", user_id)
-
-    log_id = f"log_{int(time.time())}_{uuid.uuid4().hex[:8]}"
-    log_date = str(data.get("date") or _now_date())
-    log_time = str(data.get("time") or _now_time())
-
-    meta_value = data.get("meta")
-    meta_json = _json_dumps_safe(meta_value)
-
-    source_plant_name = data.get("plantName") or data.get("sourcePlantName")
-    source_plant_id = data.get("sourcePlantId")
-
-    execute(
-        "INSERT INTO plant_logs ("
-        "id, user_id, plant_id, log_type, log_date, log_time, title, detail, "
-        "image_s3_key, image_url, source_plant_id, source_plant_name, plant_image_url, "
-        "plant_character_name, plant_personality, room_image_url, room_image_pixel_url, "
-        "meta, created_at, updated_at"
-        ") VALUES ("
-        "%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(3), NOW(3)"
-        ")",
-        (
-            log_id,
-            user_id,
-            data.get("plantId"),
-            data.get("type"),
-            log_date,
-            log_time,
-            data.get("title"),
-            data.get("detail"),
-            image_key,
-            image_url,
-            source_plant_id,
-            source_plant_name,
-            data.get("plantImageUrl"),
-            data.get("plantCharacterName"),
-            data.get("plantPersonality"),
-            data.get("roomImageUrl"),
-            data.get("roomImagePixelUrl"),
-            meta_json,
-        ),
-    )
-
-    row = fetch_one("SELECT * FROM plant_logs WHERE id=%s LIMIT 1", (log_id,))
-    if not row:
-        return {"id": log_id, **data}
-    return _serialize_log_row(row)
-
-
-def delete_plant_log(username: str, log_id: str) -> bool:
-    user_id = _ensure_user_id(username)
-    affected = execute("DELETE FROM plant_logs WHERE user_id=%s AND id=%s", (user_id, log_id))
-    return affected > 0
-
-
-# --- Pixel generation ---
-
-def generate_tamagotchi_room_pixel_image(username: str, image_url: str, plant_id: Optional[str] = None) -> Dict[str, Any]:
-    user_id = _ensure_user_id(username)
-    res = _generate_pixel_image_from_url(image_url, user_id)
+def generate_tamagotchi_room_pixel_image(username: str, image_url: str, plant_id: Optional[str] = None) -> Dict[str, str]:
+    res = _generate_pixel_image_from_url(image_url)
     if not res.get("ok"):
         return res
 
-    pixel_url = res.get("url")
-    s3_key = res.get("s3_key")
-
-    if plant_id:
-        execute(
-            "UPDATE plant_instances SET room_image_pixel_s3_key=%s, room_image_pixel_url=%s, updated_at=NOW(3) "
-            "WHERE user_id=%s AND id=%s",
-            (s3_key, pixel_url, user_id, plant_id),
-        )
-        row = fetch_one(
-            "SELECT * FROM plant_instances WHERE user_id=%s AND id=%s LIMIT 1",
-            (user_id, plant_id),
-        )
-        if row:
-            return {"ok": True, "url": pixel_url, "plant": _serialize_plant_row(row)}
+    pixel_url = res["url"]
+    if plant_id and username:
+        try:
+            all_data = _load_json(PLANTS_FILE, {})
+            user_list = all_data.get(username, [])
+            updated = None
+            for p in user_list:
+                if p.get("id") == plant_id:
+                    p["roomImagePixelUrl"] = pixel_url
+                    updated = p
+                    break
+            all_data[username] = user_list
+            _save_json(PLANTS_FILE, all_data)
+            return {"ok": True, "url": pixel_url, "plant": updated}
+        except Exception as e:
+            print(f"[PlantBoard] Save Pixel Error: {e}")
 
     return {"ok": True, "url": pixel_url}
 
 
 def generate_tamagotchi_room_pixel_images_for_user(username: str, force: bool = False) -> Dict[str, Any]:
-    user_id = _ensure_user_id(username)
-    rows = fetch_all("SELECT * FROM plant_instances WHERE user_id=%s ORDER BY created_at ASC", (user_id,))
+    all_data = _load_json(PLANTS_FILE, {})
+    user_list = all_data.get(username, [])
+    updated_list = []
+    failures = []
 
-    failures: List[Dict[str, Any]] = []
-    for row in rows:
-        plant_id = row.get("id")
-        room_url = row.get("room_image_url")
-        room_pixel_url = row.get("room_image_pixel_url")
-
+    for p in user_list:
+        room_url = p.get("roomImageUrl")
         if not room_url:
             continue
-        if room_pixel_url and not force:
+        if p.get("roomImagePixelUrl") and not force:
+            updated_list.append(p)
             continue
 
-        res = _generate_pixel_image_from_url(room_url, user_id)
-        if not res.get("ok"):
-            failures.append({"id": plant_id, "reason": res.get("reason")})
-            continue
+        res = _generate_pixel_image_from_url(room_url)
+        if res.get("ok"):
+            p["roomImagePixelUrl"] = res["url"]
+            updated_list.append(p)
+        else:
+            failures.append({"id": p.get("id"), "reason": res.get("reason")})
 
-        execute(
-            "UPDATE plant_instances SET room_image_pixel_s3_key=%s, room_image_pixel_url=%s, updated_at=NOW(3) "
-            "WHERE user_id=%s AND id=%s",
-            (res.get("s3_key"), res.get("url"), user_id, plant_id),
-        )
+    all_data[username] = user_list
+    _save_json(PLANTS_FILE, all_data)
 
-    return {
-        "ok": True,
-        "items": get_user_plants(username),
-        "failures": failures,
-    }
+    return {"ok": True, "items": user_list, "failures": failures}
+
+# --- Plants ---
+
+def get_user_plants(username: str) -> List[dict]:
+    # Structure: { username: [ {id, name, ...} ] }
+    all_data = _load_json(PLANTS_FILE, {})
+    return all_data.get(username, [])
+
+def add_user_plant(username: str, plant_data: dict) -> dict:
+    all_data = _load_json(PLANTS_FILE, {})
+    user_list = all_data.get(username, [])
+    
+    # Image processing
+    if "coverUrl" in plant_data:
+        plant_data["coverUrl"] = _process_base64_image(plant_data["coverUrl"], "plant")
+    
+    # Simple ID generation
+    new_id = f"plant_{int(time.time())}_{len(user_list)}"
+    plant_data["id"] = new_id
+    plant_data["created_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
+    
+    user_list.append(plant_data)
+    all_data[username] = user_list
+    _save_json(PLANTS_FILE, all_data)
+    return plant_data
+
+# --- Logs ---
+
+def get_plant_logs(username: str) -> List[dict]:
+    # Structure: { username: [ {id, plant_id, action, date...} ] }
+    all_data = _load_json(LOGS_FILE, {})
+    user_logs = all_data.get(username, [])
+    
+    # Sort by date desc
+    user_logs.sort(key=lambda x: x.get("date", ""), reverse=True)
+    return user_logs
+
+def add_plant_log(username: str, log_data: dict) -> dict:
+    all_data = _load_json(LOGS_FILE, {})
+    user_logs = all_data.get(username, [])
+    
+    # Image processing
+    if "imageUrl" in log_data:
+        log_data["imageUrl"] = _process_base64_image(log_data["imageUrl"], "log")
+    
+    new_id = f"log_{int(time.time())}_{len(user_logs)}"
+    log_data["id"] = new_id
+    # Ensure date exists
+    if "date" not in log_data:
+        log_data["date"] = time.strftime("%Y-%m-%d")
+        
+    user_logs.insert(0, log_data) # Prepend
+    all_data[username] = user_logs
+    _save_json(LOGS_FILE, all_data)
+    return log_data
+
+def delete_plant_log(username: str, log_id: str) -> bool:
+    all_data = _load_json(LOGS_FILE, {})
+    user_logs = all_data.get(username, [])
+    
+    initial_len = len(user_logs)
+    user_logs = [log for log in user_logs if log.get("id") != log_id]
+    
+    if len(user_logs) != initial_len:
+        all_data[username] = user_logs
+        _save_json(LOGS_FILE, all_data)
+        return True
+    return False

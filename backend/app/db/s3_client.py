@@ -1,11 +1,10 @@
 import os
-from typing import Dict, Optional, Tuple
-from urllib.parse import quote
+from typing import Optional, Tuple, Dict
 
 from dotenv import load_dotenv
 
-PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-load_dotenv(os.path.join(PROJECT_ROOT, ".env"))
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+load_dotenv(os.path.join(BASE_DIR, ".env"))
 
 _last_error: Optional[str] = None
 _client_cache: Dict[Tuple[str, str, str], object] = {}
@@ -23,10 +22,6 @@ def _get_settings() -> Tuple[str, str, str, str, str, int]:
     except Exception:
         expires = 900
     return access_key, secret_key, region, bucket, access_point_arn, expires
-
-
-def _bucket_id(bucket: str, access_point_arn: str) -> str:
-    return access_point_arn or bucket
 
 
 def _get_client(access_key: str, secret_key: str, region: str):
@@ -68,9 +63,11 @@ def ping_s3() -> bool:
 
     try:
         client = _get_client(access_key, secret_key, region)
-        bucket_id = _bucket_id(bucket, access_point_arn)
+        bucket_id = access_point_arn or bucket
         client.list_objects_v2(Bucket=bucket_id, MaxKeys=1)
+        print("S3 Connection Success!")  # 성공 시 출력
     except Exception as exc:
+        print(f"S3 Connection Error: {exc}")
         _last_error = repr(exc)
         return False
 
@@ -100,7 +97,7 @@ def get_presigned_url(key: str) -> Optional[str]:
 
     try:
         client = _get_client(access_key, secret_key, region)
-        bucket_id = _bucket_id(bucket, access_point_arn)
+        bucket_id = access_point_arn or bucket
         url = client.generate_presigned_url(
             "get_object",
             Params={"Bucket": bucket_id, "Key": key},
@@ -112,71 +109,3 @@ def get_presigned_url(key: str) -> Optional[str]:
 
     _last_error = None
     return url
-
-
-def upload_bytes(key: str, data: bytes, content_type: str = "application/octet-stream") -> bool:
-    global _last_error
-    access_key, secret_key, region, bucket, access_point_arn, _ = _get_settings()
-    if not key:
-        _last_error = "missing_key"
-        return False
-    if not data:
-        _last_error = "missing_data"
-        return False
-    if not access_key or not secret_key:
-        _last_error = "missing_credentials"
-        return False
-    if not region:
-        _last_error = "missing_region"
-        return False
-    if not bucket and not access_point_arn:
-        _last_error = "missing_bucket"
-        return False
-
-    try:
-        client = _get_client(access_key, secret_key, region)
-        bucket_id = _bucket_id(bucket, access_point_arn)
-        params = {
-            "Bucket": bucket_id,
-            "Key": key,
-            "Body": data,
-            "ContentType": content_type or "application/octet-stream",
-        }
-        acl = os.getenv("S3_UPLOAD_ACL", "").strip()
-        if acl:
-            params["ACL"] = acl
-        client.put_object(**params)
-    except Exception as exc:
-        _last_error = repr(exc)
-        return False
-
-    _last_error = None
-    return True
-
-
-def get_object_url(key: str, prefer_presigned: bool = False) -> Optional[str]:
-    if not key:
-        return None
-
-    public_base = os.getenv("S3_PUBLIC_BASE_URL", "").strip()
-    if public_base:
-        return f"{public_base.rstrip('/')}/{quote(key)}"
-
-    force_presigned = os.getenv("S3_FORCE_PRESIGNED", "").strip().lower() in (
-        "1",
-        "true",
-        "yes",
-        "on",
-    )
-    access_key, secret_key, region, bucket, access_point_arn, _ = _get_settings()
-
-    if (prefer_presigned or force_presigned) and access_key and secret_key and region and (bucket or access_point_arn):
-        return get_presigned_url(key)
-
-    if bucket and region:
-        return f"https://{bucket}.s3.{region}.amazonaws.com/{quote(key)}"
-
-    if access_key and secret_key and region and (bucket or access_point_arn):
-        return get_presigned_url(key)
-
-    return None
