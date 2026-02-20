@@ -342,7 +342,7 @@ const PlantData = () => {
       <div className="l-cover-center plantdata-center">
         <header className="catalog-topbar">
           <div>
-            <h1 className="typo-title">식물 데이터</h1>
+            <h1 className="typo-title">식물도감</h1>
             <p className="catalog-subtitle">공간에 맞는 식물을 빠르게 찾아보세요.</p>
           </div>
         </header>

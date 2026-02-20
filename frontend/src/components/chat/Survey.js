@@ -344,7 +344,7 @@ export default function Survey() {
   return (
     <div className="surveyPage">
       <div className="surveyShell">
-        <div className="surveyCard">
+        <div className="surveyCard surveyCard--survey">
           <header className="surveyHeader">
             <h2 className="surveyTitle">{survey?.title || "Survey"}</h2>
             {survey?.description && <p className="surveyDesc">{survey.description}</p>}
@@ -499,7 +499,7 @@ export default function Survey() {
               onClick={handleSubmit}
               disabled={!allAnswered || status === "submitting"}
             >
-              {status === "submitting" ? "처리 중..." : "Submit"}
+              {status === "submitting" ? "처리 중..." : "추천 시작"}
             </button>
 
             {submitError && <p className="surveyStatus surveyStatus--error">{submitError}</p>}

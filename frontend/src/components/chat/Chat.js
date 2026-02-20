@@ -1105,7 +1105,7 @@ export default function Chat() {
         </header>
 
         {/* List */}
-        <div className="chatList" ref={listRef}>
+        <div className="chatList chatList--pageScroll" ref={listRef}>
           {!hasMessages && <div className="chatEmpty">아직 수신된 메시지가 없습니다.</div>}
 
           {messages.map((message) => {

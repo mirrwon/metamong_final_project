@@ -296,7 +296,7 @@ const MapPage = () => {
   return (
     <div className="l-cover map-page">
       <div className="l-cover-center map-center">
-        <h1 className="map-title">Store</h1>
+        <h1 className="map-title">주변 꽃집</h1>
         <div className="map-divider" />
 
         <section className="map-panel">
@@ -321,7 +321,7 @@ const MapPage = () => {
 
         <section className="map-layout">
           <aside className="map-sidebar">
-            <p className="map-sidebar__title">내 주변 꽃집</p>
+            <p className="map-sidebar__title">꽃집 목록</p>
             <ul className="map-sidebar__list">
               {shops.map((shop) => (
                 <li key={getShopKey(shop)}>

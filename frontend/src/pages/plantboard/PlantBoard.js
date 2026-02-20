@@ -224,9 +224,9 @@ const PlantBoard = () => {
   }, [charPos, selectedPlant]);
 
   const viewTitle = useMemo(() => {
-    if (activeView === "tamagotchi") return "TAMAGOTCHI";
-    if (activeView === "diary") return "DIARY";
-    return "TIME LOG";
+    if (activeView === "tamagotchi") return "다마고치";
+    if (activeView === "diary") return "다이어리";
+    return "타임로그";
   }, [activeView]);
 
   return (
@@ -241,7 +241,7 @@ const PlantBoard = () => {
             setDecorateItem(null);
           }}
         >
-          LOG
+          타임로그
         </div>
 
         <div
@@ -255,7 +255,7 @@ const PlantBoard = () => {
             });
           }}
         >
-          <div className="sidebar-label">TAMAGOTCHI</div>
+          <div className="sidebar-label">다 마 고 치</div>
           <div className="sidebar-content tamagotchi-placeholder">
             {selectedPlant ? (
               <div className="placeholder-box">
@@ -290,7 +290,7 @@ const PlantBoard = () => {
             setDecorateItem(null);
           }}
         >
-          <div className="sidebar-label">DIARY</div>
+          <div className="sidebar-label">다 이 어 리</div>
           <div className="sidebar-content diary-preview">
             <DiaryMiniPreview />
           </div>

@@ -54,14 +54,14 @@ const FAQs = () => {
     <section className="faq">
       <div className="catalog-header catalog-header--faq">
         <div className="catalog-header__left">
-          <h2 className="catalog-title faq__title">FAQ</h2>
+          <h2 className="catalog-title faq__title">FAQ(자주 묻는 질문)</h2>
         </div>
         <button
           className="catalog-more"
           type="button"
           onClick={() => setOpen(true)}
         >
-          MORE
+          더보기
         </button>
       </div>
       <div className="catalog-divider" />

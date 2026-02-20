@@ -27,12 +27,27 @@
 
 .surveyCard {
   margin-top: var(--s-3);
-  height: min(90vh, 2000px);
+  height: clamp(420px, 120dvh, 800px);
   overflow: auto;
   padding: var(--s-5);
   background: rgba(255, 255, 255, 0.55);
   border: 1px solid var(--c-line);
   border-radius: var(--r-md);
+}
+
+.surveyCard--survey {
+  height: auto;
+  overflow: visible;
+}
+
+.surveyCard--upload {
+  height: auto;
+  overflow: visible;
+}
+
+.surveyCard--analyze {
+  height: auto;
+  overflow: visible;
 }
 
 .surveyCard::-webkit-scrollbar {
@@ -192,30 +207,45 @@
 }
 
 /* "style"(방 분위기) 옵션은 한 줄로 유지합니다. */
-.surveyGroup[data-group-key="style"] .surveyChecks {
+.surveyGroup[data-group-key="style"] .surveyChecks,
+.surveyGroup[data-group-key="Plant_style"] .surveyChecks,
+.surveyGroup[data-group-key="plant_style"] .surveyChecks,
+.surveyGroup[data-group-key="plantStyle"] .surveyChecks {
   flex-wrap: nowrap;
 }
 
-.surveyGroup[data-group-key="style"] .surveyCheck {
+.surveyGroup[data-group-key="style"] .surveyCheck,
+.surveyGroup[data-group-key="Plant_style"] .surveyCheck,
+.surveyGroup[data-group-key="plant_style"] .surveyCheck,
+.surveyGroup[data-group-key="plantStyle"] .surveyCheck {
   flex: 1 1 0;
   min-width: 0;
 }
 
-.surveyGroup[data-group-key="style"] .surveyCheck__label--image {
+.surveyGroup[data-group-key="style"] .surveyCheck__label--image,
+.surveyGroup[data-group-key="Plant_style"] .surveyCheck__label--image,
+.surveyGroup[data-group-key="plant_style"] .surveyCheck__label--image,
+.surveyGroup[data-group-key="plantStyle"] .surveyCheck__label--image {
   width: 100%;
   min-width: 0;
   box-sizing: border-box;
 }
 
 @media (max-width: 640px) {
-  .surveyGroup[data-group-key="style"] .surveyChecks {
+  .surveyGroup[data-group-key="style"] .surveyChecks,
+  .surveyGroup[data-group-key="Plant_style"] .surveyChecks,
+  .surveyGroup[data-group-key="plant_style"] .surveyChecks,
+  .surveyGroup[data-group-key="plantStyle"] .surveyChecks {
     overflow-x: auto;
     justify-content: flex-start;
     padding-bottom: var(--s-2);
     scroll-snap-type: x proximity;
   }
 
-  .surveyGroup[data-group-key="style"] .surveyCheck {
+  .surveyGroup[data-group-key="style"] .surveyCheck,
+  .surveyGroup[data-group-key="Plant_style"] .surveyCheck,
+  .surveyGroup[data-group-key="plant_style"] .surveyCheck,
+  .surveyGroup[data-group-key="plantStyle"] .surveyCheck {
     flex: 0 0 220px;
     scroll-snap-align: start;
   }

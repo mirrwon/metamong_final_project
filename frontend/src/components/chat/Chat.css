@@ -99,7 +99,7 @@
 
 .chatList {
   margin-top: var(--s-5); 
-  height: min(90vh, 2000px);
+  height: clamp(420px, 95dvh, 1200px);
 
   overflow: auto;
   padding: var(--s-5);
@@ -110,6 +110,12 @@
   background: rgba(255, 255, 255, 0.55);  
   border: 1px solid var(--c-line);  
   border-radius: var(--r-md);    
+}
+
+/* Chat 페이지는 내부 스크롤 대신 문서 스크롤 사용 */
+.chatList--pageScroll {
+  height: auto;
+  overflow: visible;
 }
 
 /* 스크롤바(원하면 삭제 가능) */

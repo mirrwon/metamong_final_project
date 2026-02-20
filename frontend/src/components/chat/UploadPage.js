@@ -145,7 +145,7 @@ export default function UploadPage() {
   return (
     <div className="surveyPage">
       <div className="surveyShell">
-        <div className="surveyCard">
+        <div className="surveyCard surveyCard--upload">
           <div className="surveyGate">
             <header className="surveyHeader">
               <h2 className="surveyTitle">방 사진을 업로드 해주세요</h2>

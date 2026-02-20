@@ -444,7 +444,7 @@ export default function PlantSelectPage({
 
   return (
       <div className="surveyShell">
-        <div className="surveyCard">
+        <div className="surveyCard surveyCard--analyze">
           <header className="surveyHeader">
             <h2 className="surveyTitle">식물 선택</h2>
             <p className="surveyDesc">설문 결과에 맞는 식물을 골라주세요.</p>

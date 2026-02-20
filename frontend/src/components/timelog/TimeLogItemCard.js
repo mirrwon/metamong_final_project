@@ -47,7 +47,7 @@ export default function TimeLogItemCard({ item, onDelete, showPlantTag = false, 
               aria-label="기록 삭제"
               title="삭제"
             >
-              🗑️
+              삭제
             </button>
           </div>
         </div>

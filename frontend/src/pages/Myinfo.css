@@ -20,6 +20,14 @@
 /* 전체 섹션 */
 .myinfo-section {
   text-align: center;
+  background: #ffffff;
+  border-radius: 18px;
+  padding: clamp(24px, 3vw, 40px);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.08);
+  display: flex;
+  flex-direction: column;
+  gap: clamp(16px, 2vw, 28px);
+  align-items: center;
 }
 
 /* =========================
@@ -27,14 +35,17 @@
    ========================= */
 
 .myinfo-photo {
-  width: 250px; /* 🔥 크게 */
+  width: 250px;
   height: 250px;
-  margin: 0 auto var(--s-5);
+  margin: 0 auto;
   overflow: hidden;
   background: transparent;
   display: flex;
   align-items: center;
   justify-content: center;
+  border-radius: 0;
+  border: 0;
+  box-shadow: none;
 }
 
 .myinfo-photo-img {
@@ -42,6 +53,7 @@
   height: 100%;
   object-fit: cover;
   display: block;
+  border-radius: 0;
 }
 
 .myinfo-photo-empty {
@@ -55,23 +67,37 @@
 
 .myinfo-text {
   width: 100%;
-  max-width: 420px;
-  margin: 0 auto var(--s-5);
+  max-width: 500px;
+  margin: 0 auto;
   text-align: left;
 }
 
-.myinfo-text p {
+.myinfo-field {
+  display: grid;
+  grid-template-columns: 120px 1fr;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 15px;
+}
+
+.myinfo-label {
   font-size: var(--fs-2);
   font-weight: 600;
+  color: #4a5568;
+  text-align: left;
+}
+
+.myinfo-value {
+  font-size: var(--fs-2);
+  font-weight: 500;
   color: var(--c-text);
-  margin-bottom: var(--s-3);
-  line-height: 1.5;
-  background: rgba(255, 255, 255, 0.384);
-  padding: 7px 10px;
-  border-radius: 6px;
-  display: flex;
-  justify-content: space-between;
-  gap: 15px;
+  line-height: 1.3;
+  background: #f7f9fc;
+  border: 1px solid #e9edf3;
+  padding: 8px 20px;
+  border-radius: 5px;
+  text-align: left;
+  word-break: break-word;
 }
 
 /* =========================
@@ -79,7 +105,7 @@
    ========================= */
 
 .myinfo-actions {
-  margin-top: var(--s-6);
+  margin-top: var(--s-5);
   display: flex;
   justify-content: center;
   align-items: center;
@@ -95,4 +121,14 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
+}
+
+@media (max-width: 720px) {
+  .myinfo-section {
+    text-align: center;
+  }
+
+  .myinfo-text {
+    text-align: left;
+  }
 }

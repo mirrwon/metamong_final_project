@@ -66,7 +66,7 @@ export default function TimeLogPage({
     <div className={`timelog timelog--${mode}`}>
       {showHeader && (
         <div className="timelog__header">
-          <div className="timelog__title">TIME LOG</div>
+          <div className="timelog__title">타임로그</div>
         </div>
       )}
 

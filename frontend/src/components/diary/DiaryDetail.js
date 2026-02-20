@@ -8,9 +8,8 @@ const BACKEND_ORIGIN = "http://localhost:8000";
 /* 상대경로 → 절대경로 */
 const toAbsoluteUrl = (url) => {
   if (!url) return "";
-  if (url.startsWith("http://") || url.startsWith("https://") || url.startsWith("data:")) return url;
-  if (url.startsWith("/")) return `${BACKEND_ORIGIN}${url}`;
-  return `${BACKEND_ORIGIN}/${url}`;
+  if (url.startsWith("http://") || url.startsWith("https://")) return url;
+  return `${BACKEND_ORIGIN}${url}`;
 };
 
 const withCacheBust = (url) => {
@@ -27,15 +26,18 @@ const normalizeDiaryItems = (payload) => {
 
 /* 이미지 URL 해결 (조원 수정 반영) */
 const resolveImageUrl = (item) => {
-  const directUrl =
+  const filename = item?.image_filename || item?.imageFilename;
+  if (filename) return `${BACKEND_ORIGIN}/auth-uploads/${filename}`;
+
+  return (
     item?.imageUrl ||
     item?.image_url ||
     item?.photoUrl ||
     item?.photo_url ||
     item?.photo ||
     item?.image ||
-    "";
-  return directUrl;
+    ""
+  );
 };
 
 /* 날짜 필드 통합 */

@@ -101,7 +101,7 @@ const Myinfo = ({ user }) => {
   return (
     <div className="myinfo-page l-cover">
       <div className="myinfo-center l-cover-center">
-        <h1 className="myinfo-title">My Info</h1>
+        <h1 className="myinfo-title">내 프로필</h1>
         <div className="ui-line myinfo-divider" />
 
         <section className="myinfo-section">
@@ -120,21 +120,57 @@ const Myinfo = ({ user }) => {
 
           {/* 텍스트 정보 */}
           <div className="myinfo-text">
-            <p>아이디: {myinfo.username}</p>
-            <p>이름: {myinfo.name}</p>
-            <p>나이: {myinfo.age}</p>
-            <p>성별: {myinfo.gender}</p>
-            <p>생년월일: {myinfo.birthDate}</p>
-            <p>연락처: {myinfo.phone}</p>
-            <p>e-mail: {myinfo.email}</p>
-            {myinfo.zipcode ? <p>우편번호: {myinfo.zipcode}</p> : null}
-            {myinfo.address1 ? <p>주소: {myinfo.address1}</p> : null}
-            {myinfo.address2 ? <p>상세 주소: {myinfo.address2}</p> : null}
+            <div className="myinfo-field">
+              <span className="myinfo-label">아이디</span>
+              <div className="myinfo-value">{myinfo.username}</div>
+            </div>
+            <div className="myinfo-field">
+              <span className="myinfo-label">이름</span>
+              <div className="myinfo-value">{myinfo.name}</div>
+            </div>
+            <div className="myinfo-field">
+              <span className="myinfo-label">나이</span>
+              <div className="myinfo-value">{myinfo.age}</div>
+            </div>
+            <div className="myinfo-field">
+              <span className="myinfo-label">성별</span>
+              <div className="myinfo-value">{myinfo.gender}</div>
+            </div>
+            <div className="myinfo-field">
+              <span className="myinfo-label">생년월일</span>
+              <div className="myinfo-value">{myinfo.birthDate}</div>
+            </div>
+            <div className="myinfo-field">
+              <span className="myinfo-label">연락처</span>
+              <div className="myinfo-value">{myinfo.phone}</div>
+            </div>
+            <div className="myinfo-field">
+              <span className="myinfo-label">e-mail</span>
+              <div className="myinfo-value">{myinfo.email}</div>
+            </div>
+            {myinfo.zipcode ? (
+              <div className="myinfo-field">
+                <span className="myinfo-label">우편번호</span>
+                <div className="myinfo-value">{myinfo.zipcode}</div>
+              </div>
+            ) : null}
+            {myinfo.address1 ? (
+              <div className="myinfo-field">
+                <span className="myinfo-label">주소</span>
+                <div className="myinfo-value">{myinfo.address1}</div>
+              </div>
+            ) : null}
+            {myinfo.address2 ? (
+              <div className="myinfo-field">
+                <span className="myinfo-label">상세 주소</span>
+                <div className="myinfo-value">{myinfo.address2}</div>
+              </div>
+            ) : null}
           </div>
 
           {/* 버튼 */}
           <div className="myinfo-actions">
-            <Button text="내 정보 수정" type="primary" onClick={goEditMyinfo} />
+            <Button text="프로필 수정" type="primary" onClick={goEditMyinfo} />
           </div>
         </section>
 

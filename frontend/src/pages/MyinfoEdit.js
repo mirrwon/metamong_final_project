@@ -146,7 +146,7 @@ const MyinfoEdit = ({ user, setUser }) => {
   return (
     <div className="l-cover">
       <div className="l-cover-center">
-        <h1 className="myinfoedit-title">My Info Edit</h1>
+        <h1 className="myinfoedit-title">프로필 수정</h1>
         <div className="ui-line myinfoedit-divider" />
 
         {/* ✅ 핵심: form 래퍼 클래스 */}

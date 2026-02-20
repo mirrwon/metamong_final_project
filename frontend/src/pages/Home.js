@@ -23,14 +23,14 @@ const Home = () => {
       <section className="home-section home-plants">
         <div className="catalog-header">
           <div className="catalog-header__left">
-            <h2 className="catalog-title">Plant Catalog</h2>
+            <h2 className="catalog-title">식물도감</h2>
           </div>
           <button
             className="catalog-more"
             type="button"
             onClick={() => nav(ROUTES.PLANT_DATA)}
           >
-            MORE
+            더보기
           </button>
         </div>
 

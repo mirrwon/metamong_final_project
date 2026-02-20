@@ -97,7 +97,7 @@ const Header = ({ user, onLogout }) => {
           href={ROUTES.HOME}
           onClick={handleNavClick(ROUTES.HOME)}
         >
-          Home
+          홈
         </a>
 
         <a
@@ -107,7 +107,7 @@ const Header = ({ user, onLogout }) => {
           tabIndex={user ? 0 : -1}
           onClick={handleNavClick(ROUTES.MYINFO, undefined, !!user)}
         >
-          Profile
+          프로필
         </a>
 
         <a
@@ -117,7 +117,7 @@ const Header = ({ user, onLogout }) => {
           tabIndex={user ? 0 : -1}
           onClick={handleNavClick(ROUTES.UPLOAD, undefined, !!user)}
         >
-          Chat
+          식물추천
         </a>
 
         <a
@@ -127,7 +127,7 @@ const Header = ({ user, onLogout }) => {
           tabIndex={user ? 0 : -1}
           onClick={handleNavClick(ROUTES.PLANTBOARD, goPlantBoard, !!user)}
         >
-          PlantBoard
+          게시판
         </a>
 
         <a
@@ -135,7 +135,7 @@ const Header = ({ user, onLogout }) => {
           href={ROUTES.PLANT_DATA}
           onClick={handleNavClick(ROUTES.PLANT_DATA)}
         >
-          Data
+          식물도감
         </a>
 
         <a
@@ -145,7 +145,7 @@ const Header = ({ user, onLogout }) => {
           tabIndex={user ? 0 : -1}
           onClick={handleNavClick(ROUTES.MAP, undefined, !!user)}
         >
-          Map
+          주변 꽃집
         </a>
         <button
           className="header-link header-auth"
