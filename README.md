@@ -1,94 +1,145 @@
-# final_project_metamong
+# 메타몽 (Metamong)
+
+AI 기반 반려식물 케어 서비스
 
 ---
 
-##  기본적인 명령어
+## 서비스 소개
 
- 앞으로는 무조건:
-- git checkout add_final
-
-- git pull origin add_final
-
- 새 작업할 땐:
-- git checkout -b feature/xxx
-
- 끝나면:
-- git checkout add_final
-
-- git merge feature/xxx
-
-- git push origin add_final
-
-##  중요한 보안 규칙
-- **.env / 비밀번호 / API KEY / 개인 토큰** 이런 건 절대 GitHub에 올리면 안 됩니다.
-- 필요한 파일은 따로 연락으로 주고 받기
+메타몽은 AI를 활용해 식물을 더 잘 키울 수 있도록 도와주는 반려식물 케어 플랫폼입니다.
+식물 배치 추천부터 일상 기록, 다마고치 스타일의 식물 캐릭터까지 하나의 서비스에서 제공합니다.
 
 ---
 
-## 1) 절대 규칙 3가지 
-1) **main에는 직접 올리지 않기** (직접 push 금지)
-2) **작업은 feature/(개인 branch명)에서 하기**
-3) **PR(풀리퀘스트)은 develop로 올리기**
+## 주요 기능
+
+### 1. AI 식물 배치 추천 (챗봇)
+- 실내 사진을 업로드하면 AI가 최적의 식물 배치 위치를 분석
+- GPT-4o 기반 대화형 인터페이스로 식물 추천 및 케어 조언 제공
+- CV 파이프라인(SAM, MiDaS, PnP)으로 실내 공간을 3D 분석
+
+### 2. 플랜트보드 (PlantBoard)
+- **타임로그**: 물 주기, 비료, 자리 이동, 분무, 청소 등 식물 케어 활동 기록
+- **다이어리**: 식물과의 일상을 사진과 글로 기록
+- **사진 꾸미기**: 식물 사진에 스티커/템플릿을 입혀 꾸미기
+
+### 3. 다마고치 뷰 (Tamagotchi View)
+- 내 방 사진을 **Gemini AI**로 1990년대 다마고치 스타일 픽셀 아트로 변환
+- LoRA 파인튜닝된 Gemma-2-9B 모델이 식물 캐릭터의 대사/감정/애니메이션 생성
+- 식물이 살아있는 캐릭터처럼 말을 걸고 반응
+
+### 4. 식물 데이터
+- 식물 종류별 케어 정보 제공
+- 주변 화원 지도 검색
 
 ---
 
-## 2) 작업 흐름 
-1) 내가 할 일을 정한다 (가능하면 Issues에 적기)
-2) **feature branch**를 만든다  
-   - 예: `feature/login`, `feature/signup-ui`
-3) feature 브랜치에서 작업하고 커밋한다
-4) GitHub에서 **PR을 develop로** 올린다
-5) 팀원이 확인하고 OK하면 develop에 합친다(merge)
-6) develop이 안정적이면 **develop → main**으로 PR해서 최종 반영한다(관리자/합의 후)
+## 기술 스택
+
+### Backend
+| 분류 | 기술 |
+|------|------|
+| API 서버 | FastAPI, Python 3.11 |
+| AI - 이미지 분석 | GPT-4o, Gemini 3 Pro Image |
+| AI - 식물 대화 | Gemma-2-9B + LoRA (PEFT) |
+| AI - 공간 분석 | SAM (Segment Anything), MiDaS, OpenCV |
+| DB | MySQL (AWS RDS), Redis (RedisLabs) |
+| 파일 스토리지 | AWS S3 |
+
+### Frontend
+| 분류 | 기술 |
+|------|------|
+| 프레임워크 | React |
+| 상태 관리 | React Hooks |
+| 스타일 | CSS Modules |
+
+### Infra
+- AWS EC2 (API 서버, GPU 서버)
+- Docker
 
 ---
 
-## 3) 브랜치 이름 예시
-- `feature/dowon_kg`
-- `feature/dowon_db`
+## 실행 방법
+
+### Backend
+```bash
+cd backend
+pip install -r requirements.txt
+cp .env.example .env  # API 키 설정
+uvicorn api_server:app --reload --port 8000
+```
+
+### Frontend
+```bash
+cd frontend
+npm install
+npm start
+```
+
+### LoRA 서버 (GPU 서버)
+```bash
+cd backend
+python serve_lora.py --adapter_dir ./lora_adapter --port 8000
+```
 
 ---
 
-## 4) 커밋 메시지 예시
-- `기능: 로그인 화면 추가`
-- `버그: 버튼 오류 수정`
-- `설명: README 수정`
-- `설정: 설정 파일 정리`
+## 환경변수 (.env)
+
+```
+# Gemini AI
+GEMINI_API_KEY=
+
+# OpenAI
+OPENAI_API_KEY=
+
+# AWS S3
+AWS_ACCESS_KEY_ID=
+AWS_SECRET_ACCESS_KEY=
+AWS_REGION=
+S3_BUCKET=
+
+# MySQL
+MYSQL_HOST=
+MYSQL_USER=
+MYSQL_PASSWORD=
+MYSQL_DB=
+
+# Redis
+REDIS_HOST=
+REDIS_PORT=
+REDIS_PASSWORD=
+
+# LoRA 서버
+LORA_SERVER_URL=http://localhost:8001
+LORA_TIMEOUT_SEC=15
+
+# Google OAuth
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=
+```
 
 ---
 
-## 5) PR(풀리퀘스트) 올릴 때 체크
-PR 올릴 때 아래 2개만 지켜줘요:
-- "내가 한 일" 한 줄로 적기
-- 최소 1번은 실행해보기(에러 안 나는지)
-- 화면 바뀌면 스크린샷 있으면 좋아요(가능하면)
+## 프로젝트 구조
 
----
-
-## 6) GitHub 웹에서 PR 올리는 방법(클릭 순서)
-### (A) 먼저 feature 브랜치 만들기
-1) 레포 들어가기
-2) 왼쪽 위에 브랜치 표시(`main` 또는 `develop`) 눌러서 드롭다운 열기
-3) 브랜치 이름에 `feature/내작업이름` 입력
-4) 아래에 **Create branch** 버튼 뜨면 클릭
-
-### (B) 파일 올리기/수정하기(웹에서 할 때)
-1) 파일 수정: 파일 클릭 → 연필 아이콘(Edit)
-2) 새 파일: **Add file → Create new file**
-3) 아래쪽 **Commit changes** 누르기  
-   - (가능하면) 커밋 메시지 간단히 쓰기: `feat: ...`
-
-### (C) PR 만들기 (가장 중요!)
-1) 레포 상단 메뉴에서 **Pull requests** 클릭
-2) **New pull request** 클릭
-3) 여기서 꼭 확인:
-   - **base** = `develop`  ✅ (합쳐질 곳)
-   - **compare** = `feature/내브랜치` ✅ (내가 작업한 것)
-4) 제목/설명 간단히 적기
-5) **Create pull request** 클릭
-
-### (D) PR이 올라가면
-- 팀원이 댓글/리뷰로 확인해줌
-- OK 받으면 **Merge** (보통 관리자가 누르거나, 규칙에 따라 진행)
-
----
+```
+metamong/
+├── backend/
+│   ├── api_server.py          # 메인 FastAPI 서버
+│   ├── serve_lora.py          # LoRA 추론 서버
+│   ├── app/
+│   │   ├── api/               # API 라우터
+│   │   ├── services/          # 비즈니스 로직
+│   │   ├── cv/                # 컴퓨터 비전 파이프라인
+│   │   ├── llm/               # AI 모델 연동
+│   │   └── db/                # DB 클라이언트
+│   ├── plantboard_store/      # 플랜트보드 로컬 데이터
+│   └── plants/                # 식물 이미지 저장소
+└── frontend/
+    └── src/
+        ├── pages/             # 페이지 컴포넌트
+        ├── components/        # 공통 컴포넌트
+        ├── hooks/             # 커스텀 훅
+        └── services/          # API 호출
+```
